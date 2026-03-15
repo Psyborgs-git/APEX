@@ -10,3 +10,5 @@ data/
 *.duckdb
 apex-ui/node_modules/
 apex-ui/dist/
+.pytest_cache/
+tsconfig.tsbuildinfo
