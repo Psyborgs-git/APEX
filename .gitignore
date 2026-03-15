@@ -8,3 +8,5 @@ __pycache__/
 data/
 *.db
 *.duckdb
+apex-ui/node_modules/
+apex-ui/dist/
