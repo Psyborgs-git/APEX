@@ -1,0 +1,19 @@
+[package]
+name = "apex-adapters"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+apex-core = { path = "../apex-core" }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+async-trait = { workspace = true }
+dashmap = { workspace = true }
+reqwest = { workspace = true }
+rusqlite = { version = "0.33", features = ["bundled"] }
