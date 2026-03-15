@@ -1,0 +1,29 @@
+[project]
+name = "apex-python"
+version = "0.1.0"
+description = "APEX Trading Terminal – Python sidecar for ML training and strategy execution"
+requires-python = ">=3.11"
+dependencies = [
+    "msgpack>=1.0,<2",
+    "polars>=1.0,<2",
+    "scikit-learn>=1.5,<2",
+    "xgboost>=2.0,<3",
+    "joblib>=1.4,<2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["apex_sdk", "runtime", "ml"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
