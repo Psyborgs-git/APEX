@@ -238,6 +238,7 @@ Serialize to a plain dict for msgpack transport.
 ```python
 """Dual moving average crossover strategy."""
 
+import math
 from apex_sdk import Strategy, Bar, Signal, Timeframe
 
 
@@ -256,7 +257,7 @@ class DualMACrossover(Strategy):
         slow_sma = self.indicator("sma", symbol, self.slow_period)
 
         # Skip until indicators are warm
-        if fast_sma != fast_sma or slow_sma != slow_sma:  # NaN check
+        if math.isnan(fast_sma) or math.isnan(slow_sma):
             return
 
         if fast_sma > slow_sma:

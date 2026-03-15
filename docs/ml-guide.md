@@ -141,6 +141,7 @@ The trainer produces two files:
 ### 5. Use in a Strategy
 
 ```python
+import math
 import joblib
 from apex_sdk import Strategy, Bar, Signal, Timeframe
 
@@ -183,7 +184,7 @@ class MLStrategy(Strategy):
         macd = self.indicator("macd", symbol)
 
         # Skip if indicators aren't warm yet
-        if rsi != rsi:  # NaN check
+        if math.isnan(rsi):
             return None
 
         return [bar.close, bar.volume, rsi, sma, macd]
