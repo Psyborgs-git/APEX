@@ -43,8 +43,9 @@ pub enum RiskVerdict {
     Reject(String),
 }
 
-/// Recent order info for duplicate detection
+/// Recent order info for duplicate detection (used in check_duplicate)
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct RecentOrder {
     symbol: String,
     side: OrderSide,
@@ -60,6 +61,7 @@ pub struct RiskEngine {
     /// Hard halt flag — when true, ALL orders are rejected
     pub(crate) trading_halted: Arc<AtomicBool>,
     /// Recent orders for duplicate detection
+    #[allow(dead_code)]
     recent_orders: Arc<RwLock<Vec<RecentOrder>>>,
 }
 
