@@ -1,0 +1,62 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicoverbruggen/tauri-v2-schema/refs/heads/main/schema.json",
+  "productName": "APEX Terminal",
+  "version": "0.1.0",
+  "identifier": "io.apex.terminal",
+  "build": {
+    "beforeDevCommand": "cd ../apex-ui && npm run dev",
+    "devUrl": "http://localhost:3000",
+    "beforeBuildCommand": "cd ../apex-ui && npm run build",
+    "frontendDist": "../apex-ui/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "APEX Terminal",
+        "label": "main",
+        "width": 1920,
+        "height": 1080,
+        "minWidth": 1440,
+        "minHeight": 900,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": true,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self'; connect-src 'self' https://query1.finance.yahoo.com"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "shortDescription": "Professional algorithmic trading terminal",
+    "longDescription": "APEX is a professional-grade algorithmic trading terminal built with Rust and React. It features real-time market data, strategy development with Python, ML model training, and comprehensive risk management.",
+    "copyright": "© 2024 APEX Contributors",
+    "category": "Finance",
+    "linux": {
+      "deb": {
+        "depends": ["libwebkit2gtk-4.1-0", "libssl3", "libsqlite3-0"]
+      },
+      "appimage": {
+        "bundleMediaFramework": false
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    },
+    "windows": {
+      "wix": {
+        "language": "en-US"
+      }
+    }
+  }
+}
