@@ -1049,56 +1049,89 @@ All order placements, modifications, and cancellations logged with nanosecond ti
 
 ## 17. Development Roadmap
 
-### Phase 1 — Foundation (Months 1–2)
+### Phase 1 — Foundation (✅ ~90% Complete)
 
-- [ ] Cargo workspace + Tauri 2 shell + Vite/React setup
-- [ ] Core domain models and port trait definitions
-- [ ] Internal message bus
-- [ ] TimescaleDB + Redis + SQLite adapters
-- [ ] Yahoo Finance market data adapter
-- [ ] Paper trading execution adapter
-- [ ] Basic watchlist UI with real-time price updates
-- [ ] Basic candlestick chart
+- [x] Cargo workspace + Tauri 2 shell + Vite/React setup
+- [x] Core domain models and port trait definitions
+- [x] Internal message bus (topic-based pub/sub with 9 topics)
+- [x] SQLite adapter (config + audit trail persistence)
+- [ ] TimescaleDB adapter (hypertable schema designed, implementation pending)
+- [ ] Redis adapter (hot state caching, schema designed)
+- [x] Yahoo Finance market data adapter (polling with 3s intervals)
+- [x] Paper trading execution adapter (slippage + commission modeling)
+- [x] Basic watchlist UI with real-time price updates
+- [x] Basic candlestick chart (TradingView Lightweight Charts)
 
-### Phase 2 — Trading Core (Months 3–4)
+### Phase 2 — Trading Core (⚠️ ~60% Complete)
 
-- [ ] Zerodha Kite adapter (market data + execution)
-- [ ] Order entry UI + order blotter
-- [ ] Position dashboard with P&L
-- [ ] Pre-trade risk engine
-- [ ] Alert system
-- [ ] News feed (RSS aggregator)
-- [ ] Multi-panel workspace layout
+- [ ] Zerodha Kite adapter (market data + execution) - **Critical Priority**
+- [x] Order entry UI + order blotter (basic implementation)
+- [x] Position dashboard with P&L (UI components created, integration needed)
+- [x] Pre-trade risk engine (max order value, position %, daily loss limits)
+- [x] Alert system (engine implemented, UI integration pending)
+- [ ] News feed (RSS aggregator) - engine stub exists
+- [x] Multi-panel workspace layout (basic layout, drag-and-drop pending)
 
-### Phase 3 — Analytics & Automation (Months 5–6)
+### Phase 3 — Analytics & Automation (⚠️ ~40% Complete)
 
-- [ ] Python sidecar IPC
-- [ ] Strategy IDE (Monaco) with SDK
-- [ ] Backtest engine
-- [ ] Technical indicator library
+- [x] Python sidecar IPC (Unix socket with msgpack framing)
+- [x] Strategy IDE (Monaco editor integrated)
+- [x] Strategy SDK base classes (on_init, on_bar, on_tick, on_stop hooks)
+- [ ] Backtest engine (framework exists, execution loop not implemented)
+- [ ] Technical indicator library (TA-Lib wrapper stubs)
 - [ ] Market scanner
 - [ ] Historical data downloader
-- [ ] DuckDB adapter
+- [ ] DuckDB adapter (analytical query engine)
 - [ ] Second broker (Alpaca or IBKR)
 
-### Phase 4 — Intelligence (Months 7–8)
+### Phase 4 — Intelligence (⚠️ ~10% Complete)
 
 - [ ] ML workbench (dataset builder, training, evaluation)
+- [x] ML trainer pipeline structure (trainer.py created, not integrated)
+- [x] Graph engine stub (custom vector/relationship modeling)
 - [ ] Model registry and live deployment
-- [ ] Custom vector & relationship graph
 - [ ] News sentiment analysis
 - [ ] Volume profile, multi-instrument chart overlay
 - [ ] Walk-forward backtest + parameter sweep
 
-### Phase 5 — Production Hardening (Months 9–10)
+### Phase 5 — Production Hardening (⚠️ ~35% Complete)
 
-- [ ] Circuit breakers on all adapters
-- [ ] State journaling + crash recovery
-- [ ] Position reconciliation
+- [x] Circuit breakers on adapters (health tracking with exponential backoff)
+- [x] Risk engine with hard stops (< 10μs latency target)
+- [ ] State journaling + crash recovery (architecture designed, not wired)
+- [ ] Position reconciliation loop (method exists, periodic loop not running)
 - [ ] Security audit
 - [ ] Performance profiling and optimisation
-- [ ] Comprehensive test suite + E2E tests
+- [x] E2E test framework (Playwright configured with 5 test suites)
+- [ ] Unit test coverage (Python SDK: 11 passing tests; Rust core: 0 tests)
 - [ ] Installer packaging
+
+### Current Status Summary (March 2026)
+
+**Working Features:**
+- ✅ Full-stack foundation (Rust core, React UI, Python SDK)
+- ✅ Paper trading with realistic order execution
+- ✅ Yahoo Finance real-time quotes
+- ✅ Risk engine with pre-trade validation
+- ✅ Basic UI: watchlist, candlestick charts, order entry, positions
+- ✅ Python strategy framework with IPC bridge
+- ✅ Circuit breaker pattern for adapter resilience
+
+**Critical Gaps for Production:**
+- ❌ **No production broker adapter** (Zerodha/IBKR/Alpaca needed for real trading)
+- ❌ **No persistent time-series storage** (TimescaleDB/DuckDB not implemented)
+- ❌ **No hot state cache** (Redis not implemented)
+- ❌ **Minimal test coverage** (Rust core has 0 unit tests)
+- ❌ **No backtest execution** (event loop not implemented)
+- ❌ **No news/sentiment pipeline**
+
+**Next Milestones:**
+1. Implement **TimescaleDB adapter** for tick/OHLCV persistence
+2. Implement **Redis adapter** for sub-ms quote lookups
+3. Implement **Zerodha Kite adapter** for Indian market trading
+4. Complete **strategy orchestrator** with hot-reload and metrics
+5. Add **comprehensive test coverage** (target: 80%+ for core services)
+6. Wire **position reconciliation loop** (30s polling interval)
 
 -----
 
