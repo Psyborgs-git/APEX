@@ -259,7 +259,7 @@ const VectorGraphInner: React.FC<VectorGraphProps> = ({
   }, [simNodes, simEdges, dimensions, handleNodeClick, handleNodeHover]);
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full" data-testid="vector-graph">
       <div className="px-3 py-1.5 border-b border-[var(--border-color)] flex items-center justify-between">
         <span className="text-sm font-medium text-text-secondary">Strategy Graph</span>
         <div className="flex items-center gap-3">
