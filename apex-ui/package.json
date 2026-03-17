@@ -9,7 +9,10 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "tauri:dev": "tauri dev --config ../apex-tauri/tauri.conf.json",
-    "tauri:build": "tauri build --config ../apex-tauri/tauri.conf.json"
+    "tauri:build": "tauri build --config ../apex-tauri/tauri.conf.json",
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "test:headed": "playwright test --headed"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
