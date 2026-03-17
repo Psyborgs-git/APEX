@@ -183,7 +183,7 @@ const CandleChartInner: React.FC<CandleChartProps> = ({ symbol, ohlcvData, heigh
   }, [symbol, getQuote]);
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full" data-testid="candle-chart">
       <div className="px-3 py-1.5 border-b border-[var(--border-color)] flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="text-sm font-mono font-medium text-text-primary">{symbol}</span>

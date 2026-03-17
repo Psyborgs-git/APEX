@@ -272,7 +272,7 @@ const OrderBookHeatmapInner: React.FC<OrderBookHeatmapProps> = ({
   }, [draw, animate]);
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full" data-testid="orderbook-heatmap">
       <div className="px-3 py-1.5 border-b border-[var(--border-color)] flex items-center justify-between">
         <span className="text-sm font-medium text-text-secondary">Order Book</span>
         <span className="text-xs text-text-muted font-mono">

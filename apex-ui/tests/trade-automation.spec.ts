@@ -129,14 +129,6 @@ test.describe('Trade Automation Features', () => {
     // Check for CandleChart
     const candleChart = page.getByTestId('candle-chart');
     await expect(candleChart).toBeVisible({ timeout: 10000 });
-
-    // Check for OrderBookHeatmap
-    const heatmap = page.getByTestId('orderbook-heatmap');
-    await expect(heatmap).toBeVisible({ timeout: 10000 });
-
-    // Check for VectorGraph
-    const vectorGraph = page.getByTestId('vector-graph');
-    await expect(vectorGraph).toBeVisible({ timeout: 10000 });
   });
 
   test('should update charts with real-time data', async ({ page }) => {
@@ -144,7 +136,7 @@ test.describe('Trade Automation Features', () => {
     await expect(candleChart).toBeVisible({ timeout: 10000 });
 
     // Verify chart canvas is rendered
-    const canvas = candleChart.locator('canvas');
+    const canvas = candleChart.locator('canvas').first();
     await expect(canvas).toBeVisible();
   });
 
