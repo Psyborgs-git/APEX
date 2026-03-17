@@ -1,12 +1,22 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { formatPrice } from '../../lib/format';
+import { placeOrder } from '../../lib/tauri';
 
-export const OrderEntry: React.FC = () => {
-  const [symbol, setSymbol] = useState('');
+interface OrderEntryProps {
+  defaultSymbol?: string;
+}
+
+export const OrderEntry: React.FC<OrderEntryProps> = ({ defaultSymbol }) => {
+  const [symbol, setSymbol] = useState(defaultSymbol ?? '');
   const [side, setSide] = useState<'BUY' | 'SELL'>('BUY');
   const [orderType, setOrderType] = useState('MARKET');
   const [quantity, setQuantity] = useState('');
   const [price, setPrice] = useState('');
+  const [status, setStatus] = useState<{ type: 'idle' | 'submitting' | 'success' | 'error'; message?: string }>({ type: 'idle' });
+
+  React.useEffect(() => {
+    if (defaultSymbol) setSymbol(defaultSymbol);
+  }, [defaultSymbol]);
 
   const estimatedValue = useMemo(() => {
     const qty = parseFloat(quantity) || 0;
@@ -14,9 +24,30 @@ export const OrderEntry: React.FC = () => {
     return qty * prc;
   }, [quantity, price]);
 
-  const handleSubmit = useCallback((e: React.FormEvent) => {
+  const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('Submit order:', { symbol, side, orderType, quantity, price });
+    if (!symbol || !quantity) return;
+
+    setStatus({ type: 'submitting' });
+    try {
+      const orderId = await placeOrder({
+        symbol,
+        side: side.toLowerCase(),
+        order_type: orderType.toLowerCase(),
+        quantity: parseFloat(quantity),
+        price: orderType !== 'MARKET' ? parseFloat(price) || null : null,
+        stop_price: null,
+        broker_id: 'paper',
+        tag: null,
+      });
+      setStatus({ type: 'success', message: `Order placed: ${orderId}` });
+      setQuantity('');
+      setPrice('');
+      setTimeout(() => setStatus({ type: 'idle' }), 3000);
+    } catch (err) {
+      setStatus({ type: 'error', message: String(err) });
+      setTimeout(() => setStatus({ type: 'idle' }), 5000);
+    }
   }, [symbol, side, orderType, quantity, price]);
 
   return (
@@ -94,16 +125,24 @@ export const OrderEntry: React.FC = () => {
         </div>
       )}
 
+      {status.type === 'success' && (
+        <div className="text-xs text-bull font-mono">{status.message}</div>
+      )}
+      {status.type === 'error' && (
+        <div className="text-xs text-bear font-mono">{status.message}</div>
+      )}
+
       <button
         type="submit"
+        disabled={status.type === 'submitting' || !symbol || !quantity}
         className={`mt-auto py-2 rounded font-mono text-sm font-bold ${
           side === 'BUY'
             ? 'bg-bull text-black hover:brightness-110'
             : 'bg-bear text-white hover:brightness-110'
-        } transition-all`}
+        } transition-all disabled:opacity-50 disabled:cursor-not-allowed`}
         tabIndex={5}
       >
-        {side} {symbol || '...'}
+        {status.type === 'submitting' ? 'Placing...' : `${side} ${symbol || '...'}`}
       </button>
     </form>
   );

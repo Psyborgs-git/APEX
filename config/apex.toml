@@ -1,0 +1,196 @@
+# ──────────────────────────────────────────────────────────────────────
+# APEX Terminal — Configuration Schema
+# Copy this file to `config/apex.toml` and adjust values.
+# All durations use TOML duration-like strings (e.g. "5s", "100ms").
+# ──────────────────────────────────────────────────────────────────────
+
+# ── General ──────────────────────────────────────────────────────────
+
+[general]
+# Human-readable instance name shown in the title bar.
+instance_name = "APEX-Dev"
+
+# Log level: "trace", "debug", "info", "warn", "error"
+log_level = "info"
+
+# Where to write structured JSON logs.  Empty string = stdout only.
+log_file = "logs/apex.log"
+
+# Data directory for SQLite, model artefacts, and strategy files.
+data_dir = "data"
+
+# ── Market Data ──────────────────────────────────────────────────────
+
+[market_data]
+# Default market data adapter.  Built-in: "yahoo_finance"
+# Community adapters are loaded from `adapters/` directory.
+adapter = "yahoo_finance"
+
+# Symbols to subscribe to on startup (watchlist seed).
+default_symbols = [
+    "RELIANCE.NS",
+    "TCS.NS",
+    "HDFCBANK.NS",
+    "INFY.NS",
+    "AAPL",
+    "MSFT",
+    "GOOGL",
+]
+
+# Polling interval for REST-based adapters (ignored by WebSocket feeds).
+poll_interval = "5s"
+
+# Maximum number of concurrent symbol subscriptions.
+max_subscriptions = 100
+
+# ── Market Data — Yahoo Finance adapter ──────────────────────────────
+
+[market_data.yahoo_finance]
+# Base URL (override for proxies or mock servers).
+base_url = "https://query1.finance.yahoo.com"
+
+# Request timeout for HTTP calls.
+request_timeout = "10s"
+
+# Rate-limit: maximum requests per second.
+rate_limit_rps = 5
+
+# ── Execution ────────────────────────────────────────────────────────
+
+[execution]
+# Default execution adapter.  Built-in: "paper"
+# Use "paper" for simulated trading or implement a broker adapter.
+adapter = "paper"
+
+# ── Execution — Paper Trading adapter ────────────────────────────────
+
+[execution.paper]
+# Starting capital for the simulated account.
+initial_capital = 1_000_000.0
+
+# Currency code (ISO 4217).
+currency = "INR"
+
+# Simulated slippage in basis points applied on every fill.
+slippage_bps = 2.0
+
+# Simulated commission in basis points applied on every fill.
+commission_bps = 3.0
+
+# ── Risk Management ─────────────────────────────────────────────────
+
+[risk]
+# Maximum daily loss (absolute value in account currency).
+# Trading is halted when session P&L breaches this threshold.
+max_daily_loss = 50_000.0
+
+# Maximum single-order notional value.
+max_order_value = 500_000.0
+
+# Maximum number of open positions at any time.
+max_open_positions = 20
+
+# Maximum position size per symbol (in lots / shares).
+max_position_size = 1000
+
+# Cool-down period after a risk halt before manual reset is allowed.
+halt_cooldown = "30s"
+
+# ── Circuit Breaker ──────────────────────────────────────────────────
+
+[risk.circuit_breaker]
+# Enable automatic circuit breaker on consecutive losses.
+enabled = true
+
+# Number of consecutive losing trades to trigger the breaker.
+consecutive_loss_limit = 5
+
+# Duration the breaker stays open before allowing new trades.
+open_duration = "5m"
+
+# ── Alert Engine ─────────────────────────────────────────────────────
+
+[alerts]
+# Maximum number of active alert rules.
+max_rules = 50
+
+# How often the alert engine evaluates rules.
+evaluation_interval = "1s"
+
+# ── Strategy / Python Sidecar ────────────────────────────────────────
+
+[strategy]
+# Path to the Python interpreter (must be ≥ 3.11).
+python_path = "python3"
+
+# Directory containing user strategy scripts.
+strategies_dir = "strategies"
+
+# Unix domain socket (or named pipe on Windows) for IPC.
+ipc_socket = "/tmp/apex_strategy.sock"
+
+# Maximum number of concurrent strategy subprocesses.
+max_concurrent = 4
+
+# Maximum restarts before marking a strategy as FAILED.
+max_restarts = 3
+
+# Strategy execution deadline warning threshold.
+# A warning is emitted if on_bar / on_tick exceeds this duration.
+latency_warn_threshold = "1ms"
+
+# ── ML Workbench ─────────────────────────────────────────────────────
+
+[ml]
+# Directory for trained model artefacts (joblib + metadata JSON).
+models_dir = "models"
+
+# Default number of time-series cross-validation splits.
+default_cv_splits = 5
+
+# Lag periods automatically added as features during training.
+default_lag_periods = [1, 5, 10]
+
+# ── Storage ──────────────────────────────────────────────────────────
+
+[storage]
+# SQLite database path (relative to data_dir).
+sqlite_path = "apex.db"
+
+# Enable WAL mode for better concurrent read performance.
+wal_mode = true
+
+# Maximum number of database connections in the pool.
+pool_size = 4
+
+# ── Graph Engine ─────────────────────────────────────────────────────
+
+[graph]
+# Enable the strategy-symbol relationship graph.
+enabled = true
+
+# Maximum number of nodes tracked in the graph.
+max_nodes = 500
+
+# Edge weight decay factor applied each tick (0.0–1.0).
+weight_decay = 0.99
+
+# ── UI / Tauri ───────────────────────────────────────────────────────
+
+[ui]
+# Default window dimensions.
+default_width = 1920
+default_height = 1080
+
+# Minimum window dimensions.
+min_width = 1440
+min_height = 900
+
+# Enable hardware-accelerated rendering (disable on older GPUs).
+gpu_acceleration = true
+
+# Theme: "dark" (only dark is supported currently).
+theme = "dark"
+
+# Command bar activation key.
+command_key = "Space"

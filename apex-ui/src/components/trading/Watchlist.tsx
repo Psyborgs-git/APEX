@@ -3,12 +3,21 @@ import { useMarketStore } from '../../stores/marketStore';
 import { PnlValue } from '../common/PnlValue';
 import { formatPrice, formatVolume } from '../../lib/format';
 
-const WatchlistRow: React.FC<{ symbol: string }> = React.memo(({ symbol }) => {
+interface WatchlistRowProps {
+  symbol: string;
+  selected: boolean;
+  onSelect: (symbol: string) => void;
+}
+
+const WatchlistRow: React.FC<WatchlistRowProps> = React.memo(({ symbol, selected, onSelect }) => {
   const quote = useMarketStore((s) => s.quotes.get(symbol));
 
   if (!quote) {
     return (
-      <tr className="border-b border-[var(--border-color)]">
+      <tr
+        className={`border-b border-[var(--border-color)] cursor-pointer hover:bg-surface-2 transition-colors duration-100 ${selected ? 'bg-surface-2' : ''}`}
+        onClick={() => onSelect(symbol)}
+      >
         <td className="px-3 py-1.5 font-mono text-sm font-medium">{symbol}</td>
         <td className="px-3 py-1.5 text-text-muted font-mono text-sm" colSpan={3}>—</td>
       </tr>
@@ -16,7 +25,10 @@ const WatchlistRow: React.FC<{ symbol: string }> = React.memo(({ symbol }) => {
   }
 
   return (
-    <tr className="border-b border-[var(--border-color)] hover:bg-surface-2 cursor-pointer transition-colors duration-100">
+    <tr
+      className={`border-b border-[var(--border-color)] hover:bg-surface-2 cursor-pointer transition-colors duration-100 ${selected ? 'bg-surface-2' : ''}`}
+      onClick={() => onSelect(symbol)}
+    >
       <td className="px-3 py-1.5 font-mono text-sm font-medium">{symbol}</td>
       <td className="px-3 py-1.5 font-mono text-sm text-right" data-numeric>{formatPrice(quote.last)}</td>
       <td className="px-3 py-1.5 text-right">
@@ -31,7 +43,12 @@ const WatchlistRow: React.FC<{ symbol: string }> = React.memo(({ symbol }) => {
 
 WatchlistRow.displayName = 'WatchlistRow';
 
-export const Watchlist: React.FC = () => {
+interface WatchlistProps {
+  onSelectSymbol?: (symbol: string) => void;
+  selectedSymbol?: string;
+}
+
+export const Watchlist: React.FC<WatchlistProps> = ({ onSelectSymbol, selectedSymbol }) => {
   const watchlist = useMarketStore((s) => s.watchlist);
 
   return (
@@ -52,7 +69,12 @@ export const Watchlist: React.FC = () => {
           </thead>
           <tbody>
             {watchlist.map((symbol) => (
-              <WatchlistRow key={symbol} symbol={symbol} />
+              <WatchlistRow
+                key={symbol}
+                symbol={symbol}
+                selected={symbol === selectedSymbol}
+                onSelect={onSelectSymbol ?? (() => {})}
+              />
             ))}
           </tbody>
         </table>

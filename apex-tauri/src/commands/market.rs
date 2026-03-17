@@ -1,9 +1,11 @@
 use crate::dto::QuoteDto;
 use crate::state::AppState;
 use apex_core::domain::models::Symbol;
+use tauri::State;
 
 /// Get a quote for a symbol from the cache.
-pub async fn get_quote(symbol: String, state: &AppState) -> Result<QuoteDto, String> {
+#[tauri::command]
+pub async fn get_quote(symbol: String, state: State<'_, AppState>) -> Result<QuoteDto, String> {
     state
         .aggregator
         .get_cached_quote(&symbol)
@@ -12,7 +14,11 @@ pub async fn get_quote(symbol: String, state: &AppState) -> Result<QuoteDto, Str
 }
 
 /// Subscribe to real-time market data for symbols.
-pub async fn subscribe_symbols(symbols: Vec<String>, state: &AppState) -> Result<(), String> {
+#[tauri::command]
+pub async fn subscribe_symbols(
+    symbols: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
     let syms: Vec<Symbol> = symbols.into_iter().map(Symbol).collect();
     state
         .aggregator

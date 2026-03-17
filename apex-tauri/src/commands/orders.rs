@@ -1,9 +1,14 @@
 use crate::dto::{NewOrderRequestDto, OrderDto, PositionDto};
 use crate::state::AppState;
 use apex_core::domain::models::*;
+use tauri::State;
 
 /// Place a new order.
-pub async fn place_order(request: NewOrderRequestDto, state: &AppState) -> Result<String, String> {
+#[tauri::command]
+pub async fn place_order(
+    request: NewOrderRequestDto,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
     let side = match request.side.to_lowercase().as_str() {
         "buy" => OrderSide::Buy,
         "sell" => OrderSide::Sell,
@@ -38,10 +43,11 @@ pub async fn place_order(request: NewOrderRequestDto, state: &AppState) -> Resul
 }
 
 /// Cancel an order.
+#[tauri::command]
 pub async fn cancel_order(
     order_id: String,
     broker_id: String,
-    state: &AppState,
+    state: State<'_, AppState>,
 ) -> Result<(), String> {
     state
         .otm
@@ -51,7 +57,8 @@ pub async fn cancel_order(
 }
 
 /// Get all positions.
-pub async fn get_positions(state: &AppState) -> Result<Vec<PositionDto>, String> {
+#[tauri::command]
+pub async fn get_positions(state: State<'_, AppState>) -> Result<Vec<PositionDto>, String> {
     Ok(state
         .otm
         .get_positions()
@@ -61,7 +68,8 @@ pub async fn get_positions(state: &AppState) -> Result<Vec<PositionDto>, String>
 }
 
 /// Get all open orders.
-pub async fn get_open_orders(state: &AppState) -> Result<Vec<OrderDto>, String> {
+#[tauri::command]
+pub async fn get_open_orders(state: State<'_, AppState>) -> Result<Vec<OrderDto>, String> {
     Ok(state
         .otm
         .open_orders()

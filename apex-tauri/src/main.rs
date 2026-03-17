@@ -2,10 +2,11 @@ mod commands;
 mod dto;
 mod state;
 
+use commands::{alerts, market, orders, risk};
+use tauri::Manager;
 use tracing_subscriber::{fmt, EnvFilter};
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() {
     fmt()
         .with_env_filter(
             EnvFilter::from_default_env()
@@ -16,23 +17,33 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!("APEX Terminal starting...");
 
-    let app_state = state::AppState::init().await?;
+    tauri::Builder::default()
+        .setup(|app| {
+            let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
+            let app_state = rt.block_on(async { state::AppState::init().await })?;
 
-    tracing::info!("App state initialized successfully");
-    tracing::info!(
-        "Risk engine: max_daily_loss = {}, halted = {}",
-        app_state.risk.config().max_daily_loss,
-        app_state.risk.is_halted()
-    );
+            tracing::info!("App state initialized successfully");
+            tracing::info!(
+                "Risk engine: max_daily_loss = {}, halted = {}",
+                app_state.risk.config().max_daily_loss,
+                app_state.risk.is_halted()
+            );
 
-    // In production, this would launch the Tauri window:
-    // tauri::Builder::default()
-    //     .manage(app_state)
-    //     .invoke_handler(tauri::generate_handler![...])
-    //     .run(tauri::generate_context!())
-    //     .expect("error while running tauri application");
-
-    tracing::info!("APEX Terminal ready. (Tauri UI will be enabled when tauri crate is added)");
-
-    Ok(())
+            app.manage(app_state);
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            market::get_quote,
+            market::subscribe_symbols,
+            orders::place_order,
+            orders::cancel_order,
+            orders::get_positions,
+            orders::get_open_orders,
+            alerts::add_alert,
+            alerts::remove_alert,
+            risk::get_risk_status,
+            risk::reset_halt,
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running APEX Terminal");
 }

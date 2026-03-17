@@ -1,8 +1,10 @@
 use crate::dto::RiskStatusDto;
 use crate::state::AppState;
+use tauri::State;
 
 /// Get current risk status.
-pub async fn get_risk_status(state: &AppState) -> Result<RiskStatusDto, String> {
+#[tauri::command]
+pub async fn get_risk_status(state: State<'_, AppState>) -> Result<RiskStatusDto, String> {
     Ok(RiskStatusDto {
         session_pnl: state.risk.session_pnl(),
         is_halted: state.risk.is_halted(),
@@ -11,7 +13,8 @@ pub async fn get_risk_status(state: &AppState) -> Result<RiskStatusDto, String> 
 }
 
 /// Reset the trading halt (explicit UI action only).
-pub async fn reset_halt(state: &AppState) -> Result<(), String> {
+#[tauri::command]
+pub async fn reset_halt(state: State<'_, AppState>) -> Result<(), String> {
     state.risk.reset_halt();
     Ok(())
 }

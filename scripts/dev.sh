@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ──────────────────────────────────────────────────────────────────────
 # APEX Terminal — Development Environment Launcher
-# Starts all services needed for local development.
-# Usage:  ./scripts/dev.sh [--skip-db] [--release]
+# Starts Vite dev server and the Tauri desktop window.
+# Usage:  ./scripts/dev.sh [--skip-db] [--web-only]
 # ──────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -10,28 +10,19 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 SKIP_DB=false
-CARGO_PROFILE="dev"
+WEB_ONLY=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --skip-db)
-            SKIP_DB=true
-            shift
-            ;;
-        --release)
-            CARGO_PROFILE="release"
-            shift
-            ;;
+        --skip-db)  SKIP_DB=true;  shift ;;
+        --web-only) WEB_ONLY=true; shift ;;
         -h|--help)
-            echo "Usage: $0 [--skip-db] [--release]"
+            echo "Usage: $0 [--skip-db] [--web-only]"
             echo "  --skip-db   Skip database setup"
-            echo "  --release   Build Rust backend in release mode"
-            exit 0
-            ;;
+            echo "  --web-only  Only start Vite (no Tauri window)"
+            exit 0 ;;
         *)
-            echo "Unknown option: $1" >&2
-            exit 1
-            ;;
+            echo "Unknown option: $1" >&2; exit 1 ;;
     esac
 done
 
@@ -85,29 +76,27 @@ else
     npm install
 fi
 echo "✓ Frontend dependencies installed."
+echo ""
 
-# ── Trap for cleanup ─────────────────────────────────────────────────
+# ── Cleanup trap ─────────────────────────────────────────────────────
 
-PIDS=()
+VITE_PID=""
 
 cleanup() {
     echo ""
     echo "Shutting down APEX dev services..."
-    for pid in "${PIDS[@]}"; do
-        if kill -0 "$pid" 2>/dev/null; then
-            kill "$pid" 2>/dev/null || true
-        fi
-    done
+    if [[ -n "${VITE_PID}" ]] && kill -0 "${VITE_PID}" 2>/dev/null; then
+        kill "${VITE_PID}" 2>/dev/null || true
+    fi
     wait 2>/dev/null || true
-    echo "✓ All services stopped."
+    echo "✓ Done."
 }
 
 trap cleanup EXIT INT TERM
 
-# ── Start Vite dev server ────────────────────────────────────────────
+# ── Start Vite dev server ─────────────────────────────────────────────
 
-echo ""
-echo "Starting Vite dev server (apex-ui)..."
+echo "Starting Vite dev server on http://localhost:3000 ..."
 cd "${ROOT_DIR}/apex-ui"
 
 if command -v pnpm &>/dev/null; then
@@ -115,31 +104,43 @@ if command -v pnpm &>/dev/null; then
 else
     npm run dev &
 fi
-PIDS+=($!)
-echo "  → Vite PID: ${PIDS[-1]}"
+VITE_PID=$!
+echo "  → Vite PID: ${VITE_PID}"
 
-# ── Build & run Rust backend ─────────────────────────────────────────
+# Wait until port 3000 is accepting connections (max 30s)
+echo "  → Waiting for frontend to be ready..."
+for i in $(seq 1 30); do
+    if curl -s http://localhost:3000 >/dev/null 2>&1; then
+        echo "  ✓ Frontend is ready."
+        break
+    fi
+    sleep 1
+done
 
-echo ""
-echo "Building Rust backend (${CARGO_PROFILE} mode)..."
-cd "${ROOT_DIR}"
+# ── Launch Tauri desktop app ──────────────────────────────────────────
 
-if [[ "${CARGO_PROFILE}" == "release" ]]; then
-    cargo build --release 2>&1 | tail -5 &
+if [[ "${WEB_ONLY}" == false ]]; then
+    echo ""
+    echo "Launching APEX Terminal (Tauri)..."
+    echo "  → Opening desktop window loading from http://localhost:3000"
+    echo ""
+    echo "═══════════════════════════════════════"
+    echo "  APEX Terminal is launching!"
+    echo "  Web UI  : http://localhost:3000"
+    echo "  Press Ctrl+C to stop everything."
+    echo "═══════════════════════════════════════"
+    echo ""
+
+    cd "${ROOT_DIR}"
+    cargo run --bin apex-tauri
 else
-    cargo build 2>&1 | tail -5 &
+    echo ""
+    echo "═══════════════════════════════════════"
+    echo "  APEX web UI running (browser only)"
+    echo "  Open  : http://localhost:3000"
+    echo "  Press Ctrl+C to stop."
+    echo "═══════════════════════════════════════"
+    echo ""
+    # Keep alive
+    wait "${VITE_PID}"
 fi
-PIDS+=($!)
-echo "  → Cargo PID: ${PIDS[-1]}"
-
-# ── Wait ─────────────────────────────────────────────────────────────
-
-echo ""
-echo "═══════════════════════════════════════"
-echo "  APEX dev environment is starting..."
-echo "  Frontend : http://localhost:3000"
-echo "  Press Ctrl+C to stop all services."
-echo "═══════════════════════════════════════"
-echo ""
-
-wait

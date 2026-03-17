@@ -76,8 +76,8 @@ Strategy scripts are not plugins — they are first-class runtime entities with 
 ## 3. Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                            APEX TERMINAL (Local Process)                        │
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│                            APEX TERMINAL (Local Process)                         │
 │                                                                                  │
 │  ┌────────────────────────────────────────────────────────────────────────────┐  │
 │  │                         UI Layer (Tauri + React)                           │  │
@@ -87,42 +87,42 @@ Strategy scripts are not plugins — they are first-class runtime entities with 
 │                                     │ IPC (Tauri Commands / Events)              │
 │  ┌──────────────────────────────────▼─────────────────────────────────────────┐  │
 │  │                      Application Core (Rust)                               │  │
-│  │                                                                             │  │
-│  │   ┌─────────────────┐  ┌───────────────┐  ┌──────────────────────────┐    │  │
-│  │   │  Market Data    │  │  Order/Trade  │  │   Strategy Engine        │    │  │
-│  │   │  Aggregator     │  │  Manager      │  │   (Script Orchestrator)  │    │  │
-│  │   └────────┬────────┘  └───────┬───────┘  └────────────┬─────────────┘    │  │
-│  │            │                   │                        │                   │  │
-│  │   ┌────────▼───────────────────▼────────────────────────▼──────────────┐  │  │
-│  │   │               Internal Message Bus (Tokio MPSC / crossbeam)        │  │  │
-│  │   │               Lock-free SPSC queues on hot path                    │  │  │
-│  │   └────────────────────────────────────────────────────────────────────┘  │  │
-│  │                                                                             │  │
+│  │                                                                            │  │
+│  │   ┌─────────────────┐  ┌───────────────┐  ┌──────────────────────────┐     │  │
+│  │   │  Market Data    │  │  Order/Trade  │  │   Strategy Engine        │     │  │
+│  │   │  Aggregator     │  │  Manager      │  │   (Script Orchestrator)  │     │  │
+│  │   └────────┬────────┘  └───────┬───────┘  └────────────┬─────────────┘     │  │
+│  │            │                   │                       │                   │  │
+│  │   ┌────────▼───────────────────▼────────────────────────▼──────────────┐   │  │
+│  │   │               Internal Message Bus (Tokio MPSC / crossbeam)        │   │  │
+│  │   │               Lock-free SPSC queues on hot path                    │   │  │
+│  │   └────────────────────────────────────────────────────────────────────┘   │  │
+│  │                                                                            │  │
 │  │   ┌─────────────────────────────────────────────────────────────────────┐  │  │
 │  │   │                   Port Interfaces (Rust Traits)                     │  │  │
 │  │   │  MarketDataPort | ExecutionPort | NewsPort | StoragePort            │  │  │
 │  │   └─────────────────────────────────────────────────────────────────────┘  │  │
 │  └──────────────────────────────────┬─────────────────────────────────────────┘  │
-│                                     │                                             │
+│                                     │                                            │
 │  ┌──────────────────────────────────▼─────────────────────────────────────────┐  │
 │  │                       Adapter Layer                                        │  │
-│  │                                                                             │  │
+│  │                                                                            │  │
 │  │  [Zerodha Kite] [Interactive Brokers] [Alpaca] [Binance] [Yahoo Finance]   │  │
 │  │  [NSE Feed]     [Reuters/Refinitiv]   [Alpha Vantage] [Custom WS Feed]     │  │
 │  └──────────────────────────────────┬─────────────────────────────────────────┘  │
-│                                     │                                             │
+│                                     │                                            │
 │  ┌──────────────────────────────────▼─────────────────────────────────────────┐  │
 │  │                      Storage Layer                                         │  │
-│  │                                                                             │  │
-│  │  [TimescaleDB — tick/OHLCV]  [Redis — hot state]  [DuckDB — analytics]    │  │
+│  │                                                                            │  │
+│  │  [TimescaleDB — tick/OHLCV]  [Redis — hot state]  [DuckDB — analytics]     │  │
 │  │  [SQLite — config/trades]    [Local filesystem — models/scripts/logs]      │  │
 │  └────────────────────────────────────────────────────────────────────────────┘  │
 │                                                                                  │
 │  ┌────────────────────────────────────────────────────────────────────────────┐  │
 │  │              Python Sidecar (ML & Strategy Runtime)                        │  │
-│  │  [scikit-learn] [PyTorch] [TA-Lib] [Backtrader] [Custom Script Sandbox]   │  │
+│  │  [scikit-learn] [PyTorch] [TA-Lib] [Backtrader] [Custom Script Sandbox]    │  │
 │  └────────────────────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 The system is structured into five distinct horizontal layers, each communicating only via well-defined interfaces:
