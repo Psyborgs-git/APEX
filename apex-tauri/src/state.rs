@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use std::sync::Arc;
 
 use apex_adapters::storage::sqlite_storage::SqliteStorage;
@@ -26,7 +27,12 @@ impl AppState {
         storage.init_schema().await?;
 
         let risk = Arc::new(RiskEngine::new(RiskConfig::default()));
-        let aggregator = Arc::new(MarketDataAggregator::new(bus.clone()));
+
+        let mut aggregator_inner = MarketDataAggregator::new(bus.clone());
+        let yahoo_adapter = apex_adapters::market_data::yahoo_finance::YahooFinanceAdapter::new();
+        aggregator_inner.add_adapter(Box::new(yahoo_adapter));
+        let aggregator = Arc::new(aggregator_inner);
+
         let otm = Arc::new(OrderTradeManager::new(risk.clone(), bus.clone()));
         let alerts = Arc::new(AlertEngine::new(bus.clone()));
 

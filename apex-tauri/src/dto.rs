@@ -46,6 +46,7 @@ impl From<&models::Quote> for QuoteDto {
 
 /// OHLCV DTO for frontend.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct OHLCVDto {
     pub time: String,
     pub open: f64,
@@ -136,6 +137,7 @@ impl From<&models::Position> for PositionDto {
 
 /// News item DTO for frontend.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct NewsItemDto {
     pub id: String,
     pub headline: String,
@@ -164,6 +166,7 @@ impl From<&models::NewsItem> for NewsItemDto {
 
 /// Alert DTO for frontend.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct AlertDto {
     pub rule_id: String,
     pub message: String,
@@ -185,6 +188,7 @@ pub struct NewOrderRequestDto {
 
 /// Account balance DTO for frontend.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct AccountBalanceDto {
     pub total_value: f64,
     pub cash: f64,

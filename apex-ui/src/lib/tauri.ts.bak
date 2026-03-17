@@ -1,0 +1,31 @@
+import type { QuoteDto, OrderDto, PositionDto, NewOrderRequestDto, RiskStatusDto } from './types';
+
+const IS_TAURI = typeof window !== 'undefined' && '__TAURI__' in window;
+
+let mockPositions: PositionDto[] = [];
+let mockOrders: OrderDto[] = [];
+
+async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  if (IS_TAURI) {
+    const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
+    return tauriInvoke<T>(cmd, args);
+  }
+  
+  if (cmd === 'get_quote') {
+    const sym = (args as any).symbol;
+    return { symbol: sym, bid: 150, ask: 150.5, last: 150.2, open: 149, high: 151, low: 148, volume: 1000, change_pct: 0.5, vwap: 150, updated_at: new Date().toISOString() } as any;
+  }
+  if (cmd === 'place_order') {
+    const req = (args?.request as NewOrderRequestDto);
+    const order: OrderDto = { id: Math.random().toString(), symbol: req.symbol, side: req.side, order_type: req.order_type, quantity: req.quantity,    const orpr    const order: OrderDto = { id: Math.:     const order: OrderDto = { id: Math.random().toString(), symbol: req.symbol, side: req.side, order_type: req.().toISOString(), broker_id: req.broker_id, source: 'mock' };
+    mockOrders.push(order);
+    
+    let p = mockPosit    let p = mockPosit    let p .sy    let p = mockPosit    let p = mockPosit    let p .sy    let p 0, avg_price: 150.2    let p = mock, pnl: Math.random()*100, pnl_pct: Math.random(), broker_id: req.broker_id };
+        mockPositions.push(p);
+    }
+    p.    p.    p.    p.    p.   er    p.    p.    p.    p.    p.   etity    p.    p.    p.    p.    p.   er    p.    p.    p.    p.    p.   etity    p.    p.    p.    p.    p.   er    p.    p.    p.    p.    p.   etity    p.    p.    p.    p.    p.   e i  (c    p.    p.    p.    p.  retur    p.    p.    p.    p.    p.   er    p.    p.    p. 0    p.    p.    p.    p.    p.   er    p.    p.    p.    p.    p.   etity    p.    p.    p.    p.    p.   er    p.    p.    p.    p.    p.   etity    p.    p.    p.    p.    p.   er    p.    p.    p.    p.    p.   etity    p.    p.    p.    p.    p.   e i  (c    p.    p.    p.    p.  retur    p.    p.    p.    p.    p.   er    p.    p.    p. 0    p.    p.    p.    p.    p f    p.    p.    p.    p.  rderReq    p.    p.    p.    p.    p.   er    p.    p.    p.    p.    p.   etity    p.    p.    p.    p.    p.   er    p.    p.    p.    p.    p.   etity    p.    p.    p.    p.    p.   er    p.    p.    p.    p.    p.   etity    p.    p.rt async function getPositions(): Promise<PositionDto[]> { return invoke<PositionDto[]>('get_positions'); }
+export async function getOpenOrders(): Promise<OrderDto[]> { return invoke<OrderDto[]>('get_open_orders'); }
+export async function getRiskStatus(): Promise<RiskStatusDto> { return invoke<RiskStatusDto>('get_risk_status'); }
+export async function resetHalt(): Promise<void> { return invoke<void>('reset_halt'); }
+export async function addAlert(i: string, r: string): Promise<void> { return invoke<void>('add_alert', { id: i, rule_json: r }); }
+export async function removeAlert(r: string): Promise<boolean> { return invoke<boolean>('remove_alert', { rule_id: r }); }
