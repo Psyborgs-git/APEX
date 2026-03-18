@@ -274,7 +274,7 @@ impl RedisStateAdapter {
     /// Flush all cached data (use with caution!)
     pub async fn flush_all(&mut self) -> Result<()> {
         redis::cmd("FLUSHDB")
-            .query_async(&mut self.conn)
+            .query_async::<()>(&mut self.conn)
             .await
             .context("Failed to flush Redis database")?;
 
