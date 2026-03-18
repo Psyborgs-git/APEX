@@ -51,13 +51,14 @@ export const OrderEntry: React.FC<OrderEntryProps> = ({ defaultSymbol }) => {
   }, [symbol, side, orderType, quantity, price]);
 
   return (
-    <form onSubmit={handleSubmit} className="p-3 h-full flex flex-col gap-2">
+    <form onSubmit={handleSubmit} className="p-3 h-full flex flex-col gap-2" data-testid="order-entry-panel">
       <div className="flex items-center justify-between">
         <span className="text-sm font-medium text-text-secondary">Order Entry</span>
         <div className="flex gap-1">
           <button
             type="button"
             onClick={() => setSide('BUY')}
+            data-testid="order-side-buy"
             className={`px-3 py-1 text-xs font-mono rounded ${
               side === 'BUY' ? 'bg-bull text-black font-bold' : 'bg-surface-2 text-text-muted'
             }`}
@@ -67,6 +68,7 @@ export const OrderEntry: React.FC<OrderEntryProps> = ({ defaultSymbol }) => {
           <button
             type="button"
             onClick={() => setSide('SELL')}
+            data-testid="order-side-sell"
             className={`px-3 py-1 text-xs font-mono rounded ${
               side === 'SELL' ? 'bg-bear text-white font-bold' : 'bg-surface-2 text-text-muted'
             }`}
@@ -82,12 +84,14 @@ export const OrderEntry: React.FC<OrderEntryProps> = ({ defaultSymbol }) => {
           value={symbol}
           onChange={(e) => setSymbol(e.target.value.toUpperCase())}
           placeholder="Symbol"
+          data-testid="order-symbol-input"
           className="col-span-2 bg-surface-2 text-text-primary font-mono text-sm px-2 py-1 rounded border border-[var(--border-color)] focus:border-accent focus:outline-none"
           tabIndex={1}
         />
         <select
           value={orderType}
           onChange={(e) => setOrderType(e.target.value)}
+          data-testid="order-type-select"
           className="bg-surface-2 text-text-primary font-mono text-sm px-2 py-1 rounded border border-[var(--border-color)] focus:border-accent focus:outline-none"
           tabIndex={2}
         >
@@ -101,6 +105,7 @@ export const OrderEntry: React.FC<OrderEntryProps> = ({ defaultSymbol }) => {
           value={quantity}
           onChange={(e) => setQuantity(e.target.value)}
           placeholder="Qty"
+          data-testid="order-quantity-input"
           className="bg-surface-2 text-text-primary font-mono text-sm px-2 py-1 rounded border border-[var(--border-color)] focus:border-accent focus:outline-none"
           tabIndex={3}
           step="1"
@@ -115,6 +120,7 @@ export const OrderEntry: React.FC<OrderEntryProps> = ({ defaultSymbol }) => {
             value={price}
             onChange={(e) => setPrice(e.target.value)}
             placeholder="Price"
+            data-testid="order-price-input"
             className="bg-surface-2 text-text-primary font-mono text-sm px-2 py-1 rounded border border-[var(--border-color)] focus:border-accent focus:outline-none"
             tabIndex={4}
             step="0.05"
@@ -126,15 +132,16 @@ export const OrderEntry: React.FC<OrderEntryProps> = ({ defaultSymbol }) => {
       )}
 
       {status.type === 'success' && (
-        <div className="text-xs text-bull font-mono">{status.message}</div>
+        <div className="text-xs text-bull font-mono" data-testid="order-confirmation">{status.message}</div>
       )}
       {status.type === 'error' && (
-        <div className="text-xs text-bear font-mono">{status.message}</div>
+        <div className="text-xs text-bear font-mono" data-testid="order-error-message">{status.message}</div>
       )}
 
       <button
         type="submit"
         disabled={status.type === 'submitting' || !symbol || !quantity}
+        data-testid="order-submit-button"
         className={`mt-auto py-2 rounded font-mono text-sm font-bold ${
           side === 'BUY'
             ? 'bg-bull text-black hover:brightness-110'

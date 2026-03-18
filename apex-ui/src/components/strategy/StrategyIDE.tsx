@@ -88,6 +88,7 @@ const StrategyIDEInner: React.FC<StrategyIDEProps> = ({
   const [activeFileIndex, setActiveFileIndex] = useState(0);
   const [runState, setRunState] = useState<RunState>('idle');
   const [output, setOutput] = useState<string[]>([]);
+  const [saveConfirm, setSaveConfirm] = useState(false);
   const editorRef = useRef<EditorInstance | null>(null);
   const outputRef = useRef<HTMLDivElement>(null);
 
@@ -148,16 +149,27 @@ const StrategyIDEInner: React.FC<StrategyIDEProps> = ({
     onRestart?.();
   }, [onRestart, appendOutput]);
 
+  const [newFileName, setNewFileName] = useState('');
+  const [showNewFileInput, setShowNewFileInput] = useState(false);
+
   const handleNewFile = useCallback(() => {
-    const name = `strategy_${files.length + 1}.py`;
-    const newFile: StrategyFile = {
-      name,
-      path: `strategies/${name}`,
-      content: DEFAULT_TEMPLATE,
-    };
-    setFiles((prev) => [...prev, newFile]);
-    setActiveFileIndex(files.length);
-  }, [files.length]);
+    if (showNewFileInput) {
+      // Create the file with the given name
+      const name = newFileName || `strategy_${files.length + 1}.py`;
+      const finalName = name.endsWith('.py') ? name : `${name}.py`;
+      const newFile: StrategyFile = {
+        name: finalName,
+        path: `strategies/${finalName}`,
+        content: DEFAULT_TEMPLATE,
+      };
+      setFiles((prev) => [...prev, newFile]);
+      setActiveFileIndex(files.length);
+      setNewFileName('');
+      setShowNewFileInput(false);
+    } else {
+      setShowNewFileInput(true);
+    }
+  }, [files.length, showNewFileInput, newFileName]);
 
   // Auto-scroll output
   useEffect(() => {
@@ -167,13 +179,13 @@ const StrategyIDEInner: React.FC<StrategyIDEProps> = ({
   }, [output]);
 
   return (
-    <div className="flex flex-col h-full bg-surface-0">
+    <div className="flex flex-col h-full bg-surface-0" data-testid="strategy-ide">
       {/* Toolbar */}
       <div className="px-3 py-1.5 border-b border-[var(--border-color)] flex items-center justify-between bg-surface-1">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-text-secondary">Strategy IDE</span>
           <div className="flex items-center gap-1 ml-2">
-            <span className={`w-2 h-2 rounded-full ${STATE_COLORS[runState]}`} />
+            <span className={`w-2 h-2 rounded-full ${STATE_COLORS[runState]}`} data-testid="pipeline-status" data-status={runState} />
             <span className="text-xs text-text-muted font-mono">{STATE_LABELS[runState]}</span>
           </div>
         </div>
@@ -182,6 +194,7 @@ const StrategyIDEInner: React.FC<StrategyIDEProps> = ({
             type="button"
             onClick={handleRun}
             disabled={runState === 'running'}
+            data-testid="execute-strategy"
             className="px-3 py-1 text-xs font-mono rounded bg-bull/20 text-bull hover:bg-bull/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             ▶ Run
@@ -202,8 +215,27 @@ const StrategyIDEInner: React.FC<StrategyIDEProps> = ({
           >
             ↻ Restart
           </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (activeFile) {
+                const content = editorRef.current?.getValue() ?? activeFile.content;
+                onSave?.({ ...activeFile, content });
+                setSaveConfirm(true);
+                setTimeout(() => setSaveConfirm(false), 2000);
+              }
+            }}
+            data-testid="save-strategy"
+            className="px-3 py-1 text-xs font-mono rounded bg-surface-2 text-text-secondary hover:text-text-primary transition-colors"
+          >
+            💾 Save
+          </button>
         </div>
       </div>
+
+      {saveConfirm && (
+        <div className="px-3 py-1 text-xs text-bull bg-bull/10" data-testid="save-confirmation">File saved</div>
+      )}
 
       <div className="flex flex-1 min-h-0">
         {/* File browser sidebar */}
@@ -212,20 +244,44 @@ const StrategyIDEInner: React.FC<StrategyIDEProps> = ({
             <span className="text-xs text-text-muted uppercase tracking-wider">Files</span>
             <button
               type="button"
-              onClick={handleNewFile}
+              onClick={() => setShowNewFileInput(true)}
+              data-testid="strategy-new-file"
               className="text-xs text-accent hover:text-text-primary transition-colors"
               title="New file"
             >
               +
             </button>
           </div>
-          <div className="flex-1 overflow-auto py-1">
+          {showNewFileInput && (
+            <div className="px-2 py-1 flex gap-1 border-b border-[var(--border-color)]">
+              <input
+                type="text"
+                value={newFileName}
+                onChange={(e) => setNewFileName(e.target.value)}
+                placeholder="filename.py"
+                data-testid="file-name-input"
+                className="flex-1 bg-surface-2 text-text-primary font-mono text-xs px-1 py-0.5 rounded border border-[var(--border-color)] focus:border-accent focus:outline-none"
+                autoFocus
+                onKeyDown={(e) => { if (e.key === 'Enter') handleNewFile(); }}
+              />
+              <button
+                type="button"
+                onClick={handleNewFile}
+                data-testid="confirm-create-file"
+                className="text-xs text-bull"
+              >
+                ✓
+              </button>
+            </div>
+          )}
+          <div className="flex-1 overflow-auto py-1" data-testid="strategy-file-list">
             {files.map((file, idx) => (
               <button
                 key={file.path}
                 type="button"
                 onClick={() => setActiveFileIndex(idx)}
-                className={`w-full text-left px-2 py-1 text-xs font-mono truncate transition-colors ${
+                data-testid={`file-${file.name}`}
+                className={`w-full text-left px-2 py-1 text-xs font-mono truncate transition-colors strategy-file-item ${
                   idx === activeFileIndex
                     ? 'bg-surface-2 text-text-primary'
                     : 'text-text-secondary hover:bg-surface-2/50'
@@ -285,7 +341,7 @@ const StrategyIDEInner: React.FC<StrategyIDEProps> = ({
           </div>
 
           {/* Monaco Editor */}
-          <div className="flex-1 min-h-0">
+          <div className="flex-1 min-h-0" data-testid="strategy-editor">
             <Editor
               height="100%"
               language="python"
@@ -311,7 +367,7 @@ const StrategyIDEInner: React.FC<StrategyIDEProps> = ({
           </div>
 
           {/* Output panel */}
-          <div className="h-32 border-t border-[var(--border-color)] bg-surface-1 flex flex-col">
+          <div className="h-32 border-t border-[var(--border-color)] bg-surface-1 flex flex-col" data-testid="strategy-output">
             <div className="px-3 py-1 border-b border-[var(--border-color)] flex items-center justify-between">
               <span className="text-xs text-text-muted uppercase tracking-wider">Output</span>
               <button
@@ -331,11 +387,12 @@ const StrategyIDEInner: React.FC<StrategyIDEProps> = ({
                     key={`${i}-${line.slice(0, 20)}`}
                     className={`py-0.5 ${
                       line.includes('Error') || line.includes('error')
-                        ? 'text-bear'
+                        ? 'text-bear strategy-error'
                         : line.includes('▶')
                           ? 'text-bull'
                           : 'text-text-secondary'
                     }`}
+                    data-testid={line.includes('Error') || line.includes('error') ? 'strategy-error' : undefined}
                   >
                     {line}
                   </div>

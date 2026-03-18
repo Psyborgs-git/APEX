@@ -7,7 +7,7 @@ export const PositionsPanel: React.FC = () => {
   const positions = useOrderStore((s) => s.positions);
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full" data-testid="positions-panel">
       <div className="px-3 py-2 border-b border-[var(--border-color)] flex items-center justify-between">
         <span className="text-sm font-medium text-text-secondary">Positions</span>
         <span className="text-xs text-text-muted font-mono">{positions.length} open</span>
@@ -29,8 +29,8 @@ export const PositionsPanel: React.FC = () => {
             </thead>
             <tbody>
               {positions.map((pos) => (
-                <tr key={pos.symbol} className="border-b border-[var(--border-color)] hover:bg-surface-2">
-                  <td className="px-3 py-1.5 font-mono text-sm">
+                <tr key={pos.symbol} className="border-b border-[var(--border-color)] hover:bg-surface-2" data-testid={`position-${pos.symbol}`}>
+                  <td className="px-3 py-1.5 font-mono text-sm" data-testid="position-row">
                     <span className={pos.side === 'Buy' ? 'text-bull' : 'text-bear'}>
                       {pos.side === 'Buy' ? '▲' : '▼'}
                     </span>{' '}
