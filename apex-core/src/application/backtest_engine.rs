@@ -697,7 +697,9 @@ impl WalkForwardEngine {
         let aggregate_metrics = Self::aggregate_metrics(&windows);
 
         // Overfitting ratio = avg train return / avg test return
-        // Higher ratios indicate more overfitting
+        // A ratio near 1.0 indicates no overfitting; significantly above 1.0 indicates
+        // the strategy performs much better in-sample than out-of-sample.
+        // We use absolute values so the ratio is always positive.
         let avg_train_return: f64 = windows
             .iter()
             .map(|w| w.train_metrics.total_return_pct)
@@ -709,7 +711,7 @@ impl WalkForwardEngine {
             .sum::<f64>()
             / windows.len() as f64;
         let overfitting_ratio = if avg_test_return.abs() > 0.001 {
-            avg_train_return / avg_test_return
+            (avg_train_return / avg_test_return).abs()
         } else if avg_train_return.abs() > 0.001 {
             f64::INFINITY
         } else {
@@ -1270,10 +1272,11 @@ mod tests {
         .unwrap();
 
         assert_eq!(result.windows.len(), 2);
-        // Both train and test windows should have some trades
-        for window in &result.windows {
-            assert!(window.train_metrics.total_trades > 0 || window.test_metrics.total_trades >= 0);
-        }
+        // At least one window should have exercised some trading signals
+        let total_trades: u64 = result.windows.iter()
+            .map(|w| w.train_metrics.total_trades + w.test_metrics.total_trades)
+            .sum();
+        assert!(total_trades > 0, "walk-forward should produce at least one trade across all windows");
     }
 
     #[test]

@@ -63,13 +63,13 @@ export const MLWorkbench: React.FC = React.memo(() => {
         feature_columns: selectedFeatures,
         hyperparams: {},
         n_splits: nSplits,
-        lag_periods: lagPeriods.split(',').map(Number).filter(Boolean),
+        lag_periods: lagPeriods.split(',').map(Number).filter((n) => !isNaN(n)),
       };
       const result = await trainMLModel(request);
       addModel({
         model_id: result.model_id,
         algorithm,
-        status: result.status === 'completed' ? 'completed' : 'failed',
+        status: result.status as 'idle' | 'training' | 'completed' | 'failed',
         metrics: result.metrics,
         feature_names: result.feature_names,
         created_at: new Date().toISOString(),
