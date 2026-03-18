@@ -6,3 +6,6 @@ pub mod graph_engine;
 pub mod circuit_breaker;
 pub mod strategy_orchestrator;
 pub mod news_engine;
+pub mod backtest_engine;
+pub mod indicators;
+pub mod scanner;
