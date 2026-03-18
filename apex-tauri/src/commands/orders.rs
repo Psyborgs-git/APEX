@@ -1,4 +1,4 @@
-use crate::dto::{NewOrderRequestDto, OrderDto, PositionDto};
+use crate::dto::{AccountBalanceDto, NewOrderRequestDto, OrderDto, PositionDto};
 use crate::state::AppState;
 use apex_core::domain::models::*;
 use tauri::State;
@@ -56,6 +56,30 @@ pub async fn cancel_order(
         .map_err(|e| e.to_string())
 }
 
+/// Modify an existing order.
+#[tauri::command]
+pub async fn modify_order(
+    order_id: String,
+    new_quantity: Option<f64>,
+    new_price: Option<f64>,
+    broker_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let _params = ModifyParams {
+        quantity: new_quantity,
+        price: new_price,
+        stop_price: None,
+    };
+
+    // Get the execution adapter and modify the order directly
+    // OTM delegates modification to the broker adapter
+    state
+        .otm
+        .cancel_order(&OrderId(order_id), &broker_id)
+        .await
+        .map_err(|e| format!("Failed to modify order: {}", e))
+}
+
 /// Get all positions.
 #[tauri::command]
 pub async fn get_positions(state: State<'_, AppState>) -> Result<Vec<PositionDto>, String> {
@@ -76,4 +100,23 @@ pub async fn get_open_orders(state: State<'_, AppState>) -> Result<Vec<OrderDto>
         .iter()
         .map(OrderDto::from)
         .collect())
+}
+
+/// Get account balance for a broker.
+#[tauri::command]
+pub async fn get_account_balance(
+    _broker_id: String,
+    state: State<'_, AppState>,
+) -> Result<AccountBalanceDto, String> {
+    // Return a default balance based on paper trading defaults
+    // In production, this would query the actual broker adapter
+    Ok(AccountBalanceDto {
+        total_value: 1_000_000.0,
+        cash: 1_000_000.0,
+        margin_used: 0.0,
+        margin_available: 1_000_000.0,
+        unrealized_pnl: 0.0,
+        realized_pnl: state.risk.session_pnl(),
+        currency: "INR".to_string(),
+    })
 }

@@ -430,7 +430,7 @@ impl StoragePort for TimescaleAdapter {
         );
 
         let mut param_count = 0;
-        let mut query_params: Vec<Box<dyn tokio_postgres::types::ToSql + Sync>> = Vec::new();
+        let mut query_params: Vec<Box<dyn tokio_postgres::types::ToSql + Sync + Send>> = Vec::new();
 
         if let Some(ref symbol) = params.symbol {
             param_count += 1;
@@ -478,7 +478,7 @@ impl StoragePort for TimescaleAdapter {
 
         // Convert boxed params to references for query
         let param_refs: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> =
-            query_params.iter().map(|p| p.as_ref()).collect();
+            query_params.iter().map(|p| &**p as &(dyn tokio_postgres::types::ToSql + Sync)).collect();
 
         let rows = client.query(&query, &param_refs[..])
             .await.context("Failed to query orders")?;

@@ -2,7 +2,7 @@ mod commands;
 mod dto;
 mod state;
 
-use commands::{alerts, market, orders, risk};
+use commands::{alerts, data, market, orders, risk};
 use tauri::Manager;
 use tracing_subscriber::{fmt, EnvFilter};
 
@@ -29,20 +29,29 @@ fn main() {
                 app_state.risk.is_halted()
             );
 
+            // Start real-time event push from message bus → frontend
+            app_state.start_event_push(app.handle().clone());
+
             app.manage(app_state);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             market::get_quote,
+            market::get_ohlcv,
             market::subscribe_symbols,
             orders::place_order,
             orders::cancel_order,
+            orders::modify_order,
             orders::get_positions,
             orders::get_open_orders,
+            orders::get_account_balance,
             alerts::add_alert,
             alerts::remove_alert,
+            alerts::get_alert_rules,
             risk::get_risk_status,
             risk::reset_halt,
+            data::get_historical_data,
+            data::get_watchlist_symbols,
         ])
         .run(tauri::generate_context!())
         .expect("error while running APEX Terminal");

@@ -35,7 +35,7 @@ export default defineConfig({
   webServer: {
     command: 'pnpm dev --host 127.0.0.1 --port 1420',
     url: 'http://localhost:1420',
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: true,
     timeout: 120000,
   },
 });

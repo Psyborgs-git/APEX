@@ -16,3 +16,4 @@ chrono = { workspace = true }
 async-trait = { workspace = true }
 dashmap = { workspace = true }
 petgraph = { workspace = true }
+reqwest = { workspace = true }

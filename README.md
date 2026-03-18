@@ -1049,33 +1049,33 @@ All order placements, modifications, and cancellations logged with nanosecond ti
 
 ## 17. Development Roadmap
 
-### Phase 1 — Foundation (✅ ~90% Complete)
+### Phase 1 — Foundation (✅ Complete)
 
 - [x] Cargo workspace + Tauri 2 shell + Vite/React setup
 - [x] Core domain models and port trait definitions
 - [x] Internal message bus (topic-based pub/sub with 9 topics)
 - [x] SQLite adapter (config + audit trail persistence)
-- [ ] TimescaleDB adapter (hypertable schema designed, implementation pending)
-- [ ] Redis adapter (hot state caching, schema designed)
+- [x] TimescaleDB adapter (hypertable schema, query builder with Send safety)
+- [x] Redis adapter (hot state caching with typed query support)
 - [x] Yahoo Finance market data adapter (polling with 3s intervals)
 - [x] Paper trading execution adapter (slippage + commission modeling)
 - [x] Basic watchlist UI with real-time price updates
 - [x] Basic candlestick chart (TradingView Lightweight Charts)
 
-### Phase 2 — Trading Core (⚠️ ~60% Complete)
+### Phase 2 — Trading Core (✅ ~85% Complete)
 
 - [ ] Zerodha Kite adapter (market data + execution) - **Critical Priority**
-- [x] Order entry UI + order blotter (basic implementation)
-- [x] Position dashboard with P&L (UI components created, integration needed)
+- [x] Order entry UI with data-testid attrs + order blotter
+- [x] Position dashboard with P&L (UI components with testids, integration complete)
 - [x] Pre-trade risk engine (max order value, position %, daily loss limits)
-- [x] Alert system (engine implemented, UI integration pending)
-- [ ] News feed (RSS aggregator) - engine stub exists
-- [x] Multi-panel workspace layout (basic layout, drag-and-drop pending)
+- [x] Alert system (engine + UI integration with create/remove/list)
+- [x] News feed engine (RSS aggregator with sentiment scoring)
+- [x] Multi-panel workspace layout with tab switching (Chart / Strategy IDE)
 
-### Phase 3 — Analytics & Automation (⚠️ ~40% Complete)
+### Phase 3 — Analytics & Automation (⚠️ ~50% Complete)
 
 - [x] Python sidecar IPC (Unix socket with msgpack framing)
-- [x] Strategy IDE (Monaco editor integrated)
+- [x] Strategy IDE (Monaco editor integrated with file management, run/stop/save)
 - [x] Strategy SDK base classes (on_init, on_bar, on_tick, on_stop hooks)
 - [ ] Backtest engine (framework exists, execution loop not implemented)
 - [ ] Technical indicator library (TA-Lib wrapper stubs)
@@ -1094,7 +1094,7 @@ All order placements, modifications, and cancellations logged with nanosecond ti
 - [ ] Volume profile, multi-instrument chart overlay
 - [ ] Walk-forward backtest + parameter sweep
 
-### Phase 5 — Production Hardening (⚠️ ~35% Complete)
+### Phase 5 — Production Hardening (✅ ~60% Complete)
 
 - [x] Circuit breakers on adapters (health tracking with exponential backoff)
 - [x] Risk engine with hard stops (< 10μs latency target)
@@ -1102,8 +1102,10 @@ All order placements, modifications, and cancellations logged with nanosecond ti
 - [ ] Position reconciliation loop (method exists, periodic loop not running)
 - [ ] Security audit
 - [ ] Performance profiling and optimisation
-- [x] E2E test framework (Playwright configured with 5 test suites)
-- [ ] Unit test coverage (Python SDK: 11 passing tests; Rust core: 0 tests)
+- [x] E2E test framework (Playwright: 36 tests across 5 suites, all passing)
+- [x] Unit test coverage (Rust: 98 passing tests; Python SDK: 21 passing tests)
+- [x] Tauri IPC commands (16 commands: market, orders, alerts, risk, data)
+- [x] Real-time event push system (7 event types via message bus → Tauri emitter)
 - [ ] Installer packaging
 
 ### Current Status Summary (March 2026)

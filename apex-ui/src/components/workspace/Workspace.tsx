@@ -3,8 +3,11 @@ import { Watchlist } from '../trading/Watchlist';
 import { OrderEntry } from '../trading/OrderEntry';
 import { PositionsPanel } from '../trading/PositionsPanel';
 import { CandleChart } from '../charts/CandleChart';
+import { StrategyIDE } from '../strategy/StrategyIDE';
 import { useMarketStore } from '../../stores/marketStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
+
+type CenterTab = 'chart' | 'strategy';
 
 export const Workspace: React.FC = () => {
   const watchlist = useMarketStore((s) => s.watchlist);
@@ -15,6 +18,7 @@ export const Workspace: React.FC = () => {
   const [layoutName, setLayoutName] = useState('');
   const [saveConfirmation, setSaveConfirmation] = useState(false);
   const [loadConfirmation, setLoadConfirmation] = useState(false);
+  const [centerTab, setCenterTab] = useState<CenterTab>('chart');
 
   const saveLayout = useWorkspaceStore((s) => s.saveLayout);
   const loadLayout = useWorkspaceStore((s) => s.loadLayout);
@@ -185,14 +189,44 @@ export const Workspace: React.FC = () => {
           <Watchlist onSelectSymbol={setSelectedSymbol} selectedSymbol={selectedSymbol} />
         </div>
 
-        {/* Center: Chart + Order Entry */}
+        {/* Center: Tab-switchable Chart/OrderEntry or StrategyIDE */}
         <div className="col-span-6 flex flex-col gap-1">
-          <div className="flex-1 bg-surface-1 rounded-lg border border-[var(--border-color)] overflow-hidden">
-            <CandleChart symbol={selectedSymbol} />
+          {/* Center tab bar */}
+          <div className="flex gap-1 bg-surface-1 rounded-lg border border-[var(--border-color)] px-2 py-1">
+            <button
+              onClick={() => setCenterTab('chart')}
+              data-testid="tab-chart"
+              className={`px-3 py-1 text-xs font-mono rounded transition-colors ${
+                centerTab === 'chart' ? 'bg-accent text-white' : 'bg-surface-2 text-text-muted hover:text-text-primary'
+              }`}
+            >
+              Chart
+            </button>
+            <button
+              onClick={() => setCenterTab('strategy')}
+              data-testid="tab-strategy"
+              className={`px-3 py-1 text-xs font-mono rounded transition-colors ${
+                centerTab === 'strategy' ? 'bg-accent text-white' : 'bg-surface-2 text-text-muted hover:text-text-primary'
+              }`}
+            >
+              Strategy IDE
+            </button>
           </div>
-          <div className="h-48 bg-surface-1 rounded-lg border border-[var(--border-color)]">
-            <OrderEntry defaultSymbol={selectedSymbol} />
-          </div>
+
+          {centerTab === 'chart' ? (
+            <>
+              <div className="flex-1 bg-surface-1 rounded-lg border border-[var(--border-color)] overflow-hidden">
+                <CandleChart symbol={selectedSymbol} />
+              </div>
+              <div className="h-48 bg-surface-1 rounded-lg border border-[var(--border-color)]">
+                <OrderEntry defaultSymbol={selectedSymbol} />
+              </div>
+            </>
+          ) : (
+            <div className="flex-1 bg-surface-1 rounded-lg border border-[var(--border-color)] overflow-hidden">
+              <StrategyIDE />
+            </div>
+          )}
         </div>
 
         {/* Right: Positions & Alerts */}
