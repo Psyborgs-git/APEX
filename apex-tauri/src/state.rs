@@ -4,6 +4,7 @@ use std::sync::Arc;
 use apex_adapters::execution::paper_trading::PaperTradingAdapter;
 use apex_adapters::storage::sqlite_storage::SqliteStorage;
 use apex_core::application::alert_engine::AlertEngine;
+use apex_core::application::circuit_breaker::reconcile_on_startup;
 use apex_core::application::market_data_aggregator::MarketDataAggregator;
 use apex_core::application::order_trade_manager::OrderTradeManager;
 use apex_core::application::risk_engine::{RiskConfig, RiskEngine};
@@ -41,6 +42,32 @@ impl AppState {
         let otm = Arc::new(otm_inner);
 
         let alerts = Arc::new(AlertEngine::new(bus.clone()));
+
+        // Crash recovery — reconcile stale orders and positions on startup
+        let broker_ids = otm.broker_ids();
+        if !broker_ids.is_empty() {
+            match reconcile_on_startup(&otm, &broker_ids).await {
+                Ok(report) => {
+                    tracing::info!(
+                        pending = report.pending_orders,
+                        reconciled = report.brokers_reconciled,
+                        "Crash recovery completed"
+                    );
+                    if !report.errors.is_empty() {
+                        tracing::warn!("Reconciliation errors: {:?}", report.errors);
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Crash recovery failed (non-fatal): {}", e);
+                }
+            }
+        }
+
+        // Start periodic position reconciliation (every 30 seconds)
+        OrderTradeManager::start_reconciliation_loop(
+            otm.clone(),
+            std::time::Duration::from_secs(30),
+        );
 
         Ok(Self {
             aggregator,

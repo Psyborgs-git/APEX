@@ -234,6 +234,35 @@ impl OrderTradeManager {
     pub fn execution_adapter_count(&self) -> usize {
         self.execution.len()
     }
+
+    /// Get the list of registered broker IDs
+    pub fn broker_ids(&self) -> Vec<String> {
+        self.execution.keys().cloned().collect()
+    }
+
+    /// Start a periodic position reconciliation loop.
+    ///
+    /// Every `interval` seconds, reconcile positions with all registered
+    /// brokers. This runs as a background Tokio task and logs any
+    /// discrepancies.
+    pub fn start_reconciliation_loop(
+        otm: Arc<Self>,
+        interval: std::time::Duration,
+    ) {
+        tokio::spawn(async move {
+            info!("Starting position reconciliation loop (interval: {:?})", interval);
+            loop {
+                tokio::time::sleep(interval).await;
+
+                let broker_ids = otm.broker_ids();
+                for broker_id in &broker_ids {
+                    if let Err(e) = otm.reconcile_positions(broker_id).await {
+                        warn!(broker_id = %broker_id, error = %e, "Reconciliation failed");
+                    }
+                }
+            }
+        });
+    }
 }
 
 #[cfg(test)]
