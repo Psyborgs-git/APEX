@@ -4,3 +4,5 @@ pub mod order_trade_manager;
 pub mod alert_engine;
 pub mod graph_engine;
 pub mod circuit_breaker;
+pub mod strategy_orchestrator;
+pub mod news_engine;

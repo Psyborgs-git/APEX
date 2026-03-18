@@ -17,3 +17,7 @@ async-trait = { workspace = true }
 dashmap = { workspace = true }
 reqwest = { workspace = true }
 rusqlite = { version = "0.33", features = ["bundled"] }
+tokio-postgres = { version = "0.7", features = ["with-chrono-0_4", "with-uuid-1"] }
+deadpool-postgres = "0.14"
+redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
+duckdb = { version = "1.1", features = ["bundled"] }
