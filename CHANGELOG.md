@@ -7,7 +7,21 @@ The format is based on "Keep a Changelog" and this project adheres to [Semantic 
 ## [Unreleased]
 
 ### Added
-- **Tauri IPC Commands**: `get_ohlcv`, `get_account_balance`, `modify_order`, `get_alert_rules`, `get_historical_data`, `get_watchlist_symbols` (6 new commands, 16 total)
+- **ML Workbench UI**: Full training dashboard with algorithm selection (Random Forest, Gradient Boosting, Logistic Regression, XGBoost), feature selection chips, CV split configuration, lag period settings, and model registry with metrics display
+- **ML Zustand Store**: Centralized state management for ML models, training status, and error handling
+- **Health Monitor UI**: System health dashboard with adapter status indicators, uptime/memory/subscription metrics, and real-time health polling (5s intervals)
+- **Health Zustand Store**: Centralized state management for system health data
+- **Walk-Forward Backtest Engine**: Rolling train/test window validation with configurable n_windows and train_pct, overfitting ratio calculation, and aggregate test metrics
+- **WalkForwardConfig/WalkForwardResult**: Full configuration and result types for walk-forward analysis
+- **BacktestMetrics Default**: Default implementation for zero-initialized backtest metrics
+- **Tauri IPC Commands**: `list_ml_models`, `train_ml_model`, `delete_ml_model`, `get_system_health` (4 new commands, 20 total)
+- **ML DTOs**: MLModelDto, MLTrainingRequestDto, MLTrainingResultDto for frontend–backend data transfer
+- **Health DTOs**: AdapterHealthDto, SystemHealthDto for health monitoring data transfer
+- **ModelRegistry State**: In-memory ML model registry managed by Tauri for IPC access
+- **Workspace Tabs**: Added ML Workbench and Health Monitor as new center-column tabs alongside Chart and Strategy IDE
+- **Playwright Tests**: 20 new E2E tests — 13 for ML Workbench + 7 for Health Monitor (56 total, all passing)
+- **Rust Tests**: 6 new walk-forward backtest unit tests (164 total, all passing)
+- **Tauri IPC Commands**: `get_ohlcv`, `get_account_balance`, `modify_order`, `get_alert_rules`, `get_historical_data`, `get_watchlist_symbols` (6 prior new commands)
 - **Real-time Event Push**: Message bus → Tauri emitter for 7 event types (quotes, orders, positions, news, alerts, strategy signals, adapter health)
 - **Paper Trading Registration**: Paper trading adapter auto-registered as default execution adapter on startup
 - **Data Command Module**: New `apex-tauri/src/commands/data.rs` for historical data and watchlist queries
