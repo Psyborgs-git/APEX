@@ -1,6 +1,7 @@
 mod commands;
 mod dto;
 mod state;
+mod validation;
 
 use commands::{alerts, data, health, market, ml, orders, risk};
 use tauri::Manager;

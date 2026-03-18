@@ -1,4 +1,5 @@
 use crate::dto::{MLModelDto, MLTrainingRequestDto, MLTrainingResultDto};
+use crate::validation;
 use std::collections::HashMap;
 use std::sync::Mutex;
 use tauri::State;
@@ -34,6 +35,17 @@ pub async fn train_ml_model(
     request: MLTrainingRequestDto,
     state: State<'_, ModelRegistry>,
 ) -> Result<MLTrainingResultDto, String> {
+    // Validate inputs
+    validation::validate_algorithm(&request.algorithm)?;
+    validation::validate_path(&request.data_path)?;
+    validation::validate_string_length(&request.target_column, "target_column")?;
+    for col in &request.feature_columns {
+        validation::validate_string_length(col, "feature_column")?;
+    }
+    if request.n_splits == 0 || request.n_splits > 20 {
+        return Err("n_splits must be between 1 and 20".into());
+    }
+
     let model_id = format!("model_{}", chrono::Utc::now().timestamp_millis());
 
     // In a real implementation this would send a request to the Python sidecar
@@ -72,6 +84,8 @@ pub async fn delete_ml_model(
     model_id: String,
     state: State<'_, ModelRegistry>,
 ) -> Result<bool, String> {
+    validation::validate_string_length(&model_id, "model_id")?;
+
     let mut models = state.models.lock().map_err(|e| e.to_string())?;
     let before = models.len();
     models.retain(|m| m.model_id != model_id);

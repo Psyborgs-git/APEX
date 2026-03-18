@@ -1,5 +1,6 @@
 use crate::dto::{OHLCVDto, QuoteDto};
 use crate::state::AppState;
+use crate::validation;
 use apex_core::domain::models::Symbol;
 use chrono::{DateTime, Utc};
 use tauri::State;
@@ -7,6 +8,8 @@ use tauri::State;
 /// Get a quote for a symbol from the cache.
 #[tauri::command]
 pub async fn get_quote(symbol: String, state: State<'_, AppState>) -> Result<QuoteDto, String> {
+    validation::validate_symbol(&symbol)?;
+
     state
         .aggregator
         .get_cached_quote(&symbol)

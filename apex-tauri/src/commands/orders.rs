@@ -1,5 +1,6 @@
 use crate::dto::{AccountBalanceDto, NewOrderRequestDto, OrderDto, PositionDto};
 use crate::state::AppState;
+use crate::validation;
 use apex_core::domain::models::*;
 use tauri::State;
 
@@ -9,6 +10,16 @@ pub async fn place_order(
     request: NewOrderRequestDto,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
+    // Input validation
+    validation::validate_symbol(&request.symbol)?;
+    validation::validate_quantity(request.quantity)?;
+    validation::validate_price(request.price)?;
+    validation::validate_price(request.stop_price)?;
+    validation::validate_broker_id(&request.broker_id)?;
+    if let Some(ref tag) = request.tag {
+        validation::validate_string_length(tag, "tag")?;
+    }
+
     let side = match request.side.to_lowercase().as_str() {
         "buy" => OrderSide::Buy,
         "sell" => OrderSide::Sell,
@@ -49,6 +60,9 @@ pub async fn cancel_order(
     broker_id: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    validation::validate_string_length(&order_id, "order_id")?;
+    validation::validate_broker_id(&broker_id)?;
+
     state
         .otm
         .cancel_order(&OrderId(order_id), &broker_id)
@@ -65,6 +79,13 @@ pub async fn modify_order(
     broker_id: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    validation::validate_string_length(&order_id, "order_id")?;
+    validation::validate_broker_id(&broker_id)?;
+    if let Some(q) = new_quantity {
+        validation::validate_quantity(q)?;
+    }
+    validation::validate_price(new_price)?;
+
     let _params = ModifyParams {
         quantity: new_quantity,
         price: new_price,
