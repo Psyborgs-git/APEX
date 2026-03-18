@@ -10,6 +10,8 @@ use uuid::Uuid;
 
 use crate::domain::models::*;
 
+use super::sentiment;
+
 /// RSS/News aggregator and sentiment analyzer
 ///
 /// Capabilities:
@@ -178,40 +180,13 @@ impl NewsEngine {
         symbols
     }
 
-    /// Calculate sentiment score using simple keyword matching
-    /// Returns -1.0 (bearish) to +1.0 (bullish)
+    /// Calculate sentiment score using VADER-style lexicon analysis.
+    ///
+    /// Uses a financial-domain sentiment lexicon with intensity weights,
+    /// negation handling, and degree-modifier boosting/dampening.
+    /// Returns -1.0 (bearish) to +1.0 (bullish).
     fn calculate_sentiment(&self, text: &str) -> f32 {
-        let text_lower = text.to_lowercase();
-
-        // Positive keywords
-        let positive_keywords = [
-            "bullish", "gains", "surge", "rally", "profit", "growth",
-            "upgrade", "outperform", "buy", "strong", "positive",
-        ];
-
-        // Negative keywords
-        let negative_keywords = [
-            "bearish", "losses", "crash", "decline", "loss", "downgrade",
-            "sell", "underperform", "weak", "negative", "warning",
-        ];
-
-        let mut score = 0;
-
-        for keyword in &positive_keywords {
-            if text_lower.contains(keyword) {
-                score += 1;
-            }
-        }
-
-        for keyword in &negative_keywords {
-            if text_lower.contains(keyword) {
-                score -= 1;
-            }
-        }
-
-        // Normalize to [-1.0, 1.0]
-        let max_keywords = positive_keywords.len().max(negative_keywords.len()) as f32;
-        (score as f32 / max_keywords).clamp(-1.0, 1.0)
+        sentiment::score(text)
     }
 
     /// Process a news item: extract symbols, calculate sentiment
