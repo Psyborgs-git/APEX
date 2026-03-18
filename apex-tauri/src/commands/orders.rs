@@ -65,7 +65,7 @@ pub async fn modify_order(
     broker_id: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let params = ModifyParams {
+    let _params = ModifyParams {
         quantity: new_quantity,
         price: new_price,
         stop_price: None,
@@ -105,7 +105,7 @@ pub async fn get_open_orders(state: State<'_, AppState>) -> Result<Vec<OrderDto>
 /// Get account balance for a broker.
 #[tauri::command]
 pub async fn get_account_balance(
-    broker_id: String,
+    _broker_id: String,
     state: State<'_, AppState>,
 ) -> Result<AccountBalanceDto, String> {
     // Return a default balance based on paper trading defaults

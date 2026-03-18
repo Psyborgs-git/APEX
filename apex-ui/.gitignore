@@ -3,3 +3,5 @@ playwright-report/
 *.png
 tsconfig.tsbuildinfo
 tests/screenshot.spec.ts
+test-results/
+playwright-report/

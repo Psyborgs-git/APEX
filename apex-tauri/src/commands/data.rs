@@ -1,6 +1,6 @@
 use crate::dto::OHLCVDto;
 use crate::state::AppState;
-use apex_core::domain::models::{OHLCVQuery, Timeframe};
+use apex_core::domain::models::{OHLCVQuery, Symbol, Timeframe};
 use apex_core::ports::storage::StoragePort;
 use chrono::Utc;
 use tauri::State;
