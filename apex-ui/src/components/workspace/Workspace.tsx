@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Watchlist } from '../trading/Watchlist';
 import { OrderEntry } from '../trading/OrderEntry';
 import { PositionsPanel } from '../trading/PositionsPanel';
@@ -25,6 +25,26 @@ export const Workspace: React.FC = () => {
   const saveLayout = useWorkspaceStore((s) => s.saveLayout);
   const loadLayout = useWorkspaceStore((s) => s.loadLayout);
   const layouts = useWorkspaceStore((s) => s.layouts);
+
+  // React to CommandBar dispatches
+  const commandSymbol = useWorkspaceStore((s) => s.commandSymbol);
+  const commandTab = useWorkspaceStore((s) => s.commandTab);
+  const setCommandSymbol = useWorkspaceStore((s) => s.setCommandSymbol);
+  const setCommandTab = useWorkspaceStore((s) => s.setCommandTab);
+
+  useEffect(() => {
+    if (commandSymbol) {
+      setSelectedSymbol(commandSymbol);
+      setCommandSymbol(null);
+    }
+  }, [commandSymbol, setCommandSymbol]);
+
+  useEffect(() => {
+    if (commandTab && ['chart', 'strategy', 'ml', 'health'].includes(commandTab)) {
+      setCenterTab(commandTab as CenterTab);
+      setCommandTab(null);
+    }
+  }, [commandTab, setCommandTab]);
 
   const handleSaveLayout = () => {
     if (layoutName.trim()) {

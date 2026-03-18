@@ -10,10 +10,16 @@ interface WorkspaceLayout {
 interface WorkspaceState {
   layouts: WorkspaceLayout[];
   currentLayout: string | null;
+  /** Symbol requested by CommandBar — Workspace picks this up */
+  commandSymbol: string | null;
+  /** Tab requested by CommandBar — Workspace picks this up */
+  commandTab: string | null;
   saveLayout: (name: string, config: Record<string, unknown>) => void;
   loadLayout: (name: string) => WorkspaceLayout | undefined;
   deleteLayout: (name: string) => void;
   getLayouts: () => WorkspaceLayout[];
+  setCommandSymbol: (symbol: string | null) => void;
+  setCommandTab: (tab: string | null) => void;
 }
 
 export const useWorkspaceStore = create<WorkspaceState>()(
@@ -21,6 +27,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     (set, get) => ({
       layouts: [],
       currentLayout: null,
+      commandSymbol: null,
+      commandTab: null,
 
       saveLayout: (name: string, config: Record<string, unknown>) => {
         set((state) => {
@@ -60,9 +68,16 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       },
 
       getLayouts: () => get().layouts,
+
+      setCommandSymbol: (symbol) => set({ commandSymbol: symbol }),
+      setCommandTab: (tab) => set({ commandTab: tab }),
     }),
     {
       name: 'workspace-storage',
+      partialize: (state) => ({
+        layouts: state.layouts,
+        currentLayout: state.currentLayout,
+      }),
     }
   )
 );
