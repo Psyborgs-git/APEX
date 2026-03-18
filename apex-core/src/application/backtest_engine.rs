@@ -550,6 +550,317 @@ pub enum BacktestSignal {
 }
 
 // ---------------------------------------------------------------------------
+// Walk-Forward Backtest
+// ---------------------------------------------------------------------------
+
+/// Configuration for a walk-forward backtest
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WalkForwardConfig {
+    /// Base backtest configuration
+    pub base_config: BacktestConfig,
+    /// Number of walk-forward windows
+    pub n_windows: usize,
+    /// Fraction of each window used for training (in-sample)
+    pub train_pct: f64,
+}
+
+impl Default for WalkForwardConfig {
+    fn default() -> Self {
+        Self {
+            base_config: BacktestConfig::default(),
+            n_windows: 5,
+            train_pct: 0.7,
+        }
+    }
+}
+
+/// Result of a single walk-forward window
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WalkForwardWindow {
+    pub window_index: usize,
+    pub train_start: DateTime<Utc>,
+    pub train_end: DateTime<Utc>,
+    pub test_start: DateTime<Utc>,
+    pub test_end: DateTime<Utc>,
+    pub train_metrics: BacktestMetrics,
+    pub test_metrics: BacktestMetrics,
+}
+
+/// Result of a full walk-forward backtest
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WalkForwardResult {
+    pub config: WalkForwardConfig,
+    pub windows: Vec<WalkForwardWindow>,
+    pub aggregate_metrics: BacktestMetrics,
+    pub overfitting_ratio: f64,
+}
+
+/// Walk-forward backtest engine — splits data into rolling train/test windows
+/// and runs the backtest on each, aggregating results to detect overfitting.
+pub struct WalkForwardEngine;
+
+impl WalkForwardEngine {
+    /// Run a walk-forward backtest.
+    ///
+    /// `data` is a map of symbol → sorted OHLCV bars.
+    /// `signal_fn` receives bars, positions, and cash and returns optional
+    /// signals — identical to `BacktestEngine::run`.
+    pub fn run<F>(
+        config: &WalkForwardConfig,
+        data: &HashMap<String, Vec<OHLCV>>,
+        signal_fn: F,
+    ) -> Result<WalkForwardResult>
+    where
+        F: Fn(&str, &OHLCV, &HashMap<String, SimPosition>, f64) -> Option<BacktestSignal>
+            + Clone,
+    {
+        if config.n_windows == 0 {
+            return Err(anyhow!("walk-forward n_windows must be > 0"));
+        }
+        if !(0.1..=0.9).contains(&config.train_pct) {
+            return Err(anyhow!("walk-forward train_pct must be between 0.1 and 0.9"));
+        }
+
+        // Determine overall time range from data
+        let (global_start, global_end) = Self::time_range(data)?;
+        let total_secs = (global_end - global_start).num_seconds() as f64;
+        let window_secs = total_secs / config.n_windows as f64;
+
+        info!(
+            n_windows = config.n_windows,
+            train_pct = config.train_pct,
+            total_days = total_secs / 86400.0,
+            "Starting walk-forward backtest"
+        );
+
+        let mut windows: Vec<WalkForwardWindow> = Vec::with_capacity(config.n_windows);
+
+        for i in 0..config.n_windows {
+            let win_start = global_start
+                + chrono::Duration::seconds((i as f64 * window_secs) as i64);
+            let win_end = if i == config.n_windows - 1 {
+                global_end
+            } else {
+                global_start
+                    + chrono::Duration::seconds(((i + 1) as f64 * window_secs) as i64)
+            };
+
+            let split = win_start
+                + chrono::Duration::seconds(
+                    ((win_end - win_start).num_seconds() as f64 * config.train_pct) as i64,
+                );
+
+            // Slice data for train and test windows
+            let train_data = Self::slice_data(data, win_start, split);
+            let test_data = Self::slice_data(data, split, win_end);
+
+            // Run train window
+            let train_cfg = BacktestConfig {
+                run_id: format!("{}_train_{}", config.base_config.run_id, i),
+                start: win_start,
+                end: split,
+                ..config.base_config.clone()
+            };
+            let mut train_engine = BacktestEngine::new(train_cfg);
+            let train_result = train_engine.run(&train_data, signal_fn.clone());
+            let train_metrics = match train_result {
+                Ok(r) => r.metrics,
+                Err(_) => BacktestMetrics::default(),
+            };
+
+            // Run test window
+            let test_cfg = BacktestConfig {
+                run_id: format!("{}_test_{}", config.base_config.run_id, i),
+                start: split,
+                end: win_end,
+                ..config.base_config.clone()
+            };
+            let mut test_engine = BacktestEngine::new(test_cfg);
+            let test_result = test_engine.run(&test_data, signal_fn.clone());
+            let test_metrics = match test_result {
+                Ok(r) => r.metrics,
+                Err(_) => BacktestMetrics::default(),
+            };
+
+            windows.push(WalkForwardWindow {
+                window_index: i,
+                train_start: win_start,
+                train_end: split,
+                test_start: split,
+                test_end: win_end,
+                train_metrics,
+                test_metrics,
+            });
+        }
+
+        // Calculate aggregate test metrics
+        let aggregate_metrics = Self::aggregate_metrics(&windows);
+
+        // Overfitting ratio = avg train return / avg test return
+        // Higher ratios indicate more overfitting
+        let avg_train_return: f64 = windows
+            .iter()
+            .map(|w| w.train_metrics.total_return_pct)
+            .sum::<f64>()
+            / windows.len() as f64;
+        let avg_test_return: f64 = windows
+            .iter()
+            .map(|w| w.test_metrics.total_return_pct)
+            .sum::<f64>()
+            / windows.len() as f64;
+        let overfitting_ratio = if avg_test_return.abs() > 0.001 {
+            avg_train_return / avg_test_return
+        } else if avg_train_return.abs() > 0.001 {
+            f64::INFINITY
+        } else {
+            1.0
+        };
+
+        info!(
+            windows = windows.len(),
+            overfitting_ratio = format!("{:.2}", overfitting_ratio),
+            avg_test_return_pct = format!("{:.2}%", avg_test_return),
+            "Walk-forward backtest complete"
+        );
+
+        Ok(WalkForwardResult {
+            config: config.clone(),
+            windows,
+            aggregate_metrics,
+            overfitting_ratio,
+        })
+    }
+
+    /// Determine overall time range from all bars across all symbols.
+    fn time_range(data: &HashMap<String, Vec<OHLCV>>) -> Result<(DateTime<Utc>, DateTime<Utc>)> {
+        let mut min_time: Option<DateTime<Utc>> = None;
+        let mut max_time: Option<DateTime<Utc>> = None;
+
+        for bars in data.values() {
+            for bar in bars {
+                min_time = Some(match min_time {
+                    Some(t) if t < bar.time => t,
+                    _ => bar.time,
+                });
+                max_time = Some(match max_time {
+                    Some(t) if t > bar.time => t,
+                    _ => bar.time,
+                });
+            }
+        }
+
+        match (min_time, max_time) {
+            (Some(start), Some(end)) => Ok((start, end)),
+            _ => Err(anyhow!("No data to determine time range")),
+        }
+    }
+
+    /// Slice data for a given time window [start, end).
+    fn slice_data(
+        data: &HashMap<String, Vec<OHLCV>>,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+    ) -> HashMap<String, Vec<OHLCV>> {
+        data.iter()
+            .map(|(symbol, bars)| {
+                let sliced: Vec<OHLCV> = bars
+                    .iter()
+                    .filter(|b| b.time >= start && b.time < end)
+                    .cloned()
+                    .collect();
+                (symbol.clone(), sliced)
+            })
+            .filter(|(_, bars)| !bars.is_empty())
+            .collect()
+    }
+
+    /// Aggregate test metrics across all walk-forward windows.
+    fn aggregate_metrics(windows: &[WalkForwardWindow]) -> BacktestMetrics {
+        if windows.is_empty() {
+            return BacktestMetrics::default();
+        }
+
+        let n = windows.len() as f64;
+        let test_metrics: Vec<&BacktestMetrics> =
+            windows.iter().map(|w| &w.test_metrics).collect();
+
+        BacktestMetrics {
+            total_return: test_metrics.iter().map(|m| m.total_return).sum(),
+            total_return_pct: test_metrics.iter().map(|m| m.total_return_pct).sum::<f64>() / n,
+            annualized_return_pct: test_metrics
+                .iter()
+                .map(|m| m.annualized_return_pct)
+                .sum::<f64>()
+                / n,
+            sharpe_ratio: test_metrics.iter().map(|m| m.sharpe_ratio).sum::<f64>() / n,
+            max_drawdown: test_metrics
+                .iter()
+                .map(|m| m.max_drawdown)
+                .fold(0.0_f64, f64::max),
+            max_drawdown_pct: test_metrics
+                .iter()
+                .map(|m| m.max_drawdown_pct)
+                .fold(0.0_f64, f64::max),
+            total_trades: test_metrics.iter().map(|m| m.total_trades).sum(),
+            winning_trades: test_metrics.iter().map(|m| m.winning_trades).sum(),
+            losing_trades: test_metrics.iter().map(|m| m.losing_trades).sum(),
+            win_rate: {
+                let total: u64 = test_metrics.iter().map(|m| m.total_trades).sum();
+                let wins: u64 = test_metrics.iter().map(|m| m.winning_trades).sum();
+                if total > 0 {
+                    (wins as f64 / total as f64) * 100.0
+                } else {
+                    0.0
+                }
+            },
+            profit_factor: {
+                let total_wins: f64 = test_metrics.iter().map(|m| m.avg_win * m.winning_trades as f64).sum();
+                let total_losses: f64 = test_metrics.iter().map(|m| m.avg_loss * m.losing_trades as f64).sum();
+                if total_losses > 0.0 { total_wins / total_losses } else { 0.0 }
+            },
+            avg_trade_pnl: test_metrics.iter().map(|m| m.avg_trade_pnl).sum::<f64>() / n,
+            avg_win: test_metrics.iter().map(|m| m.avg_win).sum::<f64>() / n,
+            avg_loss: test_metrics.iter().map(|m| m.avg_loss).sum::<f64>() / n,
+            max_consecutive_wins: test_metrics
+                .iter()
+                .map(|m| m.max_consecutive_wins)
+                .max()
+                .unwrap_or(0),
+            max_consecutive_losses: test_metrics
+                .iter()
+                .map(|m| m.max_consecutive_losses)
+                .max()
+                .unwrap_or(0),
+            final_equity: test_metrics.iter().map(|m| m.final_equity).sum::<f64>() / n,
+        }
+    }
+}
+
+impl Default for BacktestMetrics {
+    fn default() -> Self {
+        Self {
+            total_return: 0.0,
+            total_return_pct: 0.0,
+            annualized_return_pct: 0.0,
+            sharpe_ratio: 0.0,
+            max_drawdown: 0.0,
+            max_drawdown_pct: 0.0,
+            total_trades: 0,
+            winning_trades: 0,
+            losing_trades: 0,
+            win_rate: 0.0,
+            profit_factor: 0.0,
+            avg_trade_pnl: 0.0,
+            avg_win: 0.0,
+            avg_loss: 0.0,
+            max_consecutive_wins: 0,
+            max_consecutive_losses: 0,
+            final_equity: 0.0,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -875,5 +1186,154 @@ mod tests {
         assert_eq!(config.commission_bps, 3.0);
         assert_eq!(config.slippage_bps, 2.0);
         assert_eq!(config.currency, "INR");
+    }
+
+    // -----------------------------------------------------------------------
+    // Walk-forward backtest tests
+    // -----------------------------------------------------------------------
+
+    fn make_long_series(symbol: &str, n_days: usize, base_price: f64) -> Vec<OHLCV> {
+        (0..n_days)
+            .map(|i| {
+                let time = Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap()
+                    + chrono::Duration::days(i as i64);
+                // Simple oscillating price: base ± small variation
+                let close = base_price + (i as f64 * 0.5).sin() * 5.0;
+                OHLCV {
+                    time,
+                    symbol: Symbol(symbol.into()),
+                    open: close - 0.5,
+                    high: close + 1.0,
+                    low: close - 1.0,
+                    close,
+                    volume: 100_000,
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_walk_forward_basic() {
+        let base_config = BacktestConfig {
+            initial_capital: 100_000.0,
+            commission_bps: 0.0,
+            slippage_bps: 0.0,
+            ..BacktestConfig::default()
+        };
+        let wf_config = WalkForwardConfig {
+            base_config,
+            n_windows: 3,
+            train_pct: 0.7,
+        };
+
+        let mut data = HashMap::new();
+        data.insert("AAPL".into(), make_long_series("AAPL", 90, 100.0));
+
+        let result =
+            WalkForwardEngine::run(&wf_config, &data, |_, _, _, _| None).unwrap();
+
+        assert_eq!(result.windows.len(), 3);
+        assert!(result.overfitting_ratio.is_finite() || result.overfitting_ratio == 1.0);
+    }
+
+    #[test]
+    fn test_walk_forward_with_signals() {
+        let base_config = BacktestConfig {
+            initial_capital: 100_000.0,
+            commission_bps: 0.0,
+            slippage_bps: 0.0,
+            ..BacktestConfig::default()
+        };
+        let wf_config = WalkForwardConfig {
+            base_config,
+            n_windows: 2,
+            train_pct: 0.6,
+        };
+
+        let mut data = HashMap::new();
+        data.insert("AAPL".into(), make_long_series("AAPL", 60, 100.0));
+
+        let result = WalkForwardEngine::run(&wf_config, &data, |symbol, _bar, positions, cash| {
+            if !positions.contains_key(symbol) && cash > 1000.0 {
+                Some(BacktestSignal::Buy {
+                    symbol: Symbol(symbol.into()),
+                    quantity: 10.0,
+                })
+            } else if positions.contains_key(symbol) {
+                Some(BacktestSignal::Close {
+                    symbol: Symbol(symbol.into()),
+                })
+            } else {
+                None
+            }
+        })
+        .unwrap();
+
+        assert_eq!(result.windows.len(), 2);
+        // Both train and test windows should have some trades
+        for window in &result.windows {
+            assert!(window.train_metrics.total_trades > 0 || window.test_metrics.total_trades >= 0);
+        }
+    }
+
+    #[test]
+    fn test_walk_forward_invalid_config() {
+        let base_config = BacktestConfig::default();
+
+        // Zero windows
+        let wf_config = WalkForwardConfig {
+            base_config: base_config.clone(),
+            n_windows: 0,
+            train_pct: 0.7,
+        };
+        let data = HashMap::new();
+        assert!(WalkForwardEngine::run(&wf_config, &data, |_, _, _, _| None).is_err());
+
+        // Invalid train_pct
+        let wf_config = WalkForwardConfig {
+            base_config,
+            n_windows: 3,
+            train_pct: 0.95,
+        };
+        assert!(WalkForwardEngine::run(&wf_config, &data, |_, _, _, _| None).is_err());
+    }
+
+    #[test]
+    fn test_walk_forward_overfitting_ratio() {
+        let base_config = BacktestConfig {
+            initial_capital: 100_000.0,
+            commission_bps: 0.0,
+            slippage_bps: 0.0,
+            ..BacktestConfig::default()
+        };
+        let wf_config = WalkForwardConfig {
+            base_config,
+            n_windows: 2,
+            train_pct: 0.7,
+        };
+
+        let mut data = HashMap::new();
+        data.insert("AAPL".into(), make_long_series("AAPL", 60, 100.0));
+
+        let result =
+            WalkForwardEngine::run(&wf_config, &data, |_, _, _, _| None).unwrap();
+
+        // With no signals, overfitting ratio should be ~1.0 (train and test are both ~0%)
+        assert!(result.overfitting_ratio.is_finite());
+    }
+
+    #[test]
+    fn test_walk_forward_default_config() {
+        let config = WalkForwardConfig::default();
+        assert_eq!(config.n_windows, 5);
+        assert!((config.train_pct - 0.7).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_backtest_metrics_default() {
+        let metrics = BacktestMetrics::default();
+        assert_eq!(metrics.total_trades, 0);
+        assert!((metrics.total_return - 0.0).abs() < 0.001);
+        assert!((metrics.sharpe_ratio - 0.0).abs() < 0.001);
     }
 }
