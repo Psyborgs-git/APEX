@@ -1086,7 +1086,7 @@ All order placements, modifications, and cancellations logged with nanosecond ti
 - [x] Market scanner (price/volume/indicator-based criteria screening)
 - [x] Historical data downloader (Yahoo Finance bulk download with CSV storage)
 
-### Phase 4 — Intelligence (✅ ~90% Complete)
+### Phase 4 — Intelligence (✅ ~95% Complete)
 
 - [x] ML trainer pipeline structure (trainer.py with time-series CV)
 - [x] Graph engine (petgraph-based vector/relationship modeling with correlation analysis)
@@ -1096,20 +1096,53 @@ All order placements, modifications, and cancellations logged with nanosecond ti
 - [x] Walk-forward backtest engine (rolling train/test windows, overfitting ratio)
 - [ ] News sentiment analysis (engine exists, NLP pipeline not integrated)
 
-### Phase 5 — Production Hardening (✅ ~90% Complete)
+### Phase 5 — Production Hardening (✅ ~95% Complete)
 
 - [x] Circuit breakers on adapters (reusable generic `CircuitBreaker<T>` with state machine)
 - [x] Risk engine with hard stops (< 10μs latency target, atomic P&L tracking)
 - [x] Crash recovery on startup (reconcile stale Pending/Open orders with brokers)
 - [x] Position reconciliation loop (30s periodic polling for all registered brokers)
-- [x] E2E test framework (Playwright: 56 tests across 7 suites, all passing)
+- [x] E2E test framework (Playwright: 65 tests across 8 suites, all passing)
 - [x] Unit test coverage (Rust: 164 passing tests; Python SDK: 21 passing tests)
 - [x] Tauri IPC commands (20 commands: market, orders, alerts, risk, data, ML, health)
 - [x] Real-time event push system (7 event types via message bus → Tauri emitter)
 - [x] Health monitoring dashboard (adapter status, system metrics, real-time polling)
+- [x] Hot path tracing instrumentation (market data aggregator, OTM, risk engine)
 - [ ] Security audit
 - [ ] Performance profiling and optimisation
-- [ ] Installer packaging
+
+### Phase 8 — Performance & Hardening (✅ ~80% Complete)
+
+- [x] Hot path profiling (tracing::instrument on critical paths)
+- [x] Circuit breaker implementation (generic CircuitBreaker<T> with state machine)
+- [x] Crash recovery (reconcile stale orders on startup)
+- [x] Testing strategy (164 Rust + 65 Playwright + 21 Python tests)
+- [ ] Jaeger trace export (optional)
+
+### Phase 9 — Configuration & Packaging (✅ ~90% Complete)
+
+- [x] Configuration schema (config/apex.example.toml, fully commented)
+- [x] Setup & migration scripts (scripts/setup_db.sh, scripts/dev.sh)
+- [x] Database migrations (migrations/ with 3 SQL files)
+- [x] Tauri bundle configuration (io.apex.terminal, 1920x1080, CSP, Python sidecar)
+- [ ] Icon generation from source SVG
+
+### Phase 10 — Documentation (✅ Complete)
+
+- [x] Adapter guide (docs/adapter-guide.md — 350 lines)
+- [x] Strategy API reference (docs/strategy-api.md — 328 lines)
+- [x] ML workbench guide (docs/ml-guide.md — 300 lines)
+
+### Phase UI — Frontend (✅ ~95% Complete)
+
+- [x] Design system & theming (CSS variables, dark theme)
+- [x] Tauri event bridge (useQuoteStream, useOrderStream, usePositionStream, useHealthStream hooks)
+- [x] Workspace layout (4-tab center panel, 3-column responsive grid)
+- [x] Command bar (order placement, symbol navigation, tab switching with feedback)
+- [x] Candlestick chart (lightweight-charts integration)
+- [x] Order book heatmap (OrderBookHeatmap component)
+- [x] Order entry form (symbol, side, type, quantity, price with validation)
+- [x] Strategy IDE (Monaco editor with file management)
 
 ### Current Status Summary (March 2026)
 
@@ -1130,18 +1163,21 @@ All order placements, modifications, and cancellations logged with nanosecond ti
 - ✅ Graph engine with petgraph + D3 force-directed visualization
 - ✅ ML Workbench UI with training, feature selection, and model registry
 - ✅ Health monitoring dashboard with adapter status
+- ✅ Command bar with order placement and workspace navigation
+- ✅ Tauri event bridge hooks for real-time data streaming
+- ✅ Hot path tracing instrumentation for performance analysis
+- ✅ Database migration files for production deployment
+- ✅ Production bundle configuration with Python sidecar
 
 **Remaining Gaps:**
-- ⚠️ **Zerodha WebSocket** — currently REST polling, binary frame parsing not implemented
 - ⚠️ **NLP sentiment pipeline** — news engine exists, deep NLP integration pending
-- ⚠️ **Security audit** and performance profiling not yet completed
-- ⚠️ **Installer packaging** — production builds configured but not fully packaged
+- ⚠️ **Security audit** — not yet completed
+- ⚠️ **Icon generation** — SVG source to multi-size icons not yet automated
 
 **Next Milestones:**
 1. Integrate **NLP sentiment pipeline** with news engine
-2. Implement **Zerodha WebSocket** binary frame parsing for low-latency data
-3. Complete **security audit** and performance profiling
-4. Build **installer packaging** for distribution
+2. Complete **security audit**
+3. Generate **application icons** from SVG source
 
 -----
 

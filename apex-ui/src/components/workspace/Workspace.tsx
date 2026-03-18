@@ -8,8 +8,7 @@ import { MLWorkbench } from '../ml/MLWorkbench';
 import { HealthMonitor } from '../monitor/HealthMonitor';
 import { useMarketStore } from '../../stores/marketStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
-
-type CenterTab = 'chart' | 'strategy' | 'ml' | 'health';
+import { VALID_TABS, type CenterTab } from './CommandBar';
 
 export const Workspace: React.FC = () => {
   const watchlist = useMarketStore((s) => s.watchlist);
@@ -40,7 +39,7 @@ export const Workspace: React.FC = () => {
   }, [commandSymbol, setCommandSymbol]);
 
   useEffect(() => {
-    if (commandTab && ['chart', 'strategy', 'ml', 'health'].includes(commandTab)) {
+    if (commandTab && (VALID_TABS as readonly string[]).includes(commandTab)) {
       setCenterTab(commandTab as CenterTab);
       setCommandTab(null);
     }

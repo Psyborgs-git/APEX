@@ -7,6 +7,12 @@ The format is based on "Keep a Changelog" and this project adheres to [Semantic 
 ## [Unreleased]
 
 ### Added
+- **CommandBar Execution Wiring**: Full command execution — order placement (BUY/SELL), symbol navigation, panel switching (:ML, :HEALTH, :STRATEGY, :CHART) — with success/error feedback display
+- **Tauri Event Bridge Hooks**: `useQuoteStream`, `useOrderStream`, `usePositionStream`, `useHealthStream` real-time event hooks with automatic Tauri/browser fallback
+- **Hot Path Profiling**: `#[tracing::instrument]` spans on `MarketDataAggregator::start`, `OrderTradeManager::submit_order/cancel_order/handle_fill/reconcile_positions`, `RiskEngine::check` with selective field recording
+- **Database Migrations**: 3 SQL migration files — `001_core_tables.sql` (orders, trades, ohlcv), `002_application_tables.sql` (alert_rules, strategy_runs, ml_models), `003_timescaledb_extensions.sql` (hypertable, compression, retention)
+- **Production Bundle Config**: Tauri bundle updated with Python sidecar resources, migration files, and Python3 system dependency for Linux
+- **Playwright E2E Tests**: 9 new command bar tests (65 total, all passing)
 - **ML Workbench UI**: Full training dashboard with algorithm selection (Random Forest, Gradient Boosting, Logistic Regression, XGBoost), feature selection chips, CV split configuration, lag period settings, and model registry with metrics display
 - **ML Zustand Store**: Centralized state management for ML models, training status, and error handling
 - **Health Monitor UI**: System health dashboard with adapter status indicators, uptime/memory/subscription metrics, and real-time health polling (5s intervals)
@@ -19,7 +25,7 @@ The format is based on "Keep a Changelog" and this project adheres to [Semantic 
 - **Health DTOs**: AdapterHealthDto, SystemHealthDto for health monitoring data transfer
 - **ModelRegistry State**: In-memory ML model registry managed by Tauri for IPC access
 - **Workspace Tabs**: Added ML Workbench and Health Monitor as new center-column tabs alongside Chart and Strategy IDE
-- **Playwright Tests**: 20 new E2E tests — 13 for ML Workbench + 7 for Health Monitor (56 total, all passing)
+- **Playwright Tests**: 29 new E2E tests — 13 ML Workbench + 7 Health Monitor + 9 CommandBar (65 total)
 - **Rust Tests**: 6 new walk-forward backtest unit tests (164 total, all passing)
 - **Tauri IPC Commands**: `get_ohlcv`, `get_account_balance`, `modify_order`, `get_alert_rules`, `get_historical_data`, `get_watchlist_symbols` (6 prior new commands)
 - **Real-time Event Push**: Message bus → Tauri emitter for 7 event types (quotes, orders, positions, news, alerts, strategy signals, adapter health)

@@ -2,6 +2,23 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { placeOrder } from '../../lib/tauri';
 import type { NewOrderRequestDto } from '../../lib/types';
 
+/** Delay in ms before deactivating command bar on blur, to allow click events */
+const BLUR_DELAY_MS = 200;
+
+/** Valid center panel tab identifiers — shared between CommandBar and Workspace */
+export const VALID_TABS = ['chart', 'strategy', 'ml', 'health'] as const;
+export type CenterTab = (typeof VALID_TABS)[number];
+
+/** Map from command keywords to tab identifiers */
+const PANEL_MAP: Record<string, CenterTab> = {
+  CHART: 'chart',
+  STRATEGY: 'strategy',
+  ML: 'ml',
+  HEALTH: 'health',
+  ORDERS: 'chart',
+  POSITIONS: 'chart',
+};
+
 export interface ParsedCommand {
   type: 'SYMBOL_DEFAULT' | 'SYMBOL_PANEL' | 'SYSTEM_PANEL' | 'ORDER' | 'UNKNOWN';
   symbol?: string;
@@ -101,28 +118,14 @@ export const CommandBar: React.FC<CommandBarProps> = ({ onSelectSymbol, onSwitch
           onSelectSymbol(cmd.symbol);
         }
         if (cmd.panel) {
-          const panelMap: Record<string, string> = {
-            CHART: 'chart',
-            STRATEGY: 'strategy',
-            ML: 'ml',
-            HEALTH: 'health',
-          };
-          const tab = panelMap[cmd.panel];
+          const tab = PANEL_MAP[cmd.panel];
           if (tab) onSwitchTab?.(tab);
         }
         break;
       }
       case 'SYSTEM_PANEL': {
         if (cmd.panel) {
-          const panelMap: Record<string, string> = {
-            CHART: 'chart',
-            STRATEGY: 'strategy',
-            ML: 'ml',
-            HEALTH: 'health',
-            ORDERS: 'chart',
-            POSITIONS: 'chart',
-          };
-          const tab = panelMap[cmd.panel];
+          const tab = PANEL_MAP[cmd.panel];
           if (tab) {
             onSwitchTab?.(tab);
             showFeedback(`Switched to ${cmd.panel}`, 'success');
@@ -171,7 +174,7 @@ export const CommandBar: React.FC<CommandBarProps> = ({ onSelectSymbol, onSwitch
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onFocus={() => setIsActive(true)}
-          onBlur={() => setTimeout(() => setIsActive(false), 200)}
+          onBlur={() => setTimeout(() => setIsActive(false), BLUR_DELAY_MS)}
           placeholder="Type symbol, command, or order (Space to activate)"
           className="w-full bg-surface-2 text-text-primary font-mono text-sm px-3 py-1.5 rounded-md border border-[var(--border-color)] focus:border-accent focus:outline-none placeholder:text-text-muted"
           data-testid="command-bar-input"
