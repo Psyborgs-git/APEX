@@ -48,7 +48,7 @@ test.describe('Custom ML Pipeline Execution', () => {
     // Verify output has content (the Running message)
     const outputText = await outputPanel.textContent();
     expect(outputText).toBeTruthy();
-    expect(outputText!.length).toBeGreaterThan(0);
+    expect(outputText?.length ?? 0).toBeGreaterThan(0);
   });
 
   test('should allow saving strategy file', async ({ page }) => {

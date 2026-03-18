@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test.describe('Trading Mode and Status', () => {
+test.describe('Trading Mode and Status (Account Switching)', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
