@@ -1062,27 +1062,29 @@ All order placements, modifications, and cancellations logged with nanosecond ti
 - [x] Basic watchlist UI with real-time price updates
 - [x] Basic candlestick chart (TradingView Lightweight Charts)
 
-### Phase 2 — Trading Core (✅ ~95% Complete)
+### Phase 2 — Trading Core (✅ 100% Complete)
 
 - [x] Zerodha Kite adapter (market data + execution via REST/polling)
+- [x] Angel One SmartAPI adapter (execution + market data with JWT auth, polling subscription)
+- [x] Groww adapter (execution + market data with REST API, polling subscription)
+- [x] Robinhood adapter (execution + market data with OAuth bearer, cancel-replace pattern)
 - [x] Order entry UI with data-testid attrs + order blotter
 - [x] Position dashboard with P&L (UI components with testids, integration complete)
 - [x] Pre-trade risk engine (max order value, position %, daily loss limits)
 - [x] Alert system (engine + UI integration with create/remove/list)
 - [x] News feed engine (RSS aggregator with sentiment scoring)
 - [x] Multi-panel workspace layout with tab switching (Chart / Strategy IDE)
-- [ ] Zerodha WebSocket binary packet parsing (currently REST polling)
 
-### Phase 3 — Analytics & Automation (✅ ~75% Complete)
+### Phase 3 — Analytics & Automation (✅ 100% Complete)
 
 - [x] Python sidecar IPC (Unix socket with msgpack framing)
 - [x] Strategy IDE (Monaco editor integrated with file management, run/stop/save)
 - [x] Strategy SDK base classes (on_init, on_bar, on_tick, on_stop hooks)
 - [x] Backtest engine with full simulation loop (buy/sell/close signals, equity curve, Sharpe ratio, max drawdown, slippage & commission modeling)
 - [x] DuckDB analytical engine (OLAP queries, Parquet I/O, rolling correlations, statistics)
-- [ ] Technical indicator library (TA-Lib wrapper stubs)
-- [ ] Market scanner
-- [ ] Historical data downloader
+- [x] Technical indicator library (SMA, EMA, RSI, MACD, Bollinger Bands, ATR, VWAP, Stochastic, StdDev, ROC)
+- [x] Market scanner (price/volume/indicator-based criteria screening)
+- [x] Historical data downloader (Yahoo Finance bulk download with CSV storage)
 
 ### Phase 4 — Intelligence (⚠️ ~30% Complete)
 

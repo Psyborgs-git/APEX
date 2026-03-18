@@ -14,6 +14,15 @@ The format is based on "Keep a Changelog" and this project adheres to [Semantic 
 - **Strategy IDE Tab**: Added Chart/Strategy IDE tab switching to workspace layout
 - **UI Test IDs**: Added `data-testid` attributes to OrderEntry, PositionsPanel, and StrategyIDE components for Playwright testing
 - **StrategyIDE Enhancements**: File creation dialog with name input, save button with confirmation, pipeline status indicator
+- **Angel One Adapters**: Full `ExecutionPort` + `MarketDataPort` implementations against SmartAPI (`apiconnect.angelone.in`) with JWT auth, symbol/order mappings, 3s polling subscription
+- **Groww Adapters**: Full `ExecutionPort` + `MarketDataPort` implementations against Groww REST API with order lifecycle, position/balance queries, polling subscription
+- **Robinhood Adapters**: Full `ExecutionPort` + `MarketDataPort` implementations against Robinhood API with OAuth bearer auth, order lifecycle (cancel-replace pattern for modifications), polling subscription
+- **Backtest Engine**: Event-driven bar replay across multiple symbols with merged timeline, configurable slippage/commission (bps), full metrics suite (Sharpe ratio, max drawdown, profit factor, win rate, equity curve, consecutive win/loss tracking)
+- **Technical Indicator Library**: Pure Rust implementations of SMA, EMA, RSI, MACD, Bollinger Bands, ATR, VWAP, Stochastic Oscillator, Standard Deviation, Rate of Change — all with comprehensive unit tests
+- **Market Scanner**: Real-time symbol screening engine with price/volume/indicator-based criteria (RSI, SMA crossover), AND logic across filters
+- **Historical Data Downloader**: Bulk OHLCV data download from Yahoo Finance with CSV storage and reload capability, rate limiting, progress tracking
+- **Crash Recovery**: `reconcile_on_startup()` called during Tauri app bootstrap
+- **Position Reconciliation Loop**: 30s periodic position reconciliation across all registered brokers
 
 ### Changed
 - **Workspace Layout**: Center column now supports tab switching between Chart+OrderEntry and StrategyIDE views

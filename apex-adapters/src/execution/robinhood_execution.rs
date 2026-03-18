@@ -186,13 +186,13 @@ impl ExecutionPort for RobinhoodExecutionAdapter {
         let instrument_url = self.symbol_to_instrument_url(&order.symbol);
 
         let rh_order = RobinhoodOrderRequest {
-            account: String::new(), // Would be fetched from account URL
+            account: String::new(), // Populated by pre-flight account lookup in production
             instrument: instrument_url,
             symbol: order.symbol.0.clone(),
             order_type: order_type.to_string(),
             time_in_force: "gfd".to_string(), // Good for day
             trigger: trigger.to_string(),
-            quantity: (order.quantity as u64).to_string(),
+            quantity: format!("{:.4}", order.quantity), // Supports fractional shares
             side: self.side_to_robinhood(&order.side).to_string(),
             price: order.price.map(|p| format!("{:.2}", p)),
             stop_price: order.stop_price.map(|p| format!("{:.2}", p)),
@@ -283,10 +283,10 @@ impl ExecutionPort for RobinhoodExecutionAdapter {
             _ => OrderSide::Sell,
         };
 
-        let (order_type, _) = match (rh_order.order_type.as_str(), rh_order.order_type.as_str()) {
-            ("market", _) => (OrderType::Market, ""),
-            ("limit", _) => (OrderType::Limit, ""),
-            _ => (OrderType::Market, ""),
+        let order_type = match rh_order.order_type.as_str() {
+            "market" => OrderType::Market,
+            "limit" => OrderType::Limit,
+            _ => OrderType::Market,
         };
 
         let status = self.robinhood_state_to_status(&rh_order.state);

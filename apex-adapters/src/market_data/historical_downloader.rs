@@ -209,16 +209,17 @@ impl HistoricalDownloader {
 
         for i in 0..timestamps.len() {
             let ts = timestamps[i].as_i64().unwrap_or(0);
-            let open = opens.get(i).and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let open_val = opens.get(i).and_then(|v| v.as_f64());
+            let close_val = closes.get(i).and_then(|v| v.as_f64());
             let high = highs.get(i).and_then(|v| v.as_f64()).unwrap_or(0.0);
             let low = lows.get(i).and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let close = closes.get(i).and_then(|v| v.as_f64()).unwrap_or(0.0);
             let volume = volumes.get(i).and_then(|v| v.as_u64()).unwrap_or(0);
 
-            // Skip null bars
-            if open == 0.0 && close == 0.0 {
-                continue;
-            }
+            // Skip bars with null open or close (indicates missing data from Yahoo)
+            let (open, close) = match (open_val, close_val) {
+                (Some(o), Some(c)) => (o, c),
+                _ => continue,
+            };
 
             let dt = DateTime::from_timestamp(ts, 0)
                 .unwrap_or_else(|| Utc::now());

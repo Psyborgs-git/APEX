@@ -175,7 +175,16 @@ impl MarketScanner {
 
         if needs_historical {
             let to = Utc::now();
-            let from = to - chrono::Duration::days(config.lookback_bars as i64);
+            // Calculate lookback duration based on timeframe
+            let lookback_days = match &config.timeframe {
+                Timeframe::M1 | Timeframe::M3 | Timeframe::M5 => 1 + (config.lookback_bars / 78), // ~78 bars per day for M5
+                Timeframe::M15 | Timeframe::M30 => 1 + (config.lookback_bars / 26), // ~26 bars per day for M15
+                Timeframe::H1 | Timeframe::H4 => 1 + (config.lookback_bars / 7),  // ~7 bars per day for H1
+                Timeframe::D1 => config.lookback_bars,
+                Timeframe::W1 => config.lookback_bars * 7,
+                _ => config.lookback_bars,
+            };
+            let from = to - chrono::Duration::days(lookback_days.max(1) as i64);
             let bars = self.market_data.get_historical_ohlcv(symbol, config.timeframe.clone(), from, to).await?;
 
             if bars.is_empty() {
