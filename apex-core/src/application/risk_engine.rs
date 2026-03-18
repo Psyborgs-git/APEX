@@ -78,6 +78,7 @@ impl RiskEngine {
 
     /// Pre-trade risk check — MUST be called before every order submission.
     /// This is synchronous and does no I/O. Target: < 10μs.
+    #[tracing::instrument(skip(self, order, account), fields(symbol = %order.symbol.0))]
     pub fn check(&self, order: &NewOrderRequest, account: &AccountBalance) -> RiskVerdict {
         // 1. FIRST CHECK: Is trading halted? This is UNBYPASSABLE.
         if self.trading_halted.load(Ordering::SeqCst) {

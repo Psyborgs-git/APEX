@@ -5,7 +5,7 @@ use std::time::Duration;
 use anyhow::Result;
 use dashmap::DashMap;
 use tokio::sync::Mutex;
-use tracing::{info, warn};
+use tracing::{info, info_span, warn};
 
 use crate::bus::message_bus::{BusMessage, MessageBus, Topic};
 use crate::domain::models::*;
@@ -54,6 +54,7 @@ impl MarketDataAggregator {
     }
 
     /// Subscribe to symbols across all adapters and start processing
+    #[tracing::instrument(skip(self, symbols))]
     pub async fn start(&self, symbols: &[Symbol]) -> Result<()> {
         for adapter in &self.adapters {
             let mut tick_stream = adapter.subscribe(symbols).await?;
@@ -66,35 +67,40 @@ impl MarketDataAggregator {
             tokio::spawn(async move {
                 while let Some(tick) = tick_stream.recv().await {
                     let symbol_key = tick.symbol.0.clone();
+                    let span = info_span!("tick_pipeline", symbol = %symbol_key, source = %adapter_id);
 
-                    // Update quote cache
-                    let quote = Quote {
-                        symbol: tick.symbol.clone(),
-                        bid: tick.bid,
-                        ask: tick.ask,
-                        last: tick.last,
-                        open: tick.last,
-                        high: tick.last,
-                        low: tick.last,
-                        volume: tick.volume,
-                        change_pct: 0.0,
-                        vwap: tick.last,
-                        updated_at: tick.time,
-                    };
-                    quote_cache.insert(symbol_key.clone(), quote.clone());
+                    let tick_clone = span.in_scope(|| {
+                        // Update quote cache
+                        let quote = Quote {
+                            symbol: tick.symbol.clone(),
+                            bid: tick.bid,
+                            ask: tick.ask,
+                            last: tick.last,
+                            open: tick.last,
+                            high: tick.last,
+                            low: tick.last,
+                            volume: tick.volume,
+                            change_pct: 0.0,
+                            vwap: tick.last,
+                            updated_at: tick.time,
+                        };
+                        quote_cache.insert(symbol_key.clone(), quote.clone());
 
-                    // Publish to message bus
-                    bus.publish(
-                        Topic::Tick(symbol_key.clone()),
-                        BusMessage::TickData(tick.clone()),
-                    );
-                    bus.publish(
-                        Topic::Quote(symbol_key),
-                        BusMessage::QuoteData(quote),
-                    );
+                        // Publish to message bus
+                        bus.publish(
+                            Topic::Tick(symbol_key.clone()),
+                            BusMessage::TickData(tick.clone()),
+                        );
+                        bus.publish(
+                            Topic::Quote(symbol_key),
+                            BusMessage::QuoteData(quote),
+                        );
+
+                        tick
+                    });
 
                     // Add to tick buffer for batch write
-                    tick_buffer.lock().await.push(tick);
+                    tick_buffer.lock().await.push(tick_clone);
                 }
                 warn!("Tick stream ended for adapter: {}", adapter_id);
             });

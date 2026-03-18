@@ -42,6 +42,7 @@ impl OrderTradeManager {
     }
 
     /// Submit a new order — risk check → journal → dispatch → update
+    #[tracing::instrument(skip(self, request), fields(symbol = %request.symbol.0, side = ?request.side))]
     pub async fn submit_order(
         &self,
         request: NewOrderRequest,
@@ -80,6 +81,7 @@ impl OrderTradeManager {
     }
 
     /// Cancel an order
+    #[tracing::instrument(skip(self, order_id), fields(order_id = %order_id.0))]
     pub async fn cancel_order(&self, order_id: &OrderId, broker_id: &str) -> Result<()> {
         let adapter = self.execution.get(broker_id)
             .ok_or_else(|| anyhow!("No execution adapter found for broker: {}", broker_id))?;
@@ -119,6 +121,7 @@ impl OrderTradeManager {
     }
 
     /// Handle a fill event — update positions and P&L
+    #[tracing::instrument(skip(self, fill), fields(order = %fill.order_id.0, symbol = %fill.symbol.0))]
     pub async fn handle_fill(&self, fill: FillEvent) {
         // 1. Update order status
         if let Some(mut order) = self.open_orders.get_mut(&fill.order_id.0) {
@@ -188,6 +191,7 @@ impl OrderTradeManager {
     }
 
     /// Reconcile positions with broker
+    #[tracing::instrument(skip(self), fields(broker = %broker_id))]
     pub async fn reconcile_positions(&self, broker_id: &str) -> Result<()> {
         let adapter = self.execution.get(broker_id)
             .ok_or_else(|| anyhow!("No execution adapter found for broker: {}", broker_id))?;
