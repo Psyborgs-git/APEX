@@ -1062,78 +1062,83 @@ All order placements, modifications, and cancellations logged with nanosecond ti
 - [x] Basic watchlist UI with real-time price updates
 - [x] Basic candlestick chart (TradingView Lightweight Charts)
 
-### Phase 2 — Trading Core (✅ ~85% Complete)
+### Phase 2 — Trading Core (✅ ~95% Complete)
 
-- [ ] Zerodha Kite adapter (market data + execution) - **Critical Priority**
+- [x] Zerodha Kite adapter (market data + execution via REST/polling)
 - [x] Order entry UI with data-testid attrs + order blotter
 - [x] Position dashboard with P&L (UI components with testids, integration complete)
 - [x] Pre-trade risk engine (max order value, position %, daily loss limits)
 - [x] Alert system (engine + UI integration with create/remove/list)
 - [x] News feed engine (RSS aggregator with sentiment scoring)
 - [x] Multi-panel workspace layout with tab switching (Chart / Strategy IDE)
+- [ ] Zerodha WebSocket binary packet parsing (currently REST polling)
 
-### Phase 3 — Analytics & Automation (⚠️ ~50% Complete)
+### Phase 3 — Analytics & Automation (✅ ~75% Complete)
 
 - [x] Python sidecar IPC (Unix socket with msgpack framing)
 - [x] Strategy IDE (Monaco editor integrated with file management, run/stop/save)
 - [x] Strategy SDK base classes (on_init, on_bar, on_tick, on_stop hooks)
-- [ ] Backtest engine (framework exists, execution loop not implemented)
+- [x] Backtest engine with full simulation loop (buy/sell/close signals, equity curve, Sharpe ratio, max drawdown, slippage & commission modeling)
+- [x] DuckDB analytical engine (OLAP queries, Parquet I/O, rolling correlations, statistics)
 - [ ] Technical indicator library (TA-Lib wrapper stubs)
 - [ ] Market scanner
 - [ ] Historical data downloader
-- [ ] DuckDB adapter (analytical query engine)
-- [ ] Second broker (Alpaca or IBKR)
 
-### Phase 4 — Intelligence (⚠️ ~10% Complete)
+### Phase 4 — Intelligence (⚠️ ~30% Complete)
 
-- [ ] ML workbench (dataset builder, training, evaluation)
-- [x] ML trainer pipeline structure (trainer.py created, not integrated)
-- [x] Graph engine stub (custom vector/relationship modeling)
+- [x] ML trainer pipeline structure (trainer.py with time-series CV)
+- [x] Graph engine (petgraph-based vector/relationship modeling with correlation analysis)
+- [x] D3 graph visualization (VectorGraph component with force layout)
+- [ ] ML workbench UI integration (dataset builder, training, evaluation)
 - [ ] Model registry and live deployment
-- [ ] News sentiment analysis
-- [ ] Volume profile, multi-instrument chart overlay
+- [ ] News sentiment analysis (engine exists, NLP pipeline not integrated)
 - [ ] Walk-forward backtest + parameter sweep
 
-### Phase 5 — Production Hardening (✅ ~60% Complete)
+### Phase 5 — Production Hardening (✅ ~80% Complete)
 
-- [x] Circuit breakers on adapters (health tracking with exponential backoff)
-- [x] Risk engine with hard stops (< 10μs latency target)
-- [ ] State journaling + crash recovery (architecture designed, not wired)
-- [ ] Position reconciliation loop (method exists, periodic loop not running)
-- [ ] Security audit
-- [ ] Performance profiling and optimisation
+- [x] Circuit breakers on adapters (reusable generic `CircuitBreaker<T>` with state machine)
+- [x] Risk engine with hard stops (< 10μs latency target, atomic P&L tracking)
+- [x] Crash recovery on startup (reconcile stale Pending/Open orders with brokers)
+- [x] Position reconciliation loop (30s periodic polling for all registered brokers)
 - [x] E2E test framework (Playwright: 36 tests across 5 suites, all passing)
-- [x] Unit test coverage (Rust: 98 passing tests; Python SDK: 21 passing tests)
+- [x] Unit test coverage (Rust: 108 passing tests; Python SDK: 21 passing tests)
 - [x] Tauri IPC commands (16 commands: market, orders, alerts, risk, data)
 - [x] Real-time event push system (7 event types via message bus → Tauri emitter)
+- [ ] Security audit
+- [ ] Performance profiling and optimisation
 - [ ] Installer packaging
 
 ### Current Status Summary (March 2026)
 
 **Working Features:**
 - ✅ Full-stack foundation (Rust core, React UI, Python SDK)
-- ✅ Paper trading with realistic order execution
-- ✅ Yahoo Finance real-time quotes
-- ✅ Risk engine with pre-trade validation
-- ✅ Basic UI: watchlist, candlestick charts, order entry, positions
-- ✅ Python strategy framework with IPC bridge
-- ✅ Circuit breaker pattern for adapter resilience
+- ✅ Paper trading with realistic order execution (slippage + commission)
+- ✅ Yahoo Finance real-time quotes (3s polling)
+- ✅ Zerodha Kite adapter (market data + execution via REST API)
+- ✅ Risk engine with pre-trade validation and daily loss circuit breaker
+- ✅ Full UI: watchlist, candlestick charts, order entry, positions, alerts
+- ✅ Strategy IDE with Monaco editor, file management, and run/stop controls
+- ✅ Python strategy framework with IPC bridge and subprocess isolation
+- ✅ Circuit breaker pattern for adapter resilience (generic `CircuitBreaker<T>`)
+- ✅ Backtest engine with equity curve, Sharpe ratio, max drawdown metrics
+- ✅ Crash recovery and periodic position reconciliation (30s loop)
+- ✅ News engine with RSS aggregation and sentiment scoring
+- ✅ Graph engine with petgraph + D3 force-directed visualization
 
-**Critical Gaps for Production:**
-- ❌ **No production broker adapter** (Zerodha/IBKR/Alpaca needed for real trading)
-- ❌ **No persistent time-series storage** (TimescaleDB/DuckDB not implemented)
-- ❌ **No hot state cache** (Redis not implemented)
-- ❌ **Minimal test coverage** (Rust core has 0 unit tests)
-- ❌ **No backtest execution** (event loop not implemented)
-- ❌ **No news/sentiment pipeline**
+**Remaining Gaps:**
+- ⚠️ **Zerodha WebSocket** — currently REST polling, binary frame parsing not implemented
+- ⚠️ **ML workbench UI** — trainer exists, frontend integration pending
+- ⚠️ **Model registry** — trained model persistence and live deployment pipeline
+- ⚠️ **Market scanner** — real-time screening across symbols
+- ⚠️ **Historical data downloader** — bulk data ingest for backtesting
+- ⚠️ **Security audit** and performance profiling not yet completed
 
 **Next Milestones:**
-1. Implement **TimescaleDB adapter** for tick/OHLCV persistence
-2. Implement **Redis adapter** for sub-ms quote lookups
-3. Implement **Zerodha Kite adapter** for Indian market trading
-4. Complete **strategy orchestrator** with hot-reload and metrics
-5. Add **comprehensive test coverage** (target: 80%+ for core services)
-6. Wire **position reconciliation loop** (30s polling interval)
+1. Integrate **ML workbench UI** with Python trainer backend
+2. Implement **Zerodha WebSocket** binary frame parsing for low-latency data
+3. Add **market scanner** with configurable screening criteria
+4. Complete **security audit** and performance profiling
+5. Build **installer packaging** for distribution
 
 -----
 
