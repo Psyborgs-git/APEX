@@ -4,10 +4,12 @@ import { OrderEntry } from '../trading/OrderEntry';
 import { PositionsPanel } from '../trading/PositionsPanel';
 import { CandleChart } from '../charts/CandleChart';
 import { StrategyIDE } from '../strategy/StrategyIDE';
+import { MLWorkbench } from '../ml/MLWorkbench';
+import { HealthMonitor } from '../monitor/HealthMonitor';
 import { useMarketStore } from '../../stores/marketStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 
-type CenterTab = 'chart' | 'strategy';
+type CenterTab = 'chart' | 'strategy' | 'ml' | 'health';
 
 export const Workspace: React.FC = () => {
   const watchlist = useMarketStore((s) => s.watchlist);
@@ -211,6 +213,24 @@ export const Workspace: React.FC = () => {
             >
               Strategy IDE
             </button>
+            <button
+              onClick={() => setCenterTab('ml')}
+              data-testid="tab-ml"
+              className={`px-3 py-1 text-xs font-mono rounded transition-colors ${
+                centerTab === 'ml' ? 'bg-accent text-white' : 'bg-surface-2 text-text-muted hover:text-text-primary'
+              }`}
+            >
+              ML Workbench
+            </button>
+            <button
+              onClick={() => setCenterTab('health')}
+              data-testid="tab-health"
+              className={`px-3 py-1 text-xs font-mono rounded transition-colors ${
+                centerTab === 'health' ? 'bg-accent text-white' : 'bg-surface-2 text-text-muted hover:text-text-primary'
+              }`}
+            >
+              Health
+            </button>
           </div>
 
           {centerTab === 'chart' ? (
@@ -222,9 +242,17 @@ export const Workspace: React.FC = () => {
                 <OrderEntry defaultSymbol={selectedSymbol} />
               </div>
             </>
-          ) : (
+          ) : centerTab === 'strategy' ? (
             <div className="flex-1 bg-surface-1 rounded-lg border border-[var(--border-color)] overflow-hidden">
               <StrategyIDE />
+            </div>
+          ) : centerTab === 'ml' ? (
+            <div className="flex-1 bg-surface-1 rounded-lg border border-[var(--border-color)] overflow-hidden">
+              <MLWorkbench />
+            </div>
+          ) : (
+            <div className="flex-1 bg-surface-1 rounded-lg border border-[var(--border-color)] overflow-hidden">
+              <HealthMonitor />
             </div>
           )}
         </div>

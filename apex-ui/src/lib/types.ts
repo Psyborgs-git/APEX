@@ -81,3 +81,50 @@ export interface AccountBalanceDto {
   realized_pnl: number;
   currency: string;
 }
+
+// ML Workbench types
+export interface MLModelDto {
+  model_id: string;
+  algorithm: string;
+  status: 'idle' | 'training' | 'completed' | 'failed';
+  metrics: Record<string, number>;
+  feature_names: string[];
+  created_at: string;
+  data_path: string;
+  target_column: string;
+}
+
+export interface MLTrainingRequestDto {
+  algorithm: string;
+  data_path: string;
+  target_column: string;
+  feature_columns: string[];
+  hyperparams: Record<string, number | string>;
+  n_splits: number;
+  lag_periods: number[];
+}
+
+export interface MLTrainingResultDto {
+  model_id: string;
+  metrics: Record<string, number>;
+  feature_names: string[];
+  status: string;
+}
+
+// Health Monitor types
+export interface AdapterHealthDto {
+  adapter_id: string;
+  adapter_type: string;
+  status: 'healthy' | 'degraded' | 'unhealthy';
+  message: string;
+  last_check: string;
+}
+
+export interface SystemHealthDto {
+  adapters: AdapterHealthDto[];
+  uptime_secs: number;
+  memory_usage_mb: number;
+  active_subscriptions: number;
+  open_orders: number;
+  active_strategies: number;
+}
