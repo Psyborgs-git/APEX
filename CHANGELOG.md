@@ -7,6 +7,10 @@ The format is based on "Keep a Changelog" and this project adheres to [Semantic 
 ## [Unreleased]
 
 ### Added
+- **VADER-Style NLP Sentiment Pipeline**: Financial-domain lexicon-based sentiment analysis with 80+ terms, negation handling, degree modifiers, capitalisation boost, and VADER-normalised compound scoring (−1.0 to +1.0)
+- **IPC Input Validation**: Comprehensive security validation for all 20 Tauri IPC commands — symbol format, quantity bounds, price validation, broker ID whitelist, algorithm whitelist, path traversal prevention, JSON payload size limits
+- **Structured JSON Trace Exporter**: Optional NDJSON trace output (`APEX_JSON_TRACE=1`) with dual-layer tracing (console + file), suitable for Jaeger/Grafana/Datadog ingestion
+- **Application Icon**: Source SVG with lightning bolt + candlestick chart aesthetic, plus `scripts/generate_icons.sh` for automated multi-size PNG/ICO/ICNS generation
 - **CommandBar Execution Wiring**: Full command execution — order placement (BUY/SELL), symbol navigation, panel switching (:ML, :HEALTH, :STRATEGY, :CHART) — with success/error feedback display
 - **Tauri Event Bridge Hooks**: `useQuoteStream`, `useOrderStream`, `usePositionStream`, `useHealthStream` real-time event hooks with automatic Tauri/browser fallback
 - **Hot Path Profiling**: `#[tracing::instrument]` spans on `MarketDataAggregator::start`, `OrderTradeManager::submit_order/cancel_order/handle_fill/reconcile_positions`, `RiskEngine::check` with selective field recording
@@ -26,7 +30,7 @@ The format is based on "Keep a Changelog" and this project adheres to [Semantic 
 - **ModelRegistry State**: In-memory ML model registry managed by Tauri for IPC access
 - **Workspace Tabs**: Added ML Workbench and Health Monitor as new center-column tabs alongside Chart and Strategy IDE
 - **Playwright Tests**: 29 new E2E tests — 13 ML Workbench + 7 Health Monitor + 9 CommandBar (65 total)
-- **Rust Tests**: 6 new walk-forward backtest unit tests (164 total, all passing)
+- **Rust Tests**: 30 new tests — 9 sentiment + 11 validation + 6 walk-forward + 1 tracing + 3 DTO (184 total, all passing)
 - **Tauri IPC Commands**: `get_ohlcv`, `get_account_balance`, `modify_order`, `get_alert_rules`, `get_historical_data`, `get_watchlist_symbols` (6 prior new commands)
 - **Real-time Event Push**: Message bus → Tauri emitter for 7 event types (quotes, orders, positions, news, alerts, strategy signals, adapter health)
 - **Paper Trading Registration**: Paper trading adapter auto-registered as default execution adapter on startup
