@@ -1,19 +1,14 @@
 mod commands;
 mod dto;
 mod state;
+mod tracing_setup;
+mod validation;
 
-use commands::{alerts, data, market, orders, risk};
+use commands::{alerts, data, health, market, ml, orders, risk};
 use tauri::Manager;
-use tracing_subscriber::{fmt, EnvFilter};
 
 fn main() {
-    fmt()
-        .with_env_filter(
-            EnvFilter::from_default_env()
-                .add_directive("apex=info".parse().expect("static directive must parse")),
-        )
-        .with_target(true)
-        .init();
+    tracing_setup::init();
 
     tracing::info!("APEX Terminal starting...");
 
@@ -31,6 +26,9 @@ fn main() {
 
             // Start real-time event push from message bus → frontend
             app_state.start_event_push(app.handle().clone());
+
+            // Register ML model registry state
+            app.manage(ml::ModelRegistry::default());
 
             app.manage(app_state);
             Ok(())
@@ -52,6 +50,10 @@ fn main() {
             risk::reset_halt,
             data::get_historical_data,
             data::get_watchlist_symbols,
+            ml::list_ml_models,
+            ml::train_ml_model,
+            ml::delete_ml_model,
+            health::get_system_health,
         ])
         .run(tauri::generate_context!())
         .expect("error while running APEX Terminal");

@@ -7,8 +7,12 @@ __pycache__/
 *.egg-info/
 data/
 *.db
+*.db-shm
+*.db-wal
 *.duckdb
 apex-ui/node_modules/
 apex-ui/dist/
 .pytest_cache/
 tsconfig.tsbuildinfo
+logs/
+models/

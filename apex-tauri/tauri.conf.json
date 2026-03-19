@@ -38,13 +38,18 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "resources": [
+      "../apex-python/**/*",
+      "../config/apex.example.toml",
+      "../migrations/*.sql"
+    ],
     "shortDescription": "Professional algorithmic trading terminal",
     "longDescription": "APEX is a professional-grade algorithmic trading terminal built with Rust and React. It features real-time market data, strategy development with Python, ML model training, and comprehensive risk management.",
     "copyright": "2024 APEX Contributors",
     "category": "Finance",
     "linux": {
       "deb": {
-        "depends": ["libwebkit2gtk-4.1-0", "libssl3", "libsqlite3-0"]
+        "depends": ["libwebkit2gtk-4.1-0", "libssl3", "libsqlite3-0", "python3"]
       },
       "appimage": {
         "bundleMediaFramework": false

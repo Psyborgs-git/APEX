@@ -221,6 +221,61 @@ pub struct RiskStatusDto {
     pub max_daily_loss: f64,
 }
 
+/// ML model DTO for frontend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MLModelDto {
+    pub model_id: String,
+    pub algorithm: String,
+    pub status: String,
+    pub metrics: std::collections::HashMap<String, f64>,
+    pub feature_names: Vec<String>,
+    pub created_at: String,
+    pub data_path: String,
+    pub target_column: String,
+}
+
+/// ML training request DTO from frontend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MLTrainingRequestDto {
+    pub algorithm: String,
+    pub data_path: String,
+    pub target_column: String,
+    pub feature_columns: Vec<String>,
+    pub hyperparams: std::collections::HashMap<String, serde_json::Value>,
+    pub n_splits: usize,
+    pub lag_periods: Vec<i64>,
+}
+
+/// ML training result DTO for frontend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MLTrainingResultDto {
+    pub model_id: String,
+    pub metrics: std::collections::HashMap<String, f64>,
+    pub feature_names: Vec<String>,
+    pub status: String,
+}
+
+/// Adapter health DTO for frontend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdapterHealthDto {
+    pub adapter_id: String,
+    pub adapter_type: String,
+    pub status: String,
+    pub message: String,
+    pub last_check: String,
+}
+
+/// System health DTO for frontend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SystemHealthDto {
+    pub adapters: Vec<AdapterHealthDto>,
+    pub uptime_secs: u64,
+    pub memory_usage_mb: u64,
+    pub active_subscriptions: usize,
+    pub open_orders: usize,
+    pub active_strategies: usize,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

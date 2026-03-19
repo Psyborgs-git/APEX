@@ -9,3 +9,4 @@ pub mod news_engine;
 pub mod backtest_engine;
 pub mod indicators;
 pub mod scanner;
+pub mod sentiment;

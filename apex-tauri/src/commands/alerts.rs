@@ -1,4 +1,5 @@
 use crate::state::AppState;
+use crate::validation;
 use apex_core::application::alert_engine::{AlertDelivery, AlertRule, StoredAlert};
 use serde::Serialize;
 use tauri::State;
@@ -18,6 +19,9 @@ pub async fn add_alert(
     rule_json: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    validation::validate_string_length(&id, "alert id")?;
+    validation::validate_alert_json(&rule_json)?;
+
     let rule: AlertRule =
         serde_json::from_str(&rule_json).map_err(|e| format!("Invalid alert rule: {}", e))?;
 

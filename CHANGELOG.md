@@ -7,7 +7,31 @@ The format is based on "Keep a Changelog" and this project adheres to [Semantic 
 ## [Unreleased]
 
 ### Added
-- **Tauri IPC Commands**: `get_ohlcv`, `get_account_balance`, `modify_order`, `get_alert_rules`, `get_historical_data`, `get_watchlist_symbols` (6 new commands, 16 total)
+- **VADER-Style NLP Sentiment Pipeline**: Financial-domain lexicon-based sentiment analysis with 80+ terms, negation handling, degree modifiers, capitalisation boost, and VADER-normalised compound scoring (−1.0 to +1.0)
+- **IPC Input Validation**: Comprehensive security validation for all 20 Tauri IPC commands — symbol format, quantity bounds, price validation, broker ID whitelist, algorithm whitelist, path traversal prevention, JSON payload size limits
+- **Structured JSON Trace Exporter**: Optional NDJSON trace output (`APEX_JSON_TRACE=1`) with dual-layer tracing (console + file), suitable for Jaeger/Grafana/Datadog ingestion
+- **Application Icon**: Source SVG with lightning bolt + candlestick chart aesthetic, plus `scripts/generate_icons.sh` for automated multi-size PNG/ICO/ICNS generation
+- **CommandBar Execution Wiring**: Full command execution — order placement (BUY/SELL), symbol navigation, panel switching (:ML, :HEALTH, :STRATEGY, :CHART) — with success/error feedback display
+- **Tauri Event Bridge Hooks**: `useQuoteStream`, `useOrderStream`, `usePositionStream`, `useHealthStream` real-time event hooks with automatic Tauri/browser fallback
+- **Hot Path Profiling**: `#[tracing::instrument]` spans on `MarketDataAggregator::start`, `OrderTradeManager::submit_order/cancel_order/handle_fill/reconcile_positions`, `RiskEngine::check` with selective field recording
+- **Database Migrations**: 3 SQL migration files — `001_core_tables.sql` (orders, trades, ohlcv), `002_application_tables.sql` (alert_rules, strategy_runs, ml_models), `003_timescaledb_extensions.sql` (hypertable, compression, retention)
+- **Production Bundle Config**: Tauri bundle updated with Python sidecar resources, migration files, and Python3 system dependency for Linux
+- **Playwright E2E Tests**: 9 new command bar tests (65 total, all passing)
+- **ML Workbench UI**: Full training dashboard with algorithm selection (Random Forest, Gradient Boosting, Logistic Regression, XGBoost), feature selection chips, CV split configuration, lag period settings, and model registry with metrics display
+- **ML Zustand Store**: Centralized state management for ML models, training status, and error handling
+- **Health Monitor UI**: System health dashboard with adapter status indicators, uptime/memory/subscription metrics, and real-time health polling (5s intervals)
+- **Health Zustand Store**: Centralized state management for system health data
+- **Walk-Forward Backtest Engine**: Rolling train/test window validation with configurable n_windows and train_pct, overfitting ratio calculation, and aggregate test metrics
+- **WalkForwardConfig/WalkForwardResult**: Full configuration and result types for walk-forward analysis
+- **BacktestMetrics Default**: Default implementation for zero-initialized backtest metrics
+- **Tauri IPC Commands**: `list_ml_models`, `train_ml_model`, `delete_ml_model`, `get_system_health` (4 new commands, 20 total)
+- **ML DTOs**: MLModelDto, MLTrainingRequestDto, MLTrainingResultDto for frontend–backend data transfer
+- **Health DTOs**: AdapterHealthDto, SystemHealthDto for health monitoring data transfer
+- **ModelRegistry State**: In-memory ML model registry managed by Tauri for IPC access
+- **Workspace Tabs**: Added ML Workbench and Health Monitor as new center-column tabs alongside Chart and Strategy IDE
+- **Playwright Tests**: 29 new E2E tests — 13 ML Workbench + 7 Health Monitor + 9 CommandBar (65 total)
+- **Rust Tests**: 30 new tests — 9 sentiment + 11 validation + 6 walk-forward + 1 tracing + 3 DTO (184 total, all passing)
+- **Tauri IPC Commands**: `get_ohlcv`, `get_account_balance`, `modify_order`, `get_alert_rules`, `get_historical_data`, `get_watchlist_symbols` (6 prior new commands)
 - **Real-time Event Push**: Message bus → Tauri emitter for 7 event types (quotes, orders, positions, news, alerts, strategy signals, adapter health)
 - **Paper Trading Registration**: Paper trading adapter auto-registered as default execution adapter on startup
 - **Data Command Module**: New `apex-tauri/src/commands/data.rs` for historical data and watchlist queries
