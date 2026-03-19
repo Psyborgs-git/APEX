@@ -1,20 +1,14 @@
 mod commands;
 mod dto;
 mod state;
+mod tracing_setup;
 mod validation;
 
 use commands::{alerts, data, health, market, ml, orders, risk};
 use tauri::Manager;
-use tracing_subscriber::{fmt, EnvFilter};
 
 fn main() {
-    fmt()
-        .with_env_filter(
-            EnvFilter::from_default_env()
-                .add_directive("apex=info".parse().expect("static directive must parse")),
-        )
-        .with_target(true)
-        .init();
+    tracing_setup::init();
 
     tracing::info!("APEX Terminal starting...");
 

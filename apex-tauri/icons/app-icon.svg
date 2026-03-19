@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0D1117;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#161B22;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="bolt" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#58A6FF;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1F6FEB;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="chart" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#3FB950;stop-opacity:0.8" />
+      <stop offset="100%" style="stop-color:#238636;stop-opacity:0.9" />
+    </linearGradient>
+  </defs>
+  <!-- Background rounded square -->
+  <rect x="16" y="16" width="480" height="480" rx="80" ry="80" fill="url(#bg)" />
+  <rect x="16" y="16" width="480" height="480" rx="80" ry="80" fill="none" stroke="#30363D" stroke-width="2" />
+  <!-- Lightning bolt (APEX speed symbol) -->
+  <path d="M 290 80 L 180 260 L 240 260 L 210 432 L 340 230 L 275 230 L 310 80 Z"
+        fill="url(#bolt)" opacity="0.95" />
+  <!-- Subtle chart line at bottom -->
+  <polyline points="80,380 140,350 200,370 260,320 320,340 380,300 440,310"
+            fill="none" stroke="url(#chart)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
+  <!-- Small candlestick bodies -->
+  <rect x="137" y="345" width="6" height="12" rx="1" fill="#3FB950" opacity="0.7" />
+  <rect x="197" y="362" width="6" height="16" rx="1" fill="#F85149" opacity="0.7" />
+  <rect x="257" y="315" width="6" height="12" rx="1" fill="#3FB950" opacity="0.7" />
+  <rect x="317" y="332" width="6" height="16" rx="1" fill="#F85149" opacity="0.7" />
+  <rect x="377" y="295" width="6" height="12" rx="1" fill="#3FB950" opacity="0.7" />
+</svg>
