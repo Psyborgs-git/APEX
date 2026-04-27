@@ -1,8 +1,5 @@
-use apex_core::{
-    domain::models::*,
-    ports::storage::StoragePort,
-};
 use anyhow::{Context, Result};
+use apex_core::{domain::models::*, ports::storage::StoragePort};
 use async_trait::async_trait;
 use deadpool_postgres::{Config, Manager, ManagerConfig, Pool, RecyclingMethod, Runtime};
 use tokio_postgres::NoTls;
@@ -28,7 +25,8 @@ impl TimescaleAdapter {
             recycling_method: RecyclingMethod::Fast,
         });
 
-        let pool = cfg.create_pool(Some(Runtime::Tokio1), NoTls)
+        let pool = cfg
+            .create_pool(Some(Runtime::Tokio1), NoTls)
             .context("Failed to create TimescaleDB connection pool")?;
 
         let adapter = Self { pool };
@@ -42,11 +40,16 @@ impl TimescaleAdapter {
 
     /// Initialize the database schema with hypertables and continuous aggregates
     async fn initialize_schema(&self) -> Result<()> {
-        let client = self.pool.get().await
+        let client = self
+            .pool
+            .get()
+            .await
             .context("Failed to get database connection")?;
 
         // Create ticks table as hypertable
-        client.batch_execute(r#"
+        client
+            .batch_execute(
+                r#"
             CREATE TABLE IF NOT EXISTS ticks (
                 time        TIMESTAMPTZ NOT NULL,
                 symbol      TEXT NOT NULL,
@@ -64,10 +67,15 @@ impl TimescaleAdapter {
 
             -- Create index for symbol lookups
             CREATE INDEX IF NOT EXISTS idx_ticks_symbol_time ON ticks (symbol, time DESC);
-        "#).await.context("Failed to create ticks hypertable")?;
+        "#,
+            )
+            .await
+            .context("Failed to create ticks hypertable")?;
 
         // Create OHLCV table as hypertable
-        client.batch_execute(r#"
+        client
+            .batch_execute(
+                r#"
             CREATE TABLE IF NOT EXISTS ohlcv (
                 time       TIMESTAMPTZ NOT NULL,
                 symbol     TEXT NOT NULL,
@@ -87,10 +95,15 @@ impl TimescaleAdapter {
             -- Create unique index to prevent duplicates
             CREATE UNIQUE INDEX IF NOT EXISTS idx_ohlcv_symbol_time_tf
                 ON ohlcv (symbol, timeframe, time DESC);
-        "#).await.context("Failed to create ohlcv hypertable")?;
+        "#,
+            )
+            .await
+            .context("Failed to create ohlcv hypertable")?;
 
         // Create continuous aggregates for common timeframes
-        client.batch_execute(r#"
+        client
+            .batch_execute(
+                r#"
             CREATE MATERIALIZED VIEW IF NOT EXISTS ohlcv_1m
             WITH (timescaledb.continuous) AS
             SELECT
@@ -132,10 +145,15 @@ impl TimescaleAdapter {
             FROM ticks
             GROUP BY time_bucket('1 hour', time), symbol
             WITH NO DATA;
-        "#).await.context("Failed to create continuous aggregates")?;
+        "#,
+            )
+            .await
+            .context("Failed to create continuous aggregates")?;
 
         // Create orders table
-        client.batch_execute(r#"
+        client
+            .batch_execute(
+                r#"
             CREATE TABLE IF NOT EXISTS orders (
                 id          TEXT PRIMARY KEY,
                 symbol      TEXT NOT NULL,
@@ -156,10 +174,15 @@ impl TimescaleAdapter {
             CREATE INDEX IF NOT EXISTS idx_orders_symbol ON orders (symbol);
             CREATE INDEX IF NOT EXISTS idx_orders_status ON orders (status);
             CREATE INDEX IF NOT EXISTS idx_orders_created ON orders (created_at DESC);
-        "#).await.context("Failed to create orders table")?;
+        "#,
+            )
+            .await
+            .context("Failed to create orders table")?;
 
         // Create positions table
-        client.batch_execute(r#"
+        client
+            .batch_execute(
+                r#"
             CREATE TABLE IF NOT EXISTS positions (
                 symbol     TEXT NOT NULL,
                 broker_id  TEXT NOT NULL,
@@ -171,7 +194,10 @@ impl TimescaleAdapter {
                 updated_at TIMESTAMPTZ NOT NULL,
                 PRIMARY KEY (symbol, broker_id)
             );
-        "#).await.context("Failed to create positions table")?;
+        "#,
+            )
+            .await
+            .context("Failed to create positions table")?;
 
         debug!("Database schema initialized successfully");
         Ok(())
@@ -221,32 +247,88 @@ impl StoragePort for TimescaleAdapter {
             return Ok(());
         }
 
-        let client = self.pool.get().await
+        let client = self
+            .pool
+            .get()
+            .await
             .context("Failed to get database connection")?;
 
         // Batch insert for performance
-        let stmt = client.prepare(
-            "INSERT INTO ticks (time, symbol, bid, ask, last, volume, source)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)"
-        ).await?;
+        let stmt = client
+            .prepare(
+                "INSERT INTO ticks (time, symbol, bid, ask, last, volume, source)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)",
+            )
+            .await?;
 
         for tick in ticks {
-            client.execute(
-                &stmt,
-                &[
-                    &tick.time,
-                    &tick.symbol.0,
-                    &tick.bid,
-                    &tick.ask,
-                    &tick.last,
-                    &(tick.volume as i64),
-                    &tick.source,
-                ],
-            ).await.context("Failed to insert tick")?;
+            client
+                .execute(
+                    &stmt,
+                    &[
+                        &tick.time,
+                        &tick.symbol.0,
+                        &tick.bid,
+                        &tick.ask,
+                        &tick.last,
+                        &(tick.volume as i64),
+                        &tick.source,
+                    ],
+                )
+                .await
+                .context("Failed to insert tick")?;
         }
 
         debug!("Inserted {} ticks", ticks.len());
         Ok(())
+    }
+
+    async fn query_ticks(
+        &self,
+        symbol: &Symbol,
+        from: chrono::DateTime<chrono::Utc>,
+        to: chrono::DateTime<chrono::Utc>,
+        limit: Option<usize>,
+    ) -> Result<Vec<Tick>> {
+        let client = self
+            .pool
+            .get()
+            .await
+            .context("Failed to get database connection")?;
+
+        let query = format!(
+            "SELECT time, symbol, bid, ask, last, volume, source
+             FROM ticks
+             WHERE symbol = $1 AND time >= $2 AND time <= $3
+             ORDER BY time ASC
+             {}",
+            if let Some(limit) = limit {
+                format!("LIMIT {}", limit)
+            } else {
+                String::new()
+            }
+        );
+
+        let rows = client
+            .query(&query, &[&symbol.0, &from, &to])
+            .await
+            .context("Failed to query ticks")?;
+
+        let mut ticks = Vec::with_capacity(rows.len());
+        for row in rows {
+            let volume: i64 = row.get(5);
+            ticks.push(Tick {
+                time: row.get(0),
+                symbol: Symbol(row.get(1)),
+                bid: row.get(2),
+                ask: row.get(3),
+                last: row.get(4),
+                volume: volume as u64,
+                source: row.get(6),
+            });
+        }
+
+        Ok(ticks)
     }
 
     async fn write_ohlcv(&self, bars: &[OHLCV]) -> Result<()> {
@@ -254,35 +336,43 @@ impl StoragePort for TimescaleAdapter {
             return Ok(());
         }
 
-        let client = self.pool.get().await
+        let client = self
+            .pool
+            .get()
+            .await
             .context("Failed to get database connection")?;
 
         // Use a default timeframe for manually inserted bars
-        let stmt = client.prepare(
-            "INSERT INTO ohlcv (time, symbol, timeframe, open, high, low, close, volume)
+        let stmt = client
+            .prepare(
+                "INSERT INTO ohlcv (time, symbol, timeframe, open, high, low, close, volume)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
              ON CONFLICT (symbol, timeframe, time) DO UPDATE SET
                 open = EXCLUDED.open,
                 high = EXCLUDED.high,
                 low = EXCLUDED.low,
                 close = EXCLUDED.close,
-                volume = EXCLUDED.volume"
-        ).await?;
+                volume = EXCLUDED.volume",
+            )
+            .await?;
 
         for bar in bars {
-            client.execute(
-                &stmt,
-                &[
-                    &bar.time,
-                    &bar.symbol.0,
-                    &"M1", // Default to M1, can be extended to support other timeframes
-                    &bar.open,
-                    &bar.high,
-                    &bar.low,
-                    &bar.close,
-                    &(bar.volume as i64),
-                ],
-            ).await.context("Failed to insert OHLCV bar")?;
+            client
+                .execute(
+                    &stmt,
+                    &[
+                        &bar.time,
+                        &bar.symbol.0,
+                        &"M1", // Default to M1, can be extended to support other timeframes
+                        &bar.open,
+                        &bar.high,
+                        &bar.low,
+                        &bar.close,
+                        &(bar.volume as i64),
+                    ],
+                )
+                .await
+                .context("Failed to insert OHLCV bar")?;
         }
 
         debug!("Inserted {} OHLCV bars", bars.len());
@@ -290,7 +380,10 @@ impl StoragePort for TimescaleAdapter {
     }
 
     async fn query_ohlcv(&self, params: OHLCVQuery) -> Result<Vec<OHLCV>> {
-        let client = self.pool.get().await
+        let client = self
+            .pool
+            .get()
+            .await
             .context("Failed to get database connection")?;
 
         let timeframe_str = Self::timeframe_to_string(&params.timeframe);
@@ -308,15 +401,13 @@ impl StoragePort for TimescaleAdapter {
             }
         );
 
-        let rows = client.query(
-            &query,
-            &[
-                &params.symbol.0,
-                &timeframe_str,
-                &params.from,
-                &params.to,
-            ],
-        ).await.context("Failed to query OHLCV data")?;
+        let rows = client
+            .query(
+                &query,
+                &[&params.symbol.0, &timeframe_str, &params.from, &params.to],
+            )
+            .await
+            .context("Failed to query OHLCV data")?;
 
         let mut results = Vec::with_capacity(rows.len());
         for row in rows {
@@ -332,12 +423,19 @@ impl StoragePort for TimescaleAdapter {
             });
         }
 
-        debug!("Queried {} OHLCV bars for {}", results.len(), params.symbol.0);
+        debug!(
+            "Queried {} OHLCV bars for {}",
+            results.len(),
+            params.symbol.0
+        );
         Ok(results)
     }
 
     async fn write_order(&self, order: &Order) -> Result<()> {
-        let client = self.pool.get().await
+        let client = self
+            .pool
+            .get()
+            .await
             .context("Failed to get database connection")?;
 
         let side_str = match order.side {
@@ -362,35 +460,41 @@ impl StoragePort for TimescaleAdapter {
             OrderStatus::Rejected => "Rejected",
         };
 
-        client.execute(
-            "INSERT INTO orders
+        client
+            .execute(
+                "INSERT INTO orders
              (id, symbol, side, order_type, quantity, price, stop_price, status,
               filled_qty, avg_price, created_at, updated_at, broker_id, source)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)",
-            &[
-                &order.id.0,
-                &order.symbol.0,
-                &side_str,
-                &type_str,
-                &order.quantity,
-                &order.price,
-                &order.stop_price,
-                &status_str,
-                &order.filled_qty,
-                &order.avg_price,
-                &order.created_at,
-                &order.updated_at,
-                &order.broker_id,
-                &order.source,
-            ],
-        ).await.context("Failed to write order")?;
+                &[
+                    &order.id.0,
+                    &order.symbol.0,
+                    &side_str,
+                    &type_str,
+                    &order.quantity,
+                    &order.price,
+                    &order.stop_price,
+                    &status_str,
+                    &order.filled_qty,
+                    &order.avg_price,
+                    &order.created_at,
+                    &order.updated_at,
+                    &order.broker_id,
+                    &order.source,
+                ],
+            )
+            .await
+            .context("Failed to write order")?;
 
         debug!("Wrote order {}", order.id.0);
         Ok(())
     }
 
     async fn update_order(&self, order: &Order) -> Result<()> {
-        let client = self.pool.get().await
+        let client = self
+            .pool
+            .get()
+            .await
             .context("Failed to get database connection")?;
 
         let status_str = match order.status {
@@ -402,31 +506,37 @@ impl StoragePort for TimescaleAdapter {
             OrderStatus::Rejected => "Rejected",
         };
 
-        client.execute(
-            "UPDATE orders
+        client
+            .execute(
+                "UPDATE orders
              SET status = $1, filled_qty = $2, avg_price = $3, updated_at = $4
              WHERE id = $5",
-            &[
-                &status_str,
-                &order.filled_qty,
-                &order.avg_price,
-                &order.updated_at,
-                &order.id.0,
-            ],
-        ).await.context("Failed to update order")?;
+                &[
+                    &status_str,
+                    &order.filled_qty,
+                    &order.avg_price,
+                    &order.updated_at,
+                    &order.id.0,
+                ],
+            )
+            .await
+            .context("Failed to update order")?;
 
         debug!("Updated order {}", order.id.0);
         Ok(())
     }
 
     async fn query_orders(&self, params: OrderQuery) -> Result<Vec<Order>> {
-        let client = self.pool.get().await
+        let client = self
+            .pool
+            .get()
+            .await
             .context("Failed to get database connection")?;
 
         let mut query = String::from(
             "SELECT id, symbol, side, order_type, quantity, price, stop_price, status,
                     filled_qty, avg_price, created_at, updated_at, broker_id, source
-             FROM orders WHERE 1=1"
+             FROM orders WHERE 1=1",
         );
 
         let mut param_count = 0;
@@ -477,11 +587,15 @@ impl StoragePort for TimescaleAdapter {
         }
 
         // Convert boxed params to references for query
-        let param_refs: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> =
-            query_params.iter().map(|p| &**p as &(dyn tokio_postgres::types::ToSql + Sync)).collect();
+        let param_refs: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = query_params
+            .iter()
+            .map(|p| &**p as &(dyn tokio_postgres::types::ToSql + Sync))
+            .collect();
 
-        let rows = client.query(&query, &param_refs[..])
-            .await.context("Failed to query orders")?;
+        let rows = client
+            .query(&query, &param_refs[..])
+            .await
+            .context("Failed to query orders")?;
 
         let mut results = Vec::with_capacity(rows.len());
         for row in rows {
@@ -536,7 +650,10 @@ impl StoragePort for TimescaleAdapter {
     }
 
     async fn write_position(&self, pos: &Position) -> Result<()> {
-        let client = self.pool.get().await
+        let client = self
+            .pool
+            .get()
+            .await
             .context("Failed to get database connection")?;
 
         let side_str = match pos.side {
@@ -544,8 +661,9 @@ impl StoragePort for TimescaleAdapter {
             OrderSide::Sell => "Sell",
         };
 
-        client.execute(
-            "INSERT INTO positions
+        client
+            .execute(
+                "INSERT INTO positions
              (symbol, broker_id, quantity, avg_price, side, pnl, pnl_pct, updated_at)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
              ON CONFLICT (symbol, broker_id) DO UPDATE SET
@@ -555,32 +673,40 @@ impl StoragePort for TimescaleAdapter {
                 pnl = EXCLUDED.pnl,
                 pnl_pct = EXCLUDED.pnl_pct,
                 updated_at = EXCLUDED.updated_at",
-            &[
-                &pos.symbol.0,
-                &pos.broker_id,
-                &pos.quantity,
-                &pos.avg_price,
-                &side_str,
-                &pos.pnl,
-                &pos.pnl_pct,
-                &chrono::Utc::now(),
-            ],
-        ).await.context("Failed to write position")?;
+                &[
+                    &pos.symbol.0,
+                    &pos.broker_id,
+                    &pos.quantity,
+                    &pos.avg_price,
+                    &side_str,
+                    &pos.pnl,
+                    &pos.pnl_pct,
+                    &chrono::Utc::now(),
+                ],
+            )
+            .await
+            .context("Failed to write position")?;
 
         debug!("Wrote position for {} @ {}", pos.symbol.0, pos.broker_id);
         Ok(())
     }
 
     async fn query_positions(&self, broker_id: &str) -> Result<Vec<Position>> {
-        let client = self.pool.get().await
+        let client = self
+            .pool
+            .get()
+            .await
             .context("Failed to get database connection")?;
 
-        let rows = client.query(
-            "SELECT symbol, broker_id, quantity, avg_price, side, pnl, pnl_pct
+        let rows = client
+            .query(
+                "SELECT symbol, broker_id, quantity, avg_price, side, pnl, pnl_pct
              FROM positions
              WHERE broker_id = $1",
-            &[&broker_id],
-        ).await.context("Failed to query positions")?;
+                &[&broker_id],
+            )
+            .await
+            .context("Failed to query positions")?;
 
         let mut results = Vec::with_capacity(rows.len());
         for row in rows {
@@ -602,7 +728,11 @@ impl StoragePort for TimescaleAdapter {
             });
         }
 
-        debug!("Queried {} positions for broker {}", results.len(), broker_id);
+        debug!(
+            "Queried {} positions for broker {}",
+            results.len(),
+            broker_id
+        );
         Ok(results)
     }
 }
@@ -615,6 +745,9 @@ mod tests {
     fn test_timeframe_mapping() {
         assert_eq!(TimescaleAdapter::timeframe_to_string(&Timeframe::M1), "M1");
         assert_eq!(TimescaleAdapter::timeframe_to_string(&Timeframe::H1), "H1");
-        assert_eq!(TimescaleAdapter::timeframe_to_interval(&Timeframe::M5), "5 minutes");
+        assert_eq!(
+            TimescaleAdapter::timeframe_to_interval(&Timeframe::M5),
+            "5 minutes"
+        );
     }
 }

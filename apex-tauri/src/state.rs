@@ -9,6 +9,7 @@ use apex_core::application::market_data_aggregator::MarketDataAggregator;
 use apex_core::application::order_trade_manager::OrderTradeManager;
 use apex_core::application::risk_engine::{RiskConfig, RiskEngine};
 use apex_core::bus::message_bus::{BusMessage, MessageBus, Topic};
+use apex_core::ports::storage::StoragePort;
 
 /// Shared application state — initialised once at startup, shared across all IPC handlers.
 pub struct AppState {
@@ -30,7 +31,9 @@ impl AppState {
 
         let risk = Arc::new(RiskEngine::new(RiskConfig::default()));
 
-        let mut aggregator_inner = MarketDataAggregator::new(bus.clone());
+        let storage_port: Arc<dyn StoragePort> = storage.clone();
+        let mut aggregator_inner =
+            MarketDataAggregator::new_with_storage(bus.clone(), Some(storage_port));
         let yahoo_adapter = apex_adapters::market_data::yahoo_finance::YahooFinanceAdapter::new();
         aggregator_inner.add_adapter(Box::new(yahoo_adapter));
         let aggregator = Arc::new(aggregator_inner);

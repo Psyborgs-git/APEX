@@ -130,6 +130,60 @@ impl StoragePort for SqliteStorage {
         Ok(())
     }
 
+    async fn query_ticks(
+        &self,
+        symbol: &Symbol,
+        from: DateTime<Utc>,
+        to: DateTime<Utc>,
+        limit: Option<usize>,
+    ) -> Result<Vec<Tick>> {
+        let conn = self.conn.lock().await;
+        let mut sql = String::from(
+            "SELECT time, symbol, bid, ask, last, volume, source
+             FROM ticks
+             WHERE symbol = ?1 AND time >= ?2 AND time <= ?3
+             ORDER BY time ASC",
+        );
+        if let Some(lim) = limit {
+            sql.push_str(&format!(" LIMIT {}", lim));
+        }
+
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(
+            params![symbol.0, from.to_rfc3339(), to.to_rfc3339()],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, f64>(2)?,
+                    row.get::<_, f64>(3)?,
+                    row.get::<_, f64>(4)?,
+                    row.get::<_, i64>(5)?,
+                    row.get::<_, String>(6)?,
+                ))
+            },
+        )?;
+
+        let mut ticks = Vec::new();
+        for row in rows {
+            let (time_str, symbol_str, bid, ask, last, volume, source) = row?;
+            let time = DateTime::parse_from_rfc3339(&time_str)
+                .map_err(|e| anyhow!("Failed to parse tick time: {}", e))?
+                .with_timezone(&Utc);
+            ticks.push(Tick {
+                time,
+                symbol: Symbol(symbol_str),
+                bid,
+                ask,
+                last,
+                volume: volume as u64,
+                source,
+            });
+        }
+
+        Ok(ticks)
+    }
+
     async fn write_ohlcv(&self, bars: &[OHLCV]) -> Result<()> {
         let conn = self.conn.lock().await;
         let tx = conn.unchecked_transaction()?;

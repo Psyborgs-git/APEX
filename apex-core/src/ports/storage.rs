@@ -7,6 +7,14 @@ use async_trait::async_trait;
 pub trait StoragePort: Send + Sync {
     /// Write a batch of ticks
     async fn write_ticks(&self, ticks: &[Tick]) -> Result<()>;
+    /// Query ticks for replay/recovery
+    async fn query_ticks(
+        &self,
+        symbol: &Symbol,
+        from: chrono::DateTime<chrono::Utc>,
+        to: chrono::DateTime<chrono::Utc>,
+        limit: Option<usize>,
+    ) -> Result<Vec<Tick>>;
     /// Write a batch of OHLCV bars
     async fn write_ohlcv(&self, bars: &[OHLCV]) -> Result<()>;
     /// Query OHLCV data
