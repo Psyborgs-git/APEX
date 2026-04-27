@@ -10,25 +10,33 @@ use tracing::{info, info_span, warn};
 use crate::bus::message_bus::{BusMessage, MessageBus, Topic};
 use crate::domain::models::*;
 use crate::ports::market_data::MarketDataPort;
+use crate::ports::storage::StoragePort;
 
 /// Market Data Aggregator — the system's sensory cortex
 pub struct MarketDataAggregator {
-    adapters: Vec<Box<dyn MarketDataPort>>,
-    bus: Arc<MessageBus>,
+    adapters:    Vec<Box<dyn MarketDataPort>>,
+    bus:         Arc<MessageBus>,
     quote_cache: Arc<DashMap<String, Quote>>,
     tick_buffer: Arc<Mutex<Vec<Tick>>>,
-    symbol_map: HashMap<String, String>,
+    symbol_map:  HashMap<String, String>,
+    storage:     Option<Arc<dyn StoragePort>>,
 }
 
 impl MarketDataAggregator {
-    /// Create a new Market Data Aggregator
+    /// Create a new Market Data Aggregator (no storage sink)
     pub fn new(bus: Arc<MessageBus>) -> Self {
+        Self::with_storage(bus, None)
+    }
+
+    /// Create a new Market Data Aggregator with a durable storage sink
+    pub fn with_storage(bus: Arc<MessageBus>, storage: Option<Arc<dyn StoragePort>>) -> Self {
         Self {
-            adapters: Vec::new(),
+            adapters:    Vec::new(),
             bus,
             quote_cache: Arc::new(DashMap::new()),
             tick_buffer: Arc::new(Mutex::new(Vec::new())),
-            symbol_map: HashMap::new(),
+            symbol_map:  HashMap::new(),
+            storage,
         }
     }
 
@@ -50,7 +58,10 @@ impl MarketDataAggregator {
 
     /// Resolve a symbol to its canonical form
     pub fn resolve_symbol(&self, symbol: &str) -> String {
-        self.symbol_map.get(symbol).cloned().unwrap_or_else(|| symbol.to_string())
+        self.symbol_map
+            .get(symbol)
+            .cloned()
+            .unwrap_or_else(|| symbol.to_string())
     }
 
     /// Subscribe to symbols across all adapters and start processing
@@ -58,30 +69,34 @@ impl MarketDataAggregator {
     pub async fn start(&self, symbols: &[Symbol]) -> Result<()> {
         for adapter in &self.adapters {
             let mut tick_stream = adapter.subscribe(symbols).await?;
-            let bus = self.bus.clone();
+            let bus         = self.bus.clone();
             let quote_cache = self.quote_cache.clone();
             let tick_buffer = self.tick_buffer.clone();
-            let adapter_id = adapter.adapter_id().to_string();
+            let adapter_id  = adapter.adapter_id().to_string();
 
             // Spawn a task per adapter to read from its tick stream
             tokio::spawn(async move {
                 while let Some(tick) = tick_stream.recv().await {
                     let symbol_key = tick.symbol.0.clone();
-                    let span = info_span!("tick_pipeline", symbol = %symbol_key, source = %adapter_id);
+                    let span = info_span!(
+                        "tick_pipeline",
+                        symbol = %symbol_key,
+                        source = %adapter_id
+                    );
 
                     let tick_clone = span.in_scope(|| {
                         // Update quote cache
                         let quote = Quote {
-                            symbol: tick.symbol.clone(),
-                            bid: tick.bid,
-                            ask: tick.ask,
-                            last: tick.last,
-                            open: tick.last,
-                            high: tick.last,
-                            low: tick.last,
-                            volume: tick.volume,
+                            symbol:     tick.symbol.clone(),
+                            bid:        tick.bid,
+                            ask:        tick.ask,
+                            last:       tick.last,
+                            open:       tick.last,
+                            high:       tick.last,
+                            low:        tick.last,
+                            volume:     tick.volume,
                             change_pct: 0.0,
-                            vwap: tick.last,
+                            vwap:       tick.last,
                             updated_at: tick.time,
                         };
                         quote_cache.insert(symbol_key.clone(), quote.clone());
@@ -106,8 +121,9 @@ impl MarketDataAggregator {
             });
         }
 
-        // Start tick buffer flush task (every 100ms)
+        // Start tick buffer flush task (every 100 ms) — writes to storage if wired
         let tick_buffer = self.tick_buffer.clone();
+        let storage     = self.storage.clone();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_millis(100));
             loop {
@@ -119,9 +135,24 @@ impl MarketDataAggregator {
                     }
                     buffer.drain(..).collect()
                 };
-                // In production, these would be written to storage
-                // For now, we just drain the buffer
-                let _count = ticks.len();
+
+                if let Some(ref store) = storage {
+                    // Deduplicate by (symbol, time) before writing
+                    let mut seen = std::collections::HashSet::new();
+                    let unique: Vec<Tick> = ticks
+                        .into_iter()
+                        .filter(|t| {
+                            let key = format!("{}@{}", t.symbol.0, t.time.timestamp_nanos_opt().unwrap_or(0));
+                            seen.insert(key)
+                        })
+                        .collect();
+
+                    if !unique.is_empty() {
+                        if let Err(e) = store.write_ticks(&unique).await {
+                            warn!("Failed to persist tick batch: {}", e);
+                        }
+                    }
+                }
             }
         });
 

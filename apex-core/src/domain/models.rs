@@ -227,6 +227,183 @@ pub struct FillEvent {
     pub broker_id:  String,
 }
 
+// ---------------------------------------------------------------------------
+// P1 — Fill simulation configuration for realistic backtest fills
+// ---------------------------------------------------------------------------
+
+/// Configuration for fill simulation in backtesting.
+///
+/// Enables realistic simulation of spreads, partial fills, simulated latency,
+/// and randomized order rejections to match live-trading behaviour.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FillSimulation {
+    /// Half-spread added/subtracted to the close price (in basis points).
+    /// E.g. 5 bps → buy fills at close * (1 + 0.0005).
+    pub spread_bps: f64,
+    /// Fraction of orders that receive only a partial fill on the first
+    /// attempt (0.0 = never, 1.0 = always).
+    pub partial_fill_rate: f64,
+    /// When a partial fill occurs, this fraction of the original quantity is
+    /// filled (0.0 – 1.0).
+    pub partial_fill_fraction: f64,
+    /// Simulated fill latency in milliseconds (added to the bar timestamp).
+    pub latency_ms: u64,
+    /// Fraction of orders that are randomly rejected by the simulated broker
+    /// (0.0 = never reject, 0.05 = 5% rejection rate).
+    pub broker_reject_rate: f64,
+}
+
+impl Default for FillSimulation {
+    fn default() -> Self {
+        Self {
+            spread_bps: 2.0,
+            partial_fill_rate: 0.0,
+            partial_fill_fraction: 0.5,
+            latency_ms: 0,
+            broker_reject_rate: 0.0,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// P2 — Instrument metadata, exchange calendar, and corporate actions
+// ---------------------------------------------------------------------------
+
+/// Type of financial instrument
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum InstrumentType {
+    Equity,
+    Future,
+    Option,
+    Forex,
+    Crypto,
+    ETF,
+    Index,
+    Bond,
+}
+
+/// Static reference data about a financial instrument
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InstrumentMetadata {
+    /// Canonical symbol (e.g. "RELIANCE", "AAPL", "BTC/USDT")
+    pub symbol:          Symbol,
+    /// Human-readable name
+    pub name:            String,
+    /// Exchange mic code (e.g. "NSE", "NYSE", "XBOM")
+    pub exchange:        String,
+    /// Instrument type
+    pub instrument_type: InstrumentType,
+    /// Primary sector / asset class
+    pub sector:          Option<String>,
+    /// Quote currency (e.g. "INR", "USD")
+    pub currency:        String,
+    /// Minimum tradeable lot size
+    pub lot_size:        f64,
+    /// Minimum price tick
+    pub tick_size:       f64,
+    /// ISIN (if available)
+    pub isin:            Option<String>,
+    /// Date the instrument was listed
+    pub listing_date:    Option<DateTime<Utc>>,
+    /// True if the instrument is currently actively traded
+    pub is_active:       bool,
+}
+
+/// Type of corporate action
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum CorporateActionType {
+    Split,
+    ReverseSplit,
+    Dividend,
+    SpecialDividend,
+    BonusIssue,
+    RightsIssue,
+    Merger,
+    Spinoff,
+    Delisting,
+}
+
+/// A corporate action that affects historical price series
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CorporateAction {
+    pub id:          Uuid,
+    pub symbol:      Symbol,
+    pub action_type: CorporateActionType,
+    /// Ex-date (the first day the stock trades without the right to the action)
+    pub ex_date:     DateTime<Utc>,
+    /// Adjustment ratio for splits/bonuses (e.g. 2.0 for a 2:1 split)
+    pub ratio:       Option<f64>,
+    /// Cash amount for dividends (per share, in instrument currency)
+    pub amount:      Option<f64>,
+    pub description: String,
+}
+
+/// A named session within a trading day
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum SessionType {
+    PreMarket,
+    RegularMarket,
+    PostMarket,
+    AfterHours,
+}
+
+/// One trading session on an exchange (times in UTC)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TradingSession {
+    pub exchange:     String,
+    pub session_type: SessionType,
+    /// UTC open time (hh:mm)
+    pub open_hhmm:    String,
+    /// UTC close time (hh:mm)
+    pub close_hhmm:   String,
+    /// ISO weekdays the session is active (1=Mon … 7=Sun)
+    pub weekdays:     Vec<u8>,
+}
+
+/// Query parameters for instrument metadata lookup
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InstrumentQuery {
+    pub symbol:          Option<Symbol>,
+    pub exchange:        Option<String>,
+    pub instrument_type: Option<InstrumentType>,
+    pub is_active:       Option<bool>,
+    pub limit:           Option<usize>,
+}
+
+// ---------------------------------------------------------------------------
+// P4 — ML experiment tracking metadata
+// ---------------------------------------------------------------------------
+
+/// Status of a single ML experiment run
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum RunStatus {
+    Running,
+    Completed,
+    Failed,
+    Cancelled,
+}
+
+/// Importance of a single feature in a model
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FeatureImportance {
+    pub feature_name: String,
+    pub importance:   f64,
+    pub rank:         usize,
+}
+
+/// Data drift measurement for a single feature
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DriftMeasurement {
+    pub feature_name:       String,
+    /// Population Stability Index — PSI > 0.2 is a strong signal of drift
+    pub psi:                f64,
+    /// Kolmogorov-Smirnov statistic
+    pub ks_stat:            f64,
+    /// True if this feature is considered drifted
+    pub is_drifted:         bool,
+    pub measured_at:        DateTime<Utc>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -305,5 +482,60 @@ mod tests {
         let tf = Timeframe::M5;
         let json = serde_json::to_string(&tf).unwrap();
         assert_eq!(json, "\"M5\"");
+    }
+
+    #[test]
+    fn test_fill_simulation_default() {
+        let sim = FillSimulation::default();
+        assert_eq!(sim.spread_bps, 2.0);
+        assert_eq!(sim.partial_fill_rate, 0.0);
+        assert_eq!(sim.broker_reject_rate, 0.0);
+    }
+
+    #[test]
+    fn test_instrument_metadata_creation() {
+        let meta = InstrumentMetadata {
+            symbol: Symbol("RELIANCE".into()),
+            name: "Reliance Industries".into(),
+            exchange: "NSE".into(),
+            instrument_type: InstrumentType::Equity,
+            sector: Some("Energy".into()),
+            currency: "INR".into(),
+            lot_size: 1.0,
+            tick_size: 0.05,
+            isin: Some("INE002A01018".into()),
+            listing_date: None,
+            is_active: true,
+        };
+        assert_eq!(meta.symbol.0, "RELIANCE");
+        assert_eq!(meta.exchange, "NSE");
+    }
+
+    #[test]
+    fn test_corporate_action_serialization() {
+        let action = CorporateAction {
+            id: Uuid::new_v4(),
+            symbol: Symbol("AAPL".into()),
+            action_type: CorporateActionType::Split,
+            ex_date: Utc::now(),
+            ratio: Some(4.0),
+            amount: None,
+            description: "4:1 stock split".into(),
+        };
+        let json = serde_json::to_string(&action).unwrap();
+        assert!(json.contains("Split"));
+    }
+
+    #[test]
+    fn test_drift_measurement_fields() {
+        let drift = DriftMeasurement {
+            feature_name: "rsi_14".into(),
+            psi: 0.25,
+            ks_stat: 0.18,
+            is_drifted: true,
+            measured_at: Utc::now(),
+        };
+        assert!(drift.is_drifted);
+        assert!(drift.psi > 0.2);
     }
 }
