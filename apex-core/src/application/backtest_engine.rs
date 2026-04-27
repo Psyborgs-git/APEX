@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
@@ -28,6 +27,8 @@ pub struct BacktestConfig {
     pub commission_bps: f64,
     /// Slippage in basis points (e.g. 2 = 0.02%)
     pub slippage_bps: f64,
+    /// Realistic fill simulation settings (optional, defaults to zero cost)
+    pub fill_simulation: FillSimulation,
 }
 
 impl Default for BacktestConfig {
@@ -41,6 +42,7 @@ impl Default for BacktestConfig {
             currency: "INR".into(),
             commission_bps: 3.0,
             slippage_bps: 2.0,
+            fill_simulation: FillSimulation::default(),
         }
     }
 }
@@ -102,28 +104,74 @@ pub struct EquityPoint {
 /// Internal position state during backtest
 #[derive(Debug, Clone)]
 struct SimPosition {
-    symbol: Symbol,
-    side: OrderSide,
-    quantity: f64,
-    avg_price: f64,
+    symbol:     Symbol,
+    side:       OrderSide,
+    quantity:   f64,
+    avg_price:  f64,
     entry_time: DateTime<Utc>,
 }
 
+/// Outcome of a simulated fill
+#[derive(Debug)]
+enum FillOutcome {
+    Full {
+        fill_price: f64,
+        fill_qty:   f64,
+        commission: f64,
+    },
+    Partial {
+        fill_price:    f64,
+        fill_qty:      f64,
+        remaining_qty: f64,
+        commission:    f64,
+    },
+    Rejected {
+        reason: String,
+    },
+}
+
+/// A lightweight deterministic LCG (Linear Congruential Generator) so that
+/// backtests are reproducible without pulling in an external crate.
+struct DeterministicRng(u64);
+
+impl DeterministicRng {
+    fn new(seed: u64) -> Self {
+        Self(seed.wrapping_add(1))
+    }
+
+    /// Return a float in [0, 1)
+    fn next_f64(&mut self) -> f64 {
+        // Knuth's multiplier / modulus
+        self.0 = self
+            .0
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        (self.0 >> 11) as f64 / (1u64 << 53) as f64
+    }
+}
+
 /// Backtest engine — replays historical OHLCV bars through a signal
-/// generator and simulates order execution with slippage & commission.
+/// generator and simulates order execution with slippage, spread,
+/// partial fills, random rejections, and commission.
 pub struct BacktestEngine {
-    config: BacktestConfig,
-    positions: HashMap<String, SimPosition>,
-    cash: f64,
-    trades: Vec<BacktestTrade>,
+    config:       BacktestConfig,
+    positions:    HashMap<String, SimPosition>,
+    cash:         f64,
+    trades:       Vec<BacktestTrade>,
     equity_curve: Vec<EquityPoint>,
-    peak_equity: f64,
+    peak_equity:  f64,
+    /// Deterministic RNG seeded from the run_id hash for reproducibility
+    rng:          DeterministicRng,
 }
 
 impl BacktestEngine {
     /// Create a new backtest engine with the given configuration.
     pub fn new(config: BacktestConfig) -> Self {
         let initial = config.initial_capital;
+        // Seed RNG deterministically from the run_id so results are reproducible
+        let seed: u64 = config.run_id.bytes().fold(0u64, |acc, b| {
+            acc.wrapping_mul(31).wrapping_add(b as u64)
+        });
         Self {
             config,
             positions: HashMap::new(),
@@ -131,6 +179,7 @@ impl BacktestEngine {
             trades: Vec::new(),
             equity_curve: Vec::new(),
             peak_equity: initial,
+            rng: DeterministicRng::new(seed),
         }
     }
 
@@ -223,106 +272,194 @@ impl BacktestEngine {
     fn process_signal(&mut self, signal: BacktestSignal, bar: &OHLCV) -> Result<()> {
         match signal {
             BacktestSignal::Buy { symbol, quantity } => {
-                let fill_price = bar.close * (1.0 + self.config.slippage_bps / 10_000.0);
-                let commission = fill_price * quantity * self.config.commission_bps / 10_000.0;
-                let cost = fill_price * quantity + commission;
+                let outcome = self.simulate_fill(bar.close, quantity, OrderSide::Buy);
+                match outcome {
+                    FillOutcome::Rejected { reason } => {
+                        debug!(symbol = %symbol.0, %reason, "Buy order rejected by fill simulation");
+                    }
+                    FillOutcome::Full { fill_price, fill_qty, commission }
+                    | FillOutcome::Partial { fill_price, fill_qty, commission, .. } => {
+                        let cost = fill_price * fill_qty + commission;
+                        if cost > self.cash {
+                            debug!(
+                                symbol = %symbol.0,
+                                cost = cost,
+                                cash = self.cash,
+                                "Insufficient cash for buy order"
+                            );
+                            return Ok(());
+                        }
+                        self.cash -= cost;
 
-                if cost > self.cash {
-                    debug!(
-                        symbol = %symbol.0,
-                        cost = cost,
-                        cash = self.cash,
-                        "Insufficient cash for buy order"
-                    );
-                    return Ok(());
+                        if let Some(pos) = self.positions.get_mut(&symbol.0) {
+                            let new_qty = pos.quantity + fill_qty;
+                            pos.avg_price =
+                                (pos.avg_price * pos.quantity + fill_price * fill_qty) / new_qty;
+                            pos.quantity = new_qty;
+                        } else {
+                            self.positions.insert(
+                                symbol.0.clone(),
+                                SimPosition {
+                                    symbol:     symbol.clone(),
+                                    side:       OrderSide::Buy,
+                                    quantity:   fill_qty,
+                                    avg_price:  fill_price,
+                                    entry_time: bar.time,
+                                },
+                            );
+                        }
+
+                        self.trades.push(BacktestTrade {
+                            symbol,
+                            side:        OrderSide::Buy,
+                            entry_time:  bar.time,
+                            entry_price: fill_price,
+                            exit_time:   None,
+                            exit_price:  None,
+                            quantity:    fill_qty,
+                            pnl:         0.0,
+                            commission,
+                        });
+                    }
                 }
-
-                self.cash -= cost;
-
-                // Merge with existing position or create new
-                if let Some(pos) = self.positions.get_mut(&symbol.0) {
-                    let new_qty = pos.quantity + quantity;
-                    pos.avg_price =
-                        (pos.avg_price * pos.quantity + fill_price * quantity) / new_qty;
-                    pos.quantity = new_qty;
-                } else {
-                    self.positions.insert(
-                        symbol.0.clone(),
-                        SimPosition {
-                            symbol: symbol.clone(),
-                            side: OrderSide::Buy,
-                            quantity,
-                            avg_price: fill_price,
-                            entry_time: bar.time,
-                        },
-                    );
-                }
-
-                self.trades.push(BacktestTrade {
-                    symbol,
-                    side: OrderSide::Buy,
-                    entry_time: bar.time,
-                    entry_price: fill_price,
-                    exit_time: None,
-                    exit_price: None,
-                    quantity,
-                    pnl: 0.0,
-                    commission,
-                });
             }
             BacktestSignal::Sell { symbol, quantity } => {
-                let fill_price = bar.close * (1.0 - self.config.slippage_bps / 10_000.0);
-                let commission = fill_price * quantity * self.config.commission_bps / 10_000.0;
-
-                if let Some(pos) = self.positions.get_mut(&symbol.0) {
-                    let sell_qty = quantity.min(pos.quantity);
-                    let pnl = (fill_price - pos.avg_price) * sell_qty - commission;
-
-                    self.cash += fill_price * sell_qty - commission;
-                    pos.quantity -= sell_qty;
-
-                    self.trades.push(BacktestTrade {
-                        symbol: symbol.clone(),
-                        side: OrderSide::Sell,
-                        entry_time: pos.entry_time,
-                        entry_price: pos.avg_price,
-                        exit_time: Some(bar.time),
-                        exit_price: Some(fill_price),
-                        quantity: sell_qty,
-                        pnl,
-                        commission,
-                    });
-
-                    if pos.quantity <= 0.001 {
-                        self.positions.remove(&symbol.0);
+                let outcome = self.simulate_fill(bar.close, quantity, OrderSide::Sell);
+                match outcome {
+                    FillOutcome::Rejected { reason } => {
+                        debug!(symbol = %symbol.0, %reason, "Sell order rejected by fill simulation");
                     }
-                } else {
-                    debug!(symbol = %symbol.0, "No position to sell");
+                    FillOutcome::Full { fill_price, fill_qty, commission }
+                    | FillOutcome::Partial { fill_price, fill_qty, commission, .. } => {
+                        if let Some(pos) = self.positions.get_mut(&symbol.0) {
+                            let sell_qty = fill_qty.min(pos.quantity);
+                            let pnl = (fill_price - pos.avg_price) * sell_qty - commission;
+
+                            self.cash += fill_price * sell_qty - commission;
+                            pos.quantity -= sell_qty;
+
+                            self.trades.push(BacktestTrade {
+                                symbol:      symbol.clone(),
+                                side:        OrderSide::Sell,
+                                entry_time:  pos.entry_time,
+                                entry_price: pos.avg_price,
+                                exit_time:   Some(bar.time),
+                                exit_price:  Some(fill_price),
+                                quantity:    sell_qty,
+                                pnl,
+                                commission,
+                            });
+
+                            if pos.quantity <= 0.001 {
+                                self.positions.remove(&symbol.0);
+                            }
+                        } else {
+                            debug!(symbol = %symbol.0, "No position to sell");
+                        }
+                    }
                 }
             }
             BacktestSignal::Close { symbol } => {
                 if let Some(pos) = self.positions.remove(&symbol.0) {
-                    let fill_price = bar.close * (1.0 - self.config.slippage_bps / 10_000.0);
-                    let commission =
-                        fill_price * pos.quantity * self.config.commission_bps / 10_000.0;
-                    let pnl = (fill_price - pos.avg_price) * pos.quantity - commission;
-                    self.cash += fill_price * pos.quantity - commission;
-
-                    self.trades.push(BacktestTrade {
-                        symbol,
-                        side: OrderSide::Sell,
-                        entry_time: pos.entry_time,
-                        entry_price: pos.avg_price,
-                        exit_time: Some(bar.time),
-                        exit_price: Some(fill_price),
-                        quantity: pos.quantity,
-                        pnl,
-                        commission,
-                    });
+                    let outcome =
+                        self.simulate_fill(bar.close, pos.quantity, OrderSide::Sell);
+                    match outcome {
+                        FillOutcome::Rejected { reason } => {
+                            debug!(symbol = %symbol.0, %reason, "Close order rejected — re-inserting position");
+                            self.positions.insert(symbol.0.clone(), pos);
+                        }
+                        FillOutcome::Full { fill_price, fill_qty, commission } => {
+                            let pnl = (fill_price - pos.avg_price) * fill_qty - commission;
+                            self.cash += fill_price * fill_qty - commission;
+                            self.trades.push(BacktestTrade {
+                                symbol,
+                                side:        OrderSide::Sell,
+                                entry_time:  pos.entry_time,
+                                entry_price: pos.avg_price,
+                                exit_time:   Some(bar.time),
+                                exit_price:  Some(fill_price),
+                                quantity:    fill_qty,
+                                pnl,
+                                commission,
+                            });
+                        }
+                        FillOutcome::Partial { fill_price, fill_qty, remaining_qty, commission } => {
+                            let pnl = (fill_price - pos.avg_price) * fill_qty - commission;
+                            self.cash += fill_price * fill_qty - commission;
+                            self.trades.push(BacktestTrade {
+                                symbol: symbol.clone(),
+                                side:        OrderSide::Sell,
+                                entry_time:  pos.entry_time,
+                                entry_price: pos.avg_price,
+                                exit_time:   Some(bar.time),
+                                exit_price:  Some(fill_price),
+                                quantity:    fill_qty,
+                                pnl,
+                                commission,
+                            });
+                            // Keep remaining quantity in the position map
+                            if remaining_qty > 0.001 {
+                                self.positions.insert(
+                                    symbol.0.clone(),
+                                    SimPosition {
+                                        quantity: remaining_qty,
+                                        ..pos
+                                    },
+                                );
+                            }
+                        }
+                    }
                 }
             }
         }
         Ok(())
+    }
+
+    /// Simulate a fill using the configured `FillSimulation` settings.
+    ///
+    /// Returns a `FillOutcome` describing how (or whether) the order was filled.
+    fn simulate_fill(&mut self, close: f64, quantity: f64, side: OrderSide) -> FillOutcome {
+        let sim = &self.config.fill_simulation;
+
+        // 1. Broker rejection (random)
+        if sim.broker_reject_rate > 0.0 && self.rng.next_f64() < sim.broker_reject_rate {
+            return FillOutcome::Rejected {
+                reason: "Simulated broker rejection".into(),
+            };
+        }
+
+        // 2. Spread — buy fills at ask (close + half-spread), sell at bid (close - half-spread)
+        let half_spread = close * sim.spread_bps / 20_000.0; // spread_bps / 2 / 10_000
+        let base_price = match side {
+            OrderSide::Buy  => close + half_spread,
+            OrderSide::Sell => close - half_spread,
+        };
+
+        // 3. Slippage on top of spread
+        let fill_price = match side {
+            OrderSide::Buy  => base_price * (1.0 + self.config.slippage_bps / 10_000.0),
+            OrderSide::Sell => base_price * (1.0 - self.config.slippage_bps / 10_000.0),
+        };
+
+        // 4. Partial fill
+        if sim.partial_fill_rate > 0.0 && self.rng.next_f64() < sim.partial_fill_rate {
+            let fill_qty   = (quantity * sim.partial_fill_fraction).max(0.001);
+            let commission = fill_price * fill_qty * self.config.commission_bps / 10_000.0;
+            return FillOutcome::Partial {
+                fill_price,
+                fill_qty,
+                remaining_qty: quantity - fill_qty,
+                commission,
+            };
+        }
+
+        // 5. Full fill
+        let commission = fill_price * quantity * self.config.commission_bps / 10_000.0;
+        FillOutcome::Full {
+            fill_price,
+            fill_qty: quantity,
+            commission,
+        }
     }
 
     fn close_all_positions(&mut self, last_bars: &HashMap<String, &OHLCV>) {

@@ -98,6 +98,41 @@ impl SqliteStorage {
                 delivery_json TEXT NOT NULL,
                 enabled     INTEGER NOT NULL DEFAULT 1
             );
+
+            -- P2: Instrument master
+            CREATE TABLE IF NOT EXISTS instruments (
+                symbol          TEXT PRIMARY KEY,
+                name            TEXT NOT NULL,
+                exchange        TEXT NOT NULL,
+                instrument_type TEXT NOT NULL,
+                sector          TEXT,
+                currency        TEXT NOT NULL,
+                lot_size        REAL NOT NULL DEFAULT 1,
+                tick_size       REAL NOT NULL DEFAULT 0.01,
+                isin            TEXT,
+                listing_date    TEXT,
+                is_active       INTEGER NOT NULL DEFAULT 1
+            );
+            CREATE INDEX IF NOT EXISTS idx_instruments_exchange ON instruments(exchange);
+
+            -- P2: Corporate actions
+            CREATE TABLE IF NOT EXISTS corporate_actions (
+                id          TEXT PRIMARY KEY,
+                symbol      TEXT NOT NULL,
+                action_type TEXT NOT NULL,
+                ex_date     TEXT NOT NULL,
+                ratio       REAL,
+                amount      REAL,
+                description TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_corp_actions_symbol ON corporate_actions(symbol, ex_date);
+
+            -- P3: Strategy state persistence
+            CREATE TABLE IF NOT EXISTS strategy_state (
+                strategy_id TEXT PRIMARY KEY,
+                state_json  TEXT NOT NULL,
+                updated_at  TEXT NOT NULL
+            );
             ",
         )?;
         Ok(())
@@ -386,6 +421,243 @@ impl StoragePort for SqliteStorage {
         }
         Ok(positions)
     }
+
+    // --- P2: Instrument master -----------------------------------------------
+
+    async fn upsert_instrument(&self, meta: &InstrumentMetadata) -> Result<()> {
+        let conn = self.conn.lock().await;
+        conn.execute(
+            "INSERT OR REPLACE INTO instruments
+             (symbol, name, exchange, instrument_type, sector, currency,
+              lot_size, tick_size, isin, listing_date, is_active)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            params![
+                meta.symbol.0,
+                meta.name,
+                meta.exchange,
+                serde_json::to_string(&meta.instrument_type).unwrap_or_default(),
+                meta.sector,
+                meta.currency,
+                meta.lot_size,
+                meta.tick_size,
+                meta.isin,
+                meta.listing_date.map(|d| d.to_rfc3339()),
+                meta.is_active as i64,
+            ],
+        )?;
+        Ok(())
+    }
+
+    async fn get_instrument(&self, symbol: &Symbol) -> Result<Option<InstrumentMetadata>> {
+        let conn = self.conn.lock().await;
+        let mut stmt = conn.prepare(
+            "SELECT symbol, name, exchange, instrument_type, sector, currency,
+                    lot_size, tick_size, isin, listing_date, is_active
+             FROM instruments WHERE symbol = ?1",
+        )?;
+
+        let mut rows = stmt.query_map(params![symbol.0], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, Option<String>>(4)?,
+                row.get::<_, String>(5)?,
+                row.get::<_, f64>(6)?,
+                row.get::<_, f64>(7)?,
+                row.get::<_, Option<String>>(8)?,
+                row.get::<_, Option<String>>(9)?,
+                row.get::<_, i64>(10)?,
+            ))
+        })?;
+
+        if let Some(row) = rows.next() {
+            let (sym, name, exchange, itype, sector, currency, lot_size, tick_size, isin, listing_date, is_active) =
+                row?;
+            let listing = listing_date
+                .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
+                .map(|d| d.with_timezone(&Utc));
+            Ok(Some(InstrumentMetadata {
+                symbol: Symbol(sym),
+                name,
+                exchange,
+                instrument_type: serde_json::from_str(&itype).unwrap_or(InstrumentType::Equity),
+                sector,
+                currency,
+                lot_size,
+                tick_size,
+                isin,
+                listing_date: listing,
+                is_active: is_active != 0,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn query_instruments(&self, params_q: InstrumentQuery) -> Result<Vec<InstrumentMetadata>> {
+        let conn = self.conn.lock().await;
+        let mut sql = String::from(
+            "SELECT symbol, name, exchange, instrument_type, sector, currency,
+                    lot_size, tick_size, isin, listing_date, is_active
+             FROM instruments WHERE 1=1",
+        );
+        let mut bind_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        let mut param_idx = 1;
+
+        if let Some(ref sym) = params_q.symbol {
+            sql.push_str(&format!(" AND symbol = ?{}", param_idx));
+            bind_values.push(Box::new(sym.0.clone()));
+            param_idx += 1;
+        }
+        if let Some(ref exchange) = params_q.exchange {
+            sql.push_str(&format!(" AND exchange = ?{}", param_idx));
+            bind_values.push(Box::new(exchange.clone()));
+            param_idx += 1;
+        }
+        if let Some(ref itype) = params_q.instrument_type {
+            sql.push_str(&format!(" AND instrument_type = ?{}", param_idx));
+            bind_values.push(Box::new(serde_json::to_string(itype).unwrap_or_default()));
+            param_idx += 1;
+        }
+        if let Some(active) = params_q.is_active {
+            sql.push_str(&format!(" AND is_active = ?{}", param_idx));
+            bind_values.push(Box::new(active as i64));
+            param_idx += 1;
+        }
+        if let Some(limit) = params_q.limit {
+            sql.push_str(&format!(" LIMIT ?{}", param_idx));
+            bind_values.push(Box::new(limit as i64));
+        }
+
+        let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+            bind_values.iter().map(|b| b.as_ref()).collect();
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(params_refs.as_slice(), |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, Option<String>>(4)?,
+                row.get::<_, String>(5)?,
+                row.get::<_, f64>(6)?,
+                row.get::<_, f64>(7)?,
+                row.get::<_, Option<String>>(8)?,
+                row.get::<_, Option<String>>(9)?,
+                row.get::<_, i64>(10)?,
+            ))
+        })?;
+
+        let mut instruments = Vec::new();
+        for row in rows {
+            let (sym, name, exchange, itype, sector, currency, lot_size, tick_size, isin, listing_date, is_active) =
+                row?;
+            let listing = listing_date
+                .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
+                .map(|d| d.with_timezone(&Utc));
+            instruments.push(InstrumentMetadata {
+                symbol: Symbol(sym),
+                name,
+                exchange,
+                instrument_type: serde_json::from_str(&itype).unwrap_or(InstrumentType::Equity),
+                sector,
+                currency,
+                lot_size,
+                tick_size,
+                isin,
+                listing_date: listing,
+                is_active: is_active != 0,
+            });
+        }
+        Ok(instruments)
+    }
+
+    async fn write_corporate_action(&self, action: &CorporateAction) -> Result<()> {
+        let conn = self.conn.lock().await;
+        conn.execute(
+            "INSERT OR REPLACE INTO corporate_actions
+             (id, symbol, action_type, ex_date, ratio, amount, description)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                action.id.to_string(),
+                action.symbol.0,
+                serde_json::to_string(&action.action_type).unwrap_or_default(),
+                action.ex_date.to_rfc3339(),
+                action.ratio,
+                action.amount,
+                action.description,
+            ],
+        )?;
+        Ok(())
+    }
+
+    async fn query_corporate_actions(&self, symbol: &Symbol) -> Result<Vec<CorporateAction>> {
+        let conn = self.conn.lock().await;
+        let mut stmt = conn.prepare(
+            "SELECT id, symbol, action_type, ex_date, ratio, amount, description
+             FROM corporate_actions WHERE symbol = ?1
+             ORDER BY ex_date ASC",
+        )?;
+
+        let rows = stmt.query_map(params![symbol.0], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, Option<f64>>(4)?,
+                row.get::<_, Option<f64>>(5)?,
+                row.get::<_, String>(6)?,
+            ))
+        })?;
+
+        let mut actions = Vec::new();
+        for row in rows {
+            let (id, sym, atype, ex_date, ratio, amount, description) = row?;
+            let ex_dt = DateTime::parse_from_rfc3339(&ex_date)
+                .map_err(|e| anyhow!("Failed to parse ex_date: {}", e))?
+                .with_timezone(&Utc);
+            actions.push(CorporateAction {
+                id: id.parse().unwrap_or_else(|_| uuid::Uuid::new_v4()),
+                symbol: Symbol(sym),
+                action_type: serde_json::from_str(&atype)
+                    .unwrap_or(CorporateActionType::Dividend),
+                ex_date: ex_dt,
+                ratio,
+                amount,
+                description,
+            });
+        }
+        Ok(actions)
+    }
+
+    // --- P3: Strategy state ------------------------------------------------
+
+    async fn save_strategy_state(&self, strategy_id: &str, state_json: &str) -> Result<()> {
+        let conn = self.conn.lock().await;
+        conn.execute(
+            "INSERT OR REPLACE INTO strategy_state (strategy_id, state_json, updated_at)
+             VALUES (?1, ?2, ?3)",
+            params![strategy_id, state_json, Utc::now().to_rfc3339()],
+        )?;
+        Ok(())
+    }
+
+    async fn load_strategy_state(&self, strategy_id: &str) -> Result<Option<String>> {
+        let conn = self.conn.lock().await;
+        let result = conn.query_row(
+            "SELECT state_json FROM strategy_state WHERE strategy_id = ?1",
+            params![strategy_id],
+            |row| row.get::<_, String>(0),
+        );
+        match result {
+            Ok(json)                              => Ok(Some(json)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e)                                => Err(anyhow!("Query error: {}", e)),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -579,5 +851,117 @@ mod tests {
         let positions = storage.query_positions("paper").await.unwrap();
         assert_eq!(positions.len(), 1);
         assert!((positions[0].quantity - 20.0).abs() < 0.01);
+    }
+
+    // --- P2: Instrument master tests ----------------------------------------
+
+    #[tokio::test]
+    async fn test_upsert_and_get_instrument() {
+        let storage = setup().await;
+        let meta = InstrumentMetadata {
+            symbol:          Symbol("RELIANCE".into()),
+            name:            "Reliance Industries Ltd".into(),
+            exchange:        "NSE".into(),
+            instrument_type: InstrumentType::Equity,
+            sector:          Some("Energy".into()),
+            currency:        "INR".into(),
+            lot_size:        1.0,
+            tick_size:       0.05,
+            isin:            Some("INE002A01018".into()),
+            listing_date:    None,
+            is_active:       true,
+        };
+        storage.upsert_instrument(&meta).await.unwrap();
+
+        let found = storage.get_instrument(&Symbol("RELIANCE".into())).await.unwrap();
+        assert!(found.is_some());
+        let found = found.unwrap();
+        assert_eq!(found.name, "Reliance Industries Ltd");
+        assert_eq!(found.exchange, "NSE");
+        assert!(found.is_active);
+    }
+
+    #[tokio::test]
+    async fn test_get_instrument_not_found() {
+        let storage = setup().await;
+        let result = storage.get_instrument(&Symbol("NONEXISTENT".into())).await.unwrap();
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_query_instruments_by_exchange() {
+        let storage = setup().await;
+        for sym in &["AAPL", "MSFT", "GOOGL"] {
+            storage.upsert_instrument(&InstrumentMetadata {
+                symbol:          Symbol(sym.to_string()),
+                name:            sym.to_string(),
+                exchange:        "NYSE".into(),
+                instrument_type: InstrumentType::Equity,
+                sector:          None,
+                currency:        "USD".into(),
+                lot_size:        1.0,
+                tick_size:       0.01,
+                isin:            None,
+                listing_date:    None,
+                is_active:       true,
+            }).await.unwrap();
+        }
+        let results = storage.query_instruments(InstrumentQuery {
+            symbol: None,
+            exchange: Some("NYSE".into()),
+            instrument_type: None,
+            is_active: None,
+            limit: None,
+        }).await.unwrap();
+        assert_eq!(results.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_write_and_query_corporate_actions() {
+        let storage = setup().await;
+        let action = CorporateAction {
+            id:          uuid::Uuid::new_v4(),
+            symbol:      Symbol("AAPL".into()),
+            action_type: CorporateActionType::Split,
+            ex_date:     Utc::now(),
+            ratio:       Some(4.0),
+            amount:      None,
+            description: "4:1 stock split".into(),
+        };
+        storage.write_corporate_action(&action).await.unwrap();
+
+        let actions = storage.query_corporate_actions(&Symbol("AAPL".into())).await.unwrap();
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0].description, "4:1 stock split");
+        assert!((actions[0].ratio.unwrap() - 4.0).abs() < 1e-9);
+    }
+
+    // --- P3: Strategy state tests -------------------------------------------
+
+    #[tokio::test]
+    async fn test_save_and_load_strategy_state() {
+        let storage = setup().await;
+        storage.save_strategy_state("strat-1", r#"{"position":100}"#).await.unwrap();
+
+        let loaded = storage.load_strategy_state("strat-1").await.unwrap();
+        assert!(loaded.is_some());
+        assert!(loaded.unwrap().contains("position"));
+    }
+
+    #[tokio::test]
+    async fn test_load_strategy_state_not_found() {
+        let storage = setup().await;
+        let loaded = storage.load_strategy_state("nonexistent").await.unwrap();
+        assert!(loaded.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_strategy_state_overwrite() {
+        let storage = setup().await;
+        storage.save_strategy_state("strat-2", r#"{"v":1}"#).await.unwrap();
+        storage.save_strategy_state("strat-2", r#"{"v":2}"#).await.unwrap();
+
+        let loaded = storage.load_strategy_state("strat-2").await.unwrap().unwrap();
+        assert!(loaded.contains(r#""v":2"#));
     }
 }

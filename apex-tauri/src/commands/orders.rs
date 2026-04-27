@@ -86,7 +86,7 @@ pub async fn modify_order(
     }
     validation::validate_price(new_price)?;
 
-    let _params = ModifyParams {
+    let params = ModifyParams {
         quantity: new_quantity,
         price: new_price,
         stop_price: None,
@@ -96,7 +96,7 @@ pub async fn modify_order(
     // OTM delegates modification to the broker adapter
     state
         .otm
-        .cancel_order(&OrderId(order_id), &broker_id)
+        .modify_order(&OrderId(order_id), &params, &broker_id)
         .await
         .map_err(|e| format!("Failed to modify order: {}", e))
 }
@@ -115,29 +115,21 @@ pub async fn get_positions(state: State<'_, AppState>) -> Result<Vec<PositionDto
 /// Get all open orders.
 #[tauri::command]
 pub async fn get_open_orders(state: State<'_, AppState>) -> Result<Vec<OrderDto>, String> {
-    Ok(state
-        .otm
-        .open_orders()
-        .iter()
-        .map(OrderDto::from)
-        .collect())
+    Ok(state.otm.open_orders().iter().map(OrderDto::from).collect())
 }
 
 /// Get account balance for a broker.
 #[tauri::command]
 pub async fn get_account_balance(
-    _broker_id: String,
+    broker_id: String,
     state: State<'_, AppState>,
 ) -> Result<AccountBalanceDto, String> {
-    // Return a default balance based on paper trading defaults
-    // In production, this would query the actual broker adapter
-    Ok(AccountBalanceDto {
-        total_value: 1_000_000.0,
-        cash: 1_000_000.0,
-        margin_used: 0.0,
-        margin_available: 1_000_000.0,
-        unrealized_pnl: 0.0,
-        realized_pnl: state.risk.session_pnl(),
-        currency: "INR".to_string(),
-    })
+    validation::validate_broker_id(&broker_id)?;
+
+    state
+        .otm
+        .get_account_balance(&broker_id)
+        .await
+        .map(|balance| AccountBalanceDto::from(&balance))
+        .map_err(|e| e.to_string())
 }

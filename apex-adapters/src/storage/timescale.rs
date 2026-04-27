@@ -605,6 +605,212 @@ impl StoragePort for TimescaleAdapter {
         debug!("Queried {} positions for broker {}", results.len(), broker_id);
         Ok(results)
     }
+
+    // --- P2: Instrument master (Timescale stubs — delegate to instruments table) ---
+
+    async fn upsert_instrument(&self, meta: &InstrumentMetadata) -> Result<()> {
+        let client = self.pool.get().await
+            .context("Failed to get database connection")?;
+        client.execute(
+            "INSERT INTO instruments
+             (symbol, name, exchange, instrument_type, sector, currency,
+              lot_size, tick_size, isin, listing_date, is_active)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+             ON CONFLICT (symbol) DO UPDATE SET
+                name = EXCLUDED.name,
+                exchange = EXCLUDED.exchange,
+                instrument_type = EXCLUDED.instrument_type,
+                sector = EXCLUDED.sector,
+                currency = EXCLUDED.currency,
+                lot_size = EXCLUDED.lot_size,
+                tick_size = EXCLUDED.tick_size,
+                isin = EXCLUDED.isin,
+                listing_date = EXCLUDED.listing_date,
+                is_active = EXCLUDED.is_active",
+            &[
+                &meta.symbol.0,
+                &meta.name,
+                &meta.exchange,
+                &serde_json::to_string(&meta.instrument_type).unwrap_or_default(),
+                &meta.sector,
+                &meta.currency,
+                &meta.lot_size,
+                &meta.tick_size,
+                &meta.isin,
+                &meta.listing_date,
+                &meta.is_active,
+            ],
+        ).await.context("Failed to upsert instrument")?;
+        Ok(())
+    }
+
+    async fn get_instrument(&self, symbol: &Symbol) -> Result<Option<InstrumentMetadata>> {
+        let client = self.pool.get().await
+            .context("Failed to get database connection")?;
+        let rows = client.query(
+            "SELECT symbol, name, exchange, instrument_type, sector, currency,
+                    lot_size, tick_size, isin, listing_date, is_active
+             FROM instruments WHERE symbol = $1",
+            &[&symbol.0],
+        ).await.context("Failed to get instrument")?;
+
+        if rows.is_empty() {
+            return Ok(None);
+        }
+        let row = &rows[0];
+        let itype_str: String = row.get(3);
+        Ok(Some(InstrumentMetadata {
+            symbol: Symbol(row.get(0)),
+            name: row.get(1),
+            exchange: row.get(2),
+            instrument_type: serde_json::from_str(&itype_str).unwrap_or(InstrumentType::Equity),
+            sector: row.get(4),
+            currency: row.get(5),
+            lot_size: row.get(6),
+            tick_size: row.get(7),
+            isin: row.get(8),
+            listing_date: row.get(9),
+            is_active: row.get(10),
+        }))
+    }
+
+    async fn query_instruments(&self, params_q: InstrumentQuery) -> Result<Vec<InstrumentMetadata>> {
+        let client = self.pool.get().await
+            .context("Failed to get database connection")?;
+        let mut query = String::from(
+            "SELECT symbol, name, exchange, instrument_type, sector, currency,
+                    lot_size, tick_size, isin, listing_date, is_active
+             FROM instruments WHERE 1=1",
+        );
+
+        // Collect concrete values first (all are String or bool), then borrow for the query.
+        let mut sym_val:      Option<String> = None;
+        let mut exchange_val: Option<String> = None;
+        let mut active_val:   Option<bool>   = None;
+        let mut idx = 1usize;
+
+        if let Some(ref sym) = params_q.symbol {
+            query.push_str(&format!(" AND symbol = ${}", idx));
+            sym_val = Some(sym.0.clone());
+            idx += 1;
+        }
+        if let Some(ref exchange) = params_q.exchange {
+            query.push_str(&format!(" AND exchange = ${}", idx));
+            exchange_val = Some(exchange.clone());
+            idx += 1;
+        }
+        if let Some(active) = params_q.is_active {
+            query.push_str(&format!(" AND is_active = ${}", idx));
+            active_val = Some(active);
+            idx += 1;
+        }
+        if let Some(limit) = params_q.limit {
+            query.push_str(&format!(" LIMIT {}", limit));
+        }
+        let _ = idx;
+
+        // Build a concrete Vec of ToSql refs (no cross-await borrows)
+        let mut param_refs: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = Vec::new();
+        if let Some(ref v) = sym_val      { param_refs.push(v); }
+        if let Some(ref v) = exchange_val { param_refs.push(v); }
+        if let Some(ref v) = active_val   { param_refs.push(v); }
+
+        let rows = client.query(&query, &param_refs[..]).await
+            .context("Failed to query instruments")?;
+
+        let mut instruments = Vec::new();
+        for row in rows {
+            let itype_str: String = row.get(3);
+            instruments.push(InstrumentMetadata {
+                symbol: Symbol(row.get(0)),
+                name: row.get(1),
+                exchange: row.get(2),
+                instrument_type: serde_json::from_str(&itype_str).unwrap_or(InstrumentType::Equity),
+                sector: row.get(4),
+                currency: row.get(5),
+                lot_size: row.get(6),
+                tick_size: row.get(7),
+                isin: row.get(8),
+                listing_date: row.get(9),
+                is_active: row.get(10),
+            });
+        }
+        Ok(instruments)
+    }
+
+    async fn write_corporate_action(&self, action: &CorporateAction) -> Result<()> {
+        let client = self.pool.get().await
+            .context("Failed to get database connection")?;
+        client.execute(
+            "INSERT INTO corporate_actions (id, symbol, action_type, ex_date, ratio, amount, description)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             ON CONFLICT (id) DO NOTHING",
+            &[
+                &action.id.to_string(),
+                &action.symbol.0,
+                &serde_json::to_string(&action.action_type).unwrap_or_default(),
+                &action.ex_date,
+                &action.ratio,
+                &action.amount,
+                &action.description,
+            ],
+        ).await.context("Failed to write corporate action")?;
+        Ok(())
+    }
+
+    async fn query_corporate_actions(&self, symbol: &Symbol) -> Result<Vec<CorporateAction>> {
+        let client = self.pool.get().await
+            .context("Failed to get database connection")?;
+        let rows = client.query(
+            "SELECT id, symbol, action_type, ex_date, ratio, amount, description
+             FROM corporate_actions WHERE symbol = $1 ORDER BY ex_date ASC",
+            &[&symbol.0],
+        ).await.context("Failed to query corporate actions")?;
+
+        let mut actions = Vec::new();
+        for row in rows {
+            let id_str: String = row.get(0);
+            let atype_str: String = row.get(2);
+            actions.push(CorporateAction {
+                id: id_str.parse().unwrap_or_else(|_| uuid::Uuid::new_v4()),
+                symbol: Symbol(row.get(1)),
+                action_type: serde_json::from_str(&atype_str)
+                    .unwrap_or(CorporateActionType::Dividend),
+                ex_date: row.get(3),
+                ratio: row.get(4),
+                amount: row.get(5),
+                description: row.get(6),
+            });
+        }
+        Ok(actions)
+    }
+
+    // --- P3: Strategy state ------------------------------------------------
+
+    async fn save_strategy_state(&self, strategy_id: &str, state_json: &str) -> Result<()> {
+        let client = self.pool.get().await
+            .context("Failed to get database connection")?;
+        client.execute(
+            "INSERT INTO strategy_state (strategy_id, state_json, updated_at)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (strategy_id) DO UPDATE SET
+                state_json = EXCLUDED.state_json,
+                updated_at = EXCLUDED.updated_at",
+            &[&strategy_id, &state_json, &chrono::Utc::now()],
+        ).await.context("Failed to save strategy state")?;
+        Ok(())
+    }
+
+    async fn load_strategy_state(&self, strategy_id: &str) -> Result<Option<String>> {
+        let client = self.pool.get().await
+            .context("Failed to get database connection")?;
+        let rows = client.query(
+            "SELECT state_json FROM strategy_state WHERE strategy_id = $1",
+            &[&strategy_id],
+        ).await.context("Failed to load strategy state")?;
+
+        Ok(rows.first().map(|row| row.get(0)))
+    }
 }
 
 #[cfg(test)]

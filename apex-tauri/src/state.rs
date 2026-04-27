@@ -9,6 +9,7 @@ use apex_core::application::market_data_aggregator::MarketDataAggregator;
 use apex_core::application::order_trade_manager::OrderTradeManager;
 use apex_core::application::risk_engine::{RiskConfig, RiskEngine};
 use apex_core::bus::message_bus::{BusMessage, MessageBus, Topic};
+use apex_core::ports::storage::StoragePort;
 
 /// Shared application state — initialised once at startup, shared across all IPC handlers.
 pub struct AppState {
@@ -37,7 +38,9 @@ impl AppState {
 
         // Register paper trading adapter — always available as default execution
         let paper = PaperTradingAdapter::new();
-        let mut otm_inner = OrderTradeManager::new(risk.clone(), bus.clone());
+        let storage_port: Arc<dyn StoragePort> = storage.clone();
+        let mut otm_inner =
+            OrderTradeManager::with_storage(risk.clone(), bus.clone(), Some(storage_port));
         otm_inner.register_execution("paper".to_string(), Box::new(paper));
         let otm = Arc::new(otm_inner);
 

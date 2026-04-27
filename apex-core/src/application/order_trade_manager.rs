@@ -2,12 +2,15 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
+use chrono::Utc;
 use dashmap::DashMap;
 use tracing::{info, warn};
+use uuid::Uuid;
 
 use crate::bus::message_bus::{BusMessage, MessageBus, Topic};
 use crate::domain::models::*;
 use crate::ports::execution::ExecutionPort;
+use crate::ports::storage::StoragePort;
 
 use super::risk_engine::{RiskEngine, RiskVerdict};
 
@@ -18,13 +21,20 @@ pub struct OrderTradeManager {
     bus: Arc<MessageBus>,
     open_orders: Arc<DashMap<String, Order>>,
     positions: Arc<DashMap<String, Position>>,
+    storage: Option<Arc<dyn StoragePort>>,
 }
 
 impl OrderTradeManager {
     /// Create a new Order & Trade Manager
-    pub fn new(
+    pub fn new(risk_engine: Arc<RiskEngine>, bus: Arc<MessageBus>) -> Self {
+        Self::with_storage(risk_engine, bus, None)
+    }
+
+    /// Create a new Order & Trade Manager with optional durable storage
+    pub fn with_storage(
         risk_engine: Arc<RiskEngine>,
         bus: Arc<MessageBus>,
+        storage: Option<Arc<dyn StoragePort>>,
     ) -> Self {
         Self {
             risk_engine,
@@ -32,6 +42,7 @@ impl OrderTradeManager {
             bus,
             open_orders: Arc::new(DashMap::new()),
             positions: Arc::new(DashMap::new()),
+            storage,
         }
     }
 
@@ -43,11 +54,7 @@ impl OrderTradeManager {
 
     /// Submit a new order — risk check → journal → dispatch → update
     #[tracing::instrument(skip(self, request), fields(symbol = %request.symbol.0, side = ?request.side))]
-    pub async fn submit_order(
-        &self,
-        request: NewOrderRequest,
-        broker_id: &str,
-    ) -> Result<OrderId> {
+    pub async fn submit_order(&self, request: NewOrderRequest, broker_id: &str) -> Result<OrderId> {
         // 1. Risk check (sync, no I/O) — halt check is FIRST inside check()
         let account = self.get_account_balance(broker_id).await?;
         let verdict = self.risk_engine.check(&request, &account);
@@ -60,17 +67,25 @@ impl OrderTradeManager {
         }
 
         // 2. Get the execution adapter
-        let adapter = self.execution.get(broker_id)
+        let adapter = self
+            .execution
+            .get(broker_id)
             .ok_or_else(|| anyhow!("No execution adapter found for broker: {}", broker_id))?;
 
-        // 3. Dispatch to broker adapter
+        // 3. Journal intent before broker dispatch
+        self.journal_order_intent(&request, broker_id).await?;
+
+        // 4. Dispatch to broker adapter
         let order_id = adapter.place_order(&request).await?;
 
-        // 4. Get order status and track it
+        // 5. Get order status and track it
         if let Ok(order) = adapter.get_order_status(&order_id).await {
             self.open_orders.insert(order_id.0.clone(), order.clone());
+            if let Some(storage) = &self.storage {
+                storage.write_order(&order).await?;
+            }
 
-            // 5. Publish OrderUpdate to message bus
+            // 6. Publish OrderUpdate to message bus
             self.bus.publish(
                 Topic::OrderUpdate(order_id.0.clone()),
                 BusMessage::OrderData(order),
@@ -83,20 +98,30 @@ impl OrderTradeManager {
     /// Cancel an order
     #[tracing::instrument(skip(self, order_id), fields(order_id = %order_id.0))]
     pub async fn cancel_order(&self, order_id: &OrderId, broker_id: &str) -> Result<()> {
-        let adapter = self.execution.get(broker_id)
+        let adapter = self
+            .execution
+            .get(broker_id)
             .ok_or_else(|| anyhow!("No execution adapter found for broker: {}", broker_id))?;
 
         adapter.cancel_order(order_id).await?;
 
         // Update local tracking
-        if let Some(mut order) = self.open_orders.get_mut(&order_id.0) {
+        let updated_order = if let Some(mut order) = self.open_orders.get_mut(&order_id.0) {
             order.status = OrderStatus::Cancelled;
+            order.updated_at = Utc::now();
+            Some(order.clone())
+        } else {
+            None
+        };
+        if let (Some(storage), Some(order)) = (&self.storage, &updated_order) {
+            storage.update_order(order).await?;
         }
 
         self.bus.publish(
             Topic::OrderUpdate(order_id.0.clone()),
             BusMessage::OrderData(
-                self.open_orders.get(&order_id.0)
+                self.open_orders
+                    .get(&order_id.0)
                     .map(|o| o.clone())
                     .unwrap_or_else(|| Order {
                         id: order_id.clone(),
@@ -113,8 +138,37 @@ impl OrderTradeManager {
                         updated_at: chrono::Utc::now(),
                         broker_id: broker_id.to_string(),
                         source: "manual".into(),
-                    })
+                    }),
             ),
+        );
+
+        Ok(())
+    }
+
+    /// Modify an existing order and refresh local/durable state.
+    #[tracing::instrument(skip(self, order_id, params), fields(order_id = %order_id.0))]
+    pub async fn modify_order(
+        &self,
+        order_id: &OrderId,
+        params: &ModifyParams,
+        broker_id: &str,
+    ) -> Result<()> {
+        let adapter = self
+            .execution
+            .get(broker_id)
+            .ok_or_else(|| anyhow!("No execution adapter found for broker: {}", broker_id))?;
+
+        adapter.modify_order(order_id, params).await?;
+
+        let order = adapter.get_order_status(order_id).await?;
+        self.open_orders.insert(order_id.0.clone(), order.clone());
+        if let Some(storage) = &self.storage {
+            storage.update_order(&order).await?;
+        }
+
+        self.bus.publish(
+            Topic::OrderUpdate(order_id.0.clone()),
+            BusMessage::OrderData(order),
         );
 
         Ok(())
@@ -145,27 +199,26 @@ impl OrderTradeManager {
         let pnl = if let Some(mut pos) = self.positions.get_mut(&symbol_key) {
             // Existing position — calculate P&L
             let pnl = match (&pos.side, &fill.side) {
-                (OrderSide::Buy, OrderSide::Sell) => {
-                    (fill.price - pos.avg_price) * fill.quantity
-                }
-                (OrderSide::Sell, OrderSide::Buy) => {
-                    (pos.avg_price - fill.price) * fill.quantity
-                }
+                (OrderSide::Buy, OrderSide::Sell) => (fill.price - pos.avg_price) * fill.quantity,
+                (OrderSide::Sell, OrderSide::Buy) => (pos.avg_price - fill.price) * fill.quantity,
                 _ => 0.0, // Adding to position
             };
             pos.pnl += pnl;
             pnl
         } else {
             // New position
-            self.positions.insert(symbol_key.clone(), Position {
-                symbol: fill.symbol.clone(),
-                quantity: fill.quantity,
-                avg_price: fill.price,
-                side: fill.side,
-                pnl: 0.0,
-                pnl_pct: 0.0,
-                broker_id: fill.broker_id,
-            });
+            self.positions.insert(
+                symbol_key.clone(),
+                Position {
+                    symbol: fill.symbol.clone(),
+                    quantity: fill.quantity,
+                    avg_price: fill.price,
+                    side: fill.side,
+                    pnl: 0.0,
+                    pnl_pct: 0.0,
+                    broker_id: fill.broker_id,
+                },
+            );
             0.0
         };
 
@@ -175,25 +228,31 @@ impl OrderTradeManager {
         }
 
         // 4. Publish position update
-        self.bus.publish(Topic::PositionUpdate, BusMessage::PositionData(
-            self.positions.get(&fill.symbol.0)
-                .map(|p| p.clone())
-                .unwrap_or_else(|| Position {
-                    symbol: fill.symbol,
-                    quantity: 0.0,
-                    avg_price: 0.0,
-                    side: OrderSide::Buy,
-                    pnl: 0.0,
-                    pnl_pct: 0.0,
-                    broker_id: String::new(),
-                })
-        ));
+        self.bus.publish(
+            Topic::PositionUpdate,
+            BusMessage::PositionData(
+                self.positions
+                    .get(&fill.symbol.0)
+                    .map(|p| p.clone())
+                    .unwrap_or_else(|| Position {
+                        symbol: fill.symbol,
+                        quantity: 0.0,
+                        avg_price: 0.0,
+                        side: OrderSide::Buy,
+                        pnl: 0.0,
+                        pnl_pct: 0.0,
+                        broker_id: String::new(),
+                    }),
+            ),
+        );
     }
 
     /// Reconcile positions with broker
     #[tracing::instrument(skip(self), fields(broker = %broker_id))]
     pub async fn reconcile_positions(&self, broker_id: &str) -> Result<()> {
-        let adapter = self.execution.get(broker_id)
+        let adapter = self
+            .execution
+            .get(broker_id)
             .ok_or_else(|| anyhow!("No execution adapter found for broker: {}", broker_id))?;
 
         let broker_positions = adapter.get_positions().await?;
@@ -209,7 +268,10 @@ impl OrderTradeManager {
                     *local_pos = broker_pos;
                 }
             } else {
-                info!("New position from broker reconciliation: {} qty={}", key, broker_pos.quantity);
+                info!(
+                    "New position from broker reconciliation: {} qty={}",
+                    key, broker_pos.quantity
+                );
                 self.positions.insert(key, broker_pos);
             }
         }
@@ -218,10 +280,43 @@ impl OrderTradeManager {
     }
 
     /// Get account balance from a broker
-    async fn get_account_balance(&self, broker_id: &str) -> Result<AccountBalance> {
-        let adapter = self.execution.get(broker_id)
+    pub async fn get_account_balance(&self, broker_id: &str) -> Result<AccountBalance> {
+        let adapter = self
+            .execution
+            .get(broker_id)
             .ok_or_else(|| anyhow!("No execution adapter found for broker: {}", broker_id))?;
         adapter.get_account_balance().await
+    }
+
+    async fn journal_order_intent(&self, request: &NewOrderRequest, broker_id: &str) -> Result<()> {
+        let Some(storage) = &self.storage else {
+            return Ok(());
+        };
+
+        let now = Utc::now();
+        // Intent records are durable pre-dispatch audit entries. They use an
+        // INTENT-* ID because the broker order ID is not known until dispatch
+        // succeeds; the confirmed broker order is persisted separately.
+        let intent = Order {
+            id: OrderId(format!("INTENT-{}", Uuid::new_v4())),
+            symbol: request.symbol.clone(),
+            side: request.side.clone(),
+            order_type: request.order_type.clone(),
+            quantity: request.quantity,
+            price: request.price,
+            stop_price: request.stop_price,
+            status: OrderStatus::Pending,
+            filled_qty: 0.0,
+            avg_price: 0.0,
+            created_at: now,
+            updated_at: now,
+            broker_id: broker_id.to_string(),
+            source: request
+                .tag
+                .clone()
+                .unwrap_or_else(|| "manual-intent".to_string()),
+        };
+        storage.write_order(&intent).await
     }
 
     /// Get all open orders
@@ -249,12 +344,12 @@ impl OrderTradeManager {
     /// Every `interval` seconds, reconcile positions with all registered
     /// brokers. This runs as a background Tokio task and logs any
     /// discrepancies.
-    pub fn start_reconciliation_loop(
-        otm: Arc<Self>,
-        interval: std::time::Duration,
-    ) {
+    pub fn start_reconciliation_loop(otm: Arc<Self>, interval: std::time::Duration) {
         tokio::spawn(async move {
-            info!("Starting position reconciliation loop (interval: {:?})", interval);
+            info!(
+                "Starting position reconciliation loop (interval: {:?})",
+                interval
+            );
             loop {
                 tokio::time::sleep(interval).await;
 
@@ -273,6 +368,120 @@ impl OrderTradeManager {
 mod tests {
     use super::*;
     use crate::application::risk_engine::RiskConfig;
+    use crate::ports::market_data::AdapterHealth;
+    use async_trait::async_trait;
+    use std::sync::Mutex;
+
+    static MOCK_SUPPORTED_ORDER_TYPES: [OrderType; 2] = [OrderType::Market, OrderType::Limit];
+
+    struct MockExecutionAdapter {
+        orders: Mutex<HashMap<String, Order>>,
+        balance: AccountBalance,
+    }
+
+    impl MockExecutionAdapter {
+        fn new(balance: AccountBalance) -> Self {
+            Self {
+                orders: Mutex::new(HashMap::new()),
+                balance,
+            }
+        }
+    }
+
+    #[async_trait]
+    impl ExecutionPort for MockExecutionAdapter {
+        async fn place_order(&self, request: &NewOrderRequest) -> Result<OrderId> {
+            let order_id = OrderId("MOCK-1".into());
+            let now = Utc::now();
+            let order = Order {
+                id: order_id.clone(),
+                symbol: request.symbol.clone(),
+                side: request.side.clone(),
+                order_type: request.order_type.clone(),
+                quantity: request.quantity,
+                price: request.price,
+                stop_price: request.stop_price,
+                status: OrderStatus::Open,
+                filled_qty: 0.0,
+                avg_price: 0.0,
+                created_at: now,
+                updated_at: now,
+                broker_id: "mock".into(),
+                source: request.tag.clone().unwrap_or_else(|| "manual".into()),
+            };
+            self.orders
+                .lock()
+                .unwrap()
+                .insert(order_id.0.clone(), order);
+            Ok(order_id)
+        }
+
+        async fn cancel_order(&self, order_id: &OrderId) -> Result<()> {
+            let mut orders = self.orders.lock().unwrap();
+            let order = orders
+                .get_mut(&order_id.0)
+                .ok_or_else(|| anyhow!("Order not found"))?;
+            order.status = OrderStatus::Cancelled;
+            order.updated_at = Utc::now();
+            Ok(())
+        }
+
+        async fn modify_order(&self, order_id: &OrderId, params: &ModifyParams) -> Result<()> {
+            let mut orders = self.orders.lock().unwrap();
+            let order = orders
+                .get_mut(&order_id.0)
+                .ok_or_else(|| anyhow!("Order not found"))?;
+            if let Some(quantity) = params.quantity {
+                order.quantity = quantity;
+            }
+            if let Some(price) = params.price {
+                order.price = Some(price);
+            }
+            order.updated_at = Utc::now();
+            Ok(())
+        }
+
+        async fn get_order_status(&self, order_id: &OrderId) -> Result<Order> {
+            self.orders
+                .lock()
+                .unwrap()
+                .get(&order_id.0)
+                .cloned()
+                .ok_or_else(|| anyhow!("Order not found"))
+        }
+
+        async fn get_positions(&self) -> Result<Vec<Position>> {
+            Ok(vec![])
+        }
+
+        async fn get_account_balance(&self) -> Result<AccountBalance> {
+            Ok(self.balance.clone())
+        }
+
+        fn broker_id(&self) -> &'static str {
+            "mock"
+        }
+
+        fn supported_order_types(&self) -> &[OrderType] {
+            &MOCK_SUPPORTED_ORDER_TYPES
+        }
+
+        fn health(&self) -> AdapterHealth {
+            AdapterHealth::Healthy
+        }
+    }
+
+    fn test_balance() -> AccountBalance {
+        AccountBalance {
+            total_value: 250_000.0,
+            cash: 125_000.0,
+            margin_used: 50_000.0,
+            margin_available: 75_000.0,
+            unrealized_pnl: 1_000.0,
+            realized_pnl: 2_000.0,
+            currency: "USD".into(),
+        }
+    }
 
     #[test]
     fn test_create_otm() {
@@ -302,6 +511,65 @@ mod tests {
 
         let result = otm.submit_order(request, "nonexistent").await;
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_modify_order_delegates_to_adapter() {
+        let bus = Arc::new(MessageBus::new());
+        let risk = Arc::new(RiskEngine::new(RiskConfig::default()));
+        let mut otm = OrderTradeManager::new(risk, bus);
+        otm.register_execution(
+            "mock".into(),
+            Box::new(MockExecutionAdapter::new(test_balance())),
+        );
+
+        let request = NewOrderRequest {
+            symbol: Symbol("AAPL".into()),
+            side: OrderSide::Buy,
+            order_type: OrderType::Limit,
+            quantity: 10.0,
+            price: Some(150.0),
+            stop_price: None,
+            tag: None,
+        };
+
+        let order_id = otm.submit_order(request, "mock").await.unwrap();
+        otm.modify_order(
+            &order_id,
+            &ModifyParams {
+                quantity: Some(20.0),
+                price: Some(145.0),
+                stop_price: None,
+            },
+            "mock",
+        )
+        .await
+        .unwrap();
+
+        let order = otm
+            .open_orders()
+            .into_iter()
+            .find(|order| order.id == order_id)
+            .unwrap();
+        assert_eq!(order.status, OrderStatus::Open);
+        assert_eq!(order.quantity, 20.0);
+        assert_eq!(order.price, Some(145.0));
+    }
+
+    #[tokio::test]
+    async fn test_get_account_balance_delegates_to_adapter() {
+        let bus = Arc::new(MessageBus::new());
+        let risk = Arc::new(RiskEngine::new(RiskConfig::default()));
+        let mut otm = OrderTradeManager::new(risk, bus);
+        otm.register_execution(
+            "mock".into(),
+            Box::new(MockExecutionAdapter::new(test_balance())),
+        );
+
+        let balance = otm.get_account_balance("mock").await.unwrap();
+        assert_eq!(balance.total_value, 250_000.0);
+        assert_eq!(balance.cash, 125_000.0);
+        assert_eq!(balance.currency, "USD");
     }
 
     #[tokio::test]
