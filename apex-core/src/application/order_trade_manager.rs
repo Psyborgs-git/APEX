@@ -294,6 +294,9 @@ impl OrderTradeManager {
         };
 
         let now = Utc::now();
+        // Intent records are durable pre-dispatch audit entries. They use an
+        // INTENT-* ID because the broker order ID is not known until dispatch
+        // succeeds; the confirmed broker order is persisted separately.
         let intent = Order {
             id: OrderId(format!("INTENT-{}", Uuid::new_v4())),
             symbol: request.symbol.clone(),

@@ -143,7 +143,7 @@ impl RiskEngine {
             );
         }
 
-        self.record_recent_order(order, price, now.timestamp_millis());
+        self.record_recent_order(order, now.timestamp_millis());
         RiskVerdict::Pass
     }
 
@@ -161,18 +161,18 @@ impl RiskEngine {
         let Ok(mut recent) = self.recent_orders.lock() else {
             return false;
         };
-        let price = self.price_for_risk(order);
+        let price = Self::price_for_duplicate(order);
         let window = self.config.duplicate_window_ms as i64;
         recent.retain(|entry| now_ms - entry.timestamp_ms <= window);
         recent.iter().any(|entry| {
             entry.symbol == order.symbol.0
                 && entry.side == order.side
                 && (entry.quantity - order.quantity).abs() < f64::EPSILON
-                && entry.price == Some(price)
+                && Self::prices_equal(entry.price, price)
         })
     }
 
-    fn record_recent_order(&self, order: &NewOrderRequest, risk_price: f64, now_ms: i64) {
+    fn record_recent_order(&self, order: &NewOrderRequest, now_ms: i64) {
         let Ok(mut recent) = self.recent_orders.lock() else {
             return;
         };
@@ -180,9 +180,21 @@ impl RiskEngine {
             symbol: order.symbol.0.clone(),
             side: order.side.clone(),
             quantity: order.quantity,
-            price: Some(risk_price),
+            price: Self::price_for_duplicate(order),
             timestamp_ms: now_ms,
         });
+    }
+
+    fn price_for_duplicate(order: &NewOrderRequest) -> Option<f64> {
+        order.price.or(order.stop_price)
+    }
+
+    fn prices_equal(left: Option<f64>, right: Option<f64>) -> bool {
+        match (left, right) {
+            (Some(left), Some(right)) => (left - right).abs() < 0.000_001,
+            (None, None) => true,
+            _ => false,
+        }
     }
 
     fn is_market_open_utc(now: DateTime<Utc>) -> bool {
