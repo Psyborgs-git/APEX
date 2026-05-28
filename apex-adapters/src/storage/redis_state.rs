@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use redis::aio::ConnectionManager;
 use redis::{AsyncCommands, Client};
 use serde_json;
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 
 use apex_core::domain::models::*;
 

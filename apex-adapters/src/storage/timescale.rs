@@ -4,9 +4,9 @@ use apex_core::{
 };
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use deadpool_postgres::{Config, Manager, ManagerConfig, Pool, RecyclingMethod, Runtime};
+use deadpool_postgres::{Config, ManagerConfig, Pool, RecyclingMethod, Runtime};
 use tokio_postgres::NoTls;
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 
 /// TimescaleDB adapter for time-series data storage
 ///
@@ -175,24 +175,6 @@ impl TimescaleAdapter {
 
         debug!("Database schema initialized successfully");
         Ok(())
-    }
-
-    /// Map Timeframe enum to PostgreSQL interval string
-    fn timeframe_to_interval(tf: &Timeframe) -> &'static str {
-        match tf {
-            Timeframe::S1 => "1 second",
-            Timeframe::S5 => "5 seconds",
-            Timeframe::S15 => "15 seconds",
-            Timeframe::M1 => "1 minute",
-            Timeframe::M3 => "3 minutes",
-            Timeframe::M5 => "5 minutes",
-            Timeframe::M15 => "15 minutes",
-            Timeframe::M30 => "30 minutes",
-            Timeframe::H1 => "1 hour",
-            Timeframe::H4 => "4 hours",
-            Timeframe::D1 => "1 day",
-            Timeframe::W1 => "1 week",
-        }
     }
 
     /// Map Timeframe enum to string for storage
@@ -615,6 +597,6 @@ mod tests {
     fn test_timeframe_mapping() {
         assert_eq!(TimescaleAdapter::timeframe_to_string(&Timeframe::M1), "M1");
         assert_eq!(TimescaleAdapter::timeframe_to_string(&Timeframe::H1), "H1");
-        assert_eq!(TimescaleAdapter::timeframe_to_interval(&Timeframe::M5), "5 minutes");
+        assert_eq!(TimescaleAdapter::timeframe_to_string(&Timeframe::W1), "W1");
     }
 }

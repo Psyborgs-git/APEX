@@ -1,8 +1,8 @@
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use tokio::sync::RwLock;
 use tracing::warn;
 
 use crate::domain::models::*;
@@ -49,8 +49,46 @@ pub enum RiskVerdict {
 struct RecentOrder {
     symbol: String,
     side: OrderSide,
+    order_type: OrderType,
     quantity: f64,
+    price: Option<f64>,
+    stop_price: Option<f64>,
     timestamp_ms: i64,
+}
+
+impl RecentOrder {
+    fn new(order: &NewOrderRequest, timestamp_ms: i64) -> Self {
+        Self {
+            symbol: order.symbol.0.clone(),
+            side: order.side.clone(),
+            order_type: order.order_type.clone(),
+            quantity: order.quantity,
+            price: order.price,
+            stop_price: order.stop_price,
+            timestamp_ms,
+        }
+    }
+
+    fn matches(&self, order: &NewOrderRequest) -> bool {
+        self.symbol == order.symbol.0
+            && self.side == order.side
+            && self.order_type == order.order_type
+            && nearly_equal(self.quantity, order.quantity)
+            && same_optional_price(self.price, order.price)
+            && same_optional_price(self.stop_price, order.stop_price)
+    }
+}
+
+fn nearly_equal(left: f64, right: f64) -> bool {
+    (left - right).abs() < 1e-9
+}
+
+fn same_optional_price(left: Option<f64>, right: Option<f64>) -> bool {
+    match (left, right) {
+        (Some(left), Some(right)) => nearly_equal(left, right),
+        (None, None) => true,
+        _ => false,
+    }
 }
 
 /// Pre-trade risk engine — all checks are synchronous and run in < 10μs
@@ -61,7 +99,6 @@ pub struct RiskEngine {
     /// Hard halt flag — when true, ALL orders are rejected
     pub(crate) trading_halted: Arc<AtomicBool>,
     /// Recent orders for duplicate detection
-    #[allow(dead_code)]
     recent_orders: Arc<RwLock<Vec<RecentOrder>>>,
 }
 
@@ -74,6 +111,28 @@ impl RiskEngine {
             trading_halted: Arc::new(AtomicBool::new(false)),
             recent_orders: Arc::new(RwLock::new(Vec::new())),
         }
+    }
+
+    fn track_and_detect_duplicate(&self, order: &NewOrderRequest) -> bool {
+        if self.config.duplicate_window_ms == 0 {
+            return false;
+        }
+
+        let now_ms = Utc::now().timestamp_millis();
+        let window_ms = self.config.duplicate_window_ms as i64;
+        let mut recent_orders = self
+            .recent_orders
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+        recent_orders.retain(|recent| now_ms.saturating_sub(recent.timestamp_ms) <= window_ms);
+
+        if recent_orders.iter().any(|recent| recent.matches(order)) {
+            return true;
+        }
+
+        recent_orders.push(RecentOrder::new(order, now_ms));
+        false
     }
 
     /// Pre-trade risk check — MUST be called before every order submission.
@@ -120,6 +179,14 @@ impl RiskEngine {
             );
         }
 
+        // 5. Check for accidental duplicate submissions within the configured debounce window.
+        if self.track_and_detect_duplicate(order) {
+            return RiskVerdict::Reject(format!(
+                "Potential duplicate order detected within {} ms window",
+                self.config.duplicate_window_ms
+            ));
+        }
+
         RiskVerdict::Pass
     }
 
@@ -152,6 +219,11 @@ impl RiskEngine {
         self.trading_halted.store(false, Ordering::SeqCst);
         // Reset session P&L
         self.session_pnl.store(0, Ordering::SeqCst);
+        self
+            .recent_orders
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clear();
     }
 
     /// Get the risk configuration
@@ -163,6 +235,8 @@ impl RiskEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::thread::sleep;
+    use std::time::Duration;
 
     fn default_account() -> AccountBalance {
         AccountBalance {
@@ -341,5 +415,36 @@ mod tests {
             RiskVerdict::Reject(msg) => assert!(msg.contains("halted")),
             _ => panic!("Expected halt rejection even with valid order"),
         }
+    }
+
+    #[test]
+    fn test_duplicate_order_rejected_within_window() {
+        let engine = RiskEngine::new(RiskConfig {
+            duplicate_window_ms: 500,
+            ..RiskConfig::default()
+        });
+        let account = default_account();
+        let order = limit_buy("AAPL", 10.0, 150.0);
+
+        assert_eq!(engine.check(&order, &account), RiskVerdict::Pass);
+
+        match engine.check(&order, &account) {
+            RiskVerdict::Reject(message) => assert!(message.contains("duplicate")),
+            RiskVerdict::Pass => panic!("Expected duplicate order rejection"),
+        }
+    }
+
+    #[test]
+    fn test_duplicate_order_allowed_after_window_expires() {
+        let engine = RiskEngine::new(RiskConfig {
+            duplicate_window_ms: 10,
+            ..RiskConfig::default()
+        });
+        let account = default_account();
+        let order = limit_buy("AAPL", 10.0, 150.0);
+
+        assert_eq!(engine.check(&order, &account), RiskVerdict::Pass);
+        sleep(Duration::from_millis(20));
+        assert_eq!(engine.check(&order, &account), RiskVerdict::Pass);
     }
 }

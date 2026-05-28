@@ -17,3 +17,4 @@ async-trait = { workspace = true }
 dashmap = { workspace = true }
 petgraph = { workspace = true }
 reqwest = { workspace = true }
+prometheus = "0.13"

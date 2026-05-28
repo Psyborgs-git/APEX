@@ -150,6 +150,14 @@ impl AngelOneExecutionAdapter {
         info!("Angel One execution JWT token updated");
     }
 
+    /// Clear JWT token.
+    pub fn clear_jwt_token(&self) {
+        let mut jwt_token = self.jwt_token.write().unwrap();
+        *jwt_token = None;
+        self.set_health(AdapterHealth::Unhealthy("Not authenticated".to_string()));
+        info!("Angel One execution JWT token cleared");
+    }
+
     /// Get authorization headers for Angel One SmartAPI
     fn get_auth_headers(&self) -> Result<Vec<(&'static str, String)>> {
         let token = self.jwt_token.read().unwrap();
@@ -157,6 +165,7 @@ impl AngelOneExecutionAdapter {
             Some(t) => Ok(vec![
                 ("Authorization", format!("Bearer {}", t)),
                 ("X-PrivateKey", self.api_key.clone()),
+                ("X-ClientCode", self.client_code.clone()),
                 ("X-ClientLocalIP", "127.0.0.1".to_string()),
                 ("X-ClientPublicIP", "127.0.0.1".to_string()),
                 ("X-MACAddress", "00:00:00:00:00:00".to_string()),
@@ -168,7 +177,7 @@ impl AngelOneExecutionAdapter {
     }
 
     /// Check if authenticated
-    fn is_authenticated(&self) -> bool {
+    pub fn is_authenticated(&self) -> bool {
         self.jwt_token.read().unwrap().is_some()
     }
 
@@ -264,6 +273,14 @@ impl ExecutionPort for AngelOneExecutionAdapter {
 
         let order_response: AngelOneResponse<AngelOneOrderData> = response.json().await
             .context("Failed to parse order response")?;
+
+        if !order_response.status {
+            self.set_health(AdapterHealth::Degraded(order_response.message.clone()));
+            return Err(anyhow::anyhow!(
+                "Angel One order placement rejected: {}",
+                order_response.message
+            ));
+        }
 
         let order_data = order_response.data
             .ok_or_else(|| anyhow::anyhow!("No order data in response: {}", order_response.message))?;
@@ -562,6 +579,10 @@ impl ExecutionPort for AngelOneExecutionAdapter {
 
     fn health(&self) -> AdapterHealth {
         self.health.read().unwrap().clone()
+    }
+
+    fn is_authenticated(&self) -> bool {
+        AngelOneExecutionAdapter::is_authenticated(self)
     }
 }
 

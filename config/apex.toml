@@ -154,8 +154,17 @@ default_lag_periods = [1, 5, 10]
 # ── Storage ──────────────────────────────────────────────────────────
 
 [storage]
+# Active storage backend: "sqlite" (local file) or "timescale" / "postgres"
+# for a PostgreSQL database with the TimescaleDB extension enabled.
+backend = "sqlite"
+
 # SQLite database path (relative to data_dir).
 sqlite_path = "apex.db"
+
+# PostgreSQL / TimescaleDB connection URL used when backend = "timescale"
+# or "postgres". Example:
+# postgresql://postgres:postgres@localhost:5432/apex_market
+postgres_url = ""
 
 # Enable WAL mode for better concurrent read performance.
 wal_mode = true

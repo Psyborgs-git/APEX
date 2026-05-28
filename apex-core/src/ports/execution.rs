@@ -25,4 +25,8 @@ pub trait ExecutionPort: Send + Sync {
     fn supported_order_types(&self) -> &[OrderType];
     /// Current health status
     fn health(&self) -> AdapterHealth;
+    /// Whether the adapter is authenticated and ready for broker-side API calls.
+    fn is_authenticated(&self) -> bool {
+        true
+    }
 }

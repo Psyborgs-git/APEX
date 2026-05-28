@@ -11,6 +11,7 @@ are visible in logs without silently killing a strategy.
 from __future__ import annotations
 
 import math
+import sys
 from typing import TYPE_CHECKING
 
 from apex_sdk.types import Bar, Signal, Tick, Timeframe
@@ -41,18 +42,40 @@ class Strategy:
         key = (name, symbol, params)
         return self._indicator_cache.get(key, math.nan)
 
+    def _safe_send(
+        self,
+        method: str,
+        params: dict[str, object],
+        fallback_message: str | None = None,
+        *,
+        stream: object | None = None,
+    ) -> None:
+        try:
+            self._ipc.send(method, params)
+        except Exception:  # noqa: BLE001
+            if fallback_message is not None:
+                print(
+                    fallback_message,
+                    file=stream if stream is not None else sys.stdout,
+                    flush=True,
+                )
+
     def emit(self, signal: Signal) -> None:
         """Send a trading signal to the Rust OTM."""
-        self._ipc.send(
+        self._safe_send(
             "emit_signal",
             {"strategy_id": self._id, "signal": signal.to_dict()},
+            fallback_message=f"Signal emitted: {signal.to_dict()}",
+            stream=sys.stdout,
         )
 
     def log(self, message: str) -> None:
         """Forward a log line to the Rust core via IPC."""
-        self._ipc.send(
+        self._safe_send(
             "strategy_log",
             {"strategy_id": self._id, "message": message},
+            fallback_message=message,
+            stream=sys.stdout,
         )
 
     # ------------------------------------------------------------------

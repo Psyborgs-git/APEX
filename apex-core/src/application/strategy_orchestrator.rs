@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 use uuid::Uuid;
 
 use crate::domain::models::*;
@@ -133,7 +133,7 @@ impl StrategyOrchestrator {
         strategy.status = StrategyStatus::Starting;
 
         // Spawn Python process
-        let mut child = Command::new(&self.python_executable)
+        let child = Command::new(&self.python_executable)
             .arg(&strategy.script_path)
             .arg("--params")
             .arg(serde_json::to_string(&params)?)

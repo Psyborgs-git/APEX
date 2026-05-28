@@ -6,6 +6,8 @@ resolver = "2"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+toml = "0.8"
+toml_edit = "0.22"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
 anyhow = "1"
@@ -18,3 +20,4 @@ tokio-tungstenite = { version = "0.23", features = ["rustls-tls-native-roots"] }
 async-trait = "0.1"
 dashmap = "6"
 petgraph = "0.8"
+dotenvy = "0.15"

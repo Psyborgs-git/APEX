@@ -153,7 +153,7 @@ const CandleChartInner: React.FC<CandleChartProps> = ({ symbol, ohlcvData, heigh
         chartRef.current = null;
       }
     };
-  }, [initChart]);
+  }, [height, initChart]);
 
   // Listen for real-time quote updates
   useEffect(() => {

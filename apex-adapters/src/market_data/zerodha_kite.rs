@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::sync::{Arc, RwLock};
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
@@ -44,8 +44,6 @@ struct ZerodhaOHLC {
     high: f64,
     #[serde(default)]
     low: f64,
-    #[serde(default)]
-    close: f64,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -59,8 +57,6 @@ struct ZerodhaDepth {
 #[derive(Debug, Deserialize)]
 struct ZerodhaDepthItem {
     price: f64,
-    quantity: u64,
-    orders: u64,
 }
 
 /// Zerodha API OHLC response
@@ -101,8 +97,16 @@ impl ZerodhaKiteAdapter {
         info!("Zerodha access token updated");
     }
 
+    /// Clear access token (after logout or when resetting auth state).
+    pub fn clear_access_token(&self) {
+        let mut access_token = self.access_token.write().unwrap();
+        *access_token = None;
+        self.set_health(AdapterHealth::Unhealthy("Not authenticated".to_string()));
+        info!("Zerodha access token cleared");
+    }
+
     /// Check if authenticated
-    fn is_authenticated(&self) -> bool {
+    pub fn is_authenticated(&self) -> bool {
         self.access_token.read().unwrap().is_some()
     }
 
@@ -121,13 +125,6 @@ impl ZerodhaKiteAdapter {
         // Simplified mapping - in production, use Zerodha instruments API
         // Format: NSE:SYMBOL or BSE:SYMBOL
         format!("NSE:{}", symbol.0)
-    }
-
-    /// Map Zerodha instrument to APEX symbol
-    fn instrument_to_symbol(&self, instrument: &str) -> Symbol {
-        // Extract symbol from "NSE:SYMBOL" or "BSE:SYMBOL"
-        let parts: Vec<&str> = instrument.split(':').collect();
-        Symbol(parts.get(1).unwrap_or(&"UNKNOWN").to_string())
     }
 
     /// Map APEX timeframe to Zerodha interval string

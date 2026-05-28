@@ -18,13 +18,22 @@ pub struct SqliteStorage {
 impl SqliteStorage {
     /// Create a new SQLite storage adapter
     pub fn new(path: &str) -> Result<Self> {
+        Self::new_with_options(path, true)
+    }
+
+    /// Create a new SQLite storage adapter with explicit WAL configuration.
+    pub fn new_with_options(path: &str, wal_mode: bool) -> Result<Self> {
         let conn = if path == ":memory:" {
             Connection::open_in_memory()?
         } else {
             Connection::open(path)?
         };
 
-        conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;")?;
+        if wal_mode {
+            conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;")?;
+        } else {
+            conn.execute_batch("PRAGMA journal_mode = DELETE; PRAGMA synchronous = NORMAL;")?;
+        }
 
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),

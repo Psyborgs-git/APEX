@@ -70,8 +70,16 @@ impl AngelOneMarketDataAdapter {
         info!("Angel One market data JWT token updated");
     }
 
+    /// Clear JWT token.
+    pub fn clear_jwt_token(&self) {
+        let mut jwt_token = self.jwt_token.write().unwrap();
+        *jwt_token = None;
+        self.set_health(AdapterHealth::Unhealthy("Not authenticated".to_string()));
+        info!("Angel One market data JWT token cleared");
+    }
+
     /// Check if authenticated
-    fn is_authenticated(&self) -> bool {
+    pub fn is_authenticated(&self) -> bool {
         self.jwt_token.read().unwrap().is_some()
     }
 

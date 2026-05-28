@@ -11,8 +11,7 @@ use chrono::Utc;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, RwLock};
-use tracing::{debug, info, warn};
-use uuid::Uuid;
+use tracing::{debug, info};
 
 /// Zerodha Kite execution adapter
 ///
@@ -122,6 +121,14 @@ impl ZerodhaExecutionAdapter {
         info!("Zerodha execution access token updated");
     }
 
+    /// Clear access token.
+    pub fn clear_access_token(&self) {
+        let mut access_token = self.access_token.write().unwrap();
+        *access_token = None;
+        self.set_health(AdapterHealth::Unhealthy("Not authenticated".to_string()));
+        info!("Zerodha execution access token cleared");
+    }
+
     /// Get authorization header
     fn get_auth_header(&self) -> Result<String> {
         let token = self.access_token.read().unwrap();
@@ -132,7 +139,7 @@ impl ZerodhaExecutionAdapter {
     }
 
     /// Check if authenticated
-    fn is_authenticated(&self) -> bool {
+    pub fn is_authenticated(&self) -> bool {
         self.access_token.read().unwrap().is_some()
     }
 
@@ -488,6 +495,10 @@ impl ExecutionPort for ZerodhaExecutionAdapter {
 
     fn health(&self) -> AdapterHealth {
         self.health.read().unwrap().clone()
+    }
+
+    fn is_authenticated(&self) -> bool {
+        ZerodhaExecutionAdapter::is_authenticated(self)
     }
 }
 

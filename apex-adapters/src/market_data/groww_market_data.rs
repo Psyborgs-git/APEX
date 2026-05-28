@@ -6,7 +6,6 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use reqwest::Client;
-use serde::Deserialize;
 use std::sync::{Arc, RwLock};
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
@@ -20,48 +19,6 @@ pub struct GrowwMarketDataAdapter {
     access_token: Arc<RwLock<Option<String>>>,
     client: Client,
     health: Arc<RwLock<AdapterHealth>>,
-}
-
-/// Groww quote response
-#[derive(Debug, Deserialize)]
-struct GrowwQuoteResponse {
-    #[serde(default, rename = "lastPrice")]
-    last_price: f64,
-    #[serde(default)]
-    open: f64,
-    #[serde(default)]
-    high: f64,
-    #[serde(default)]
-    low: f64,
-    #[serde(default)]
-    close: f64,
-    #[serde(default)]
-    volume: u64,
-    #[serde(default, rename = "changePct")]
-    change_pct: f64,
-}
-
-/// Groww historical candle response
-#[derive(Debug, Deserialize)]
-struct GrowwHistoricalResponse {
-    #[serde(default)]
-    candles: Vec<GrowwCandle>,
-}
-
-#[derive(Debug, Deserialize)]
-struct GrowwCandle {
-    #[serde(default)]
-    timestamp: String,
-    #[serde(default)]
-    open: f64,
-    #[serde(default)]
-    high: f64,
-    #[serde(default)]
-    low: f64,
-    #[serde(default)]
-    close: f64,
-    #[serde(default)]
-    volume: u64,
 }
 
 impl GrowwMarketDataAdapter {
@@ -87,8 +44,16 @@ impl GrowwMarketDataAdapter {
         info!("Groww market data access token updated");
     }
 
+    /// Clear access token.
+    pub fn clear_access_token(&self) {
+        let mut access_token = self.access_token.write().unwrap();
+        *access_token = None;
+        self.set_health(AdapterHealth::Unhealthy("Not authenticated".to_string()));
+        info!("Groww market data access token cleared");
+    }
+
     /// Check if authenticated
-    fn is_authenticated(&self) -> bool {
+    pub fn is_authenticated(&self) -> bool {
         self.access_token.read().unwrap().is_some()
     }
 

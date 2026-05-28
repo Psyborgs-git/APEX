@@ -19,7 +19,7 @@ use tracing::{debug, info, warn};
 /// via Robinhood API. Robinhood is a US-based commission-free brokerage for
 /// equities, options, and crypto.
 pub struct RobinhoodExecutionAdapter {
-    client_id: String,
+    _client_id: String,
     access_token: Arc<RwLock<Option<String>>>,
     client: Client,
     health: Arc<RwLock<AdapterHealth>>,
@@ -54,8 +54,6 @@ struct RobinhoodOrderResponse {
 /// Robinhood order status
 #[derive(Debug, Deserialize)]
 struct RobinhoodOrder {
-    id: String,
-    instrument: String,
     symbol: Option<String>,
     #[serde(rename = "type")]
     order_type: String,
@@ -72,25 +70,14 @@ struct RobinhoodOrder {
     average_price: Option<String>,
     #[serde(default)]
     created_at: String,
-    #[serde(default)]
-    updated_at: String,
 }
 
 /// Robinhood position
 #[derive(Debug, Deserialize)]
 struct RobinhoodPosition {
-    instrument: String,
     quantity: String,
     average_buy_price: String,
     symbol: Option<String>,
-}
-
-/// Robinhood account response
-#[derive(Debug, Deserialize)]
-struct RobinhoodAccount {
-    url: String,
-    portfolio_cash: String,
-    buying_power: String,
 }
 
 impl RobinhoodExecutionAdapter {
@@ -102,7 +89,7 @@ impl RobinhoodExecutionAdapter {
             .context("Failed to create HTTP client")?;
 
         Ok(Self {
-            client_id,
+            _client_id: client_id,
             access_token: Arc::new(RwLock::new(access_token)),
             client,
             health: Arc::new(RwLock::new(AdapterHealth::Healthy)),
@@ -116,6 +103,14 @@ impl RobinhoodExecutionAdapter {
         info!("Robinhood access token updated");
     }
 
+    /// Clear access token.
+    pub fn clear_access_token(&self) {
+        let mut access_token = self.access_token.write().unwrap();
+        *access_token = None;
+        self.set_health(AdapterHealth::Unhealthy("Not authenticated".to_string()));
+        info!("Robinhood access token cleared");
+    }
+
     /// Get authorization header
     fn get_auth_header(&self) -> Result<String> {
         let token = self.access_token.read().unwrap();
@@ -126,7 +121,7 @@ impl RobinhoodExecutionAdapter {
     }
 
     /// Check if authenticated
-    fn is_authenticated(&self) -> bool {
+    pub fn is_authenticated(&self) -> bool {
         self.access_token.read().unwrap().is_some()
     }
 
@@ -431,6 +426,10 @@ impl ExecutionPort for RobinhoodExecutionAdapter {
 
     fn health(&self) -> AdapterHealth {
         self.health.read().unwrap().clone()
+    }
+
+    fn is_authenticated(&self) -> bool {
+        RobinhoodExecutionAdapter::is_authenticated(self)
     }
 }
 

@@ -26,6 +26,12 @@ The pipeline:
 4. **Register model** — joblib artefact + metadata JSON
 5. **Use in strategy** — load model and call `predict()` in `on_bar`
 
+## Development modes
+
+- **Browser/Vite mode** is intentionally mock-friendly: the ML workbench UI returns deterministic sample training results so Playwright and UI development can run without the native shell.
+- **Desktop/Tauri mode** calls the real `train_ml_model` / `list_ml_models` / `delete_ml_model` commands and executes the Python-side trainer from `apex-python/ml/trainer.py`.
+- For full-stack validation, launch the desktop app from the repo root with `bun run dev` (or `cd apex-ui && bun run tauri:dev`).
+
 ## Supported Algorithms
 
 | Algorithm              | Key                      | Library        |
@@ -57,6 +63,15 @@ timestamp,close,volume,rsi_14,sma_20,signal
 ```
 
 ### 2. Configure Training
+
+Install the Python-side training dependencies once:
+
+```bash
+cd apex-python
+python3 -m pip install -e ".[dev]"
+```
+
+Then create a training configuration:
 
 ```python
 from ml.trainer import ModelTrainer, TrainingConfig

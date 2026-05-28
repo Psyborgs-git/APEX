@@ -26,7 +26,6 @@ pub struct RobinhoodMarketDataAdapter {
 /// Robinhood quote response
 #[derive(Debug, Deserialize)]
 struct RobinhoodQuote {
-    symbol: String,
     last_trade_price: String,
     #[serde(default)]
     bid_price: String,
@@ -34,10 +33,6 @@ struct RobinhoodQuote {
     ask_price: String,
     #[serde(default)]
     previous_close: String,
-    #[serde(default)]
-    adjusted_previous_close: String,
-    #[serde(default)]
-    last_extended_hours_trade_price: Option<String>,
 }
 
 /// Robinhood historical response
@@ -92,8 +87,16 @@ impl RobinhoodMarketDataAdapter {
         info!("Robinhood market data access token updated");
     }
 
+    /// Clear access token.
+    pub fn clear_access_token(&self) {
+        let mut access_token = self.access_token.write().unwrap();
+        *access_token = None;
+        self.set_health(AdapterHealth::Unhealthy("Not authenticated".to_string()));
+        info!("Robinhood market data access token cleared");
+    }
+
     /// Check if authenticated
-    fn is_authenticated(&self) -> bool {
+    pub fn is_authenticated(&self) -> bool {
         self.access_token.read().unwrap().is_some()
     }
 

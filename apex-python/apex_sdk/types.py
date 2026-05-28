@@ -4,6 +4,22 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from enum import Enum
+from typing import Callable, TypeVar
+
+
+_T = TypeVar("_T")
+
+
+def _slotted_dataclass(*, frozen: bool = False) -> Callable[[type[_T]], type[_T]]:
+    """Use slotted dataclasses when supported, with a safe fallback otherwise."""
+
+    def decorator(cls: type[_T]) -> type[_T]:
+        try:
+            return dataclass(frozen=frozen, slots=True)(cls)
+        except TypeError:
+            return dataclass(frozen=frozen)(cls)
+
+    return decorator
 
 
 class Timeframe(str, Enum):
@@ -19,7 +35,7 @@ class Timeframe(str, Enum):
     W1 = "1w"
 
 
-@dataclass(frozen=True, slots=True)
+@_slotted_dataclass(frozen=True)
 class Tick:
     """A single price tick from a market data feed."""
 
@@ -29,7 +45,7 @@ class Tick:
     timestamp_ns: int
 
 
-@dataclass(frozen=True, slots=True)
+@_slotted_dataclass(frozen=True)
 class Bar:
     """An OHLCV bar for a given symbol and timeframe."""
 
@@ -43,7 +59,7 @@ class Bar:
     timestamp_ns: int
 
 
-@dataclass(slots=True)
+@_slotted_dataclass()
 class Signal:
     """A trading signal emitted by a strategy to the Rust OTM."""
 

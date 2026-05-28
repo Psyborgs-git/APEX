@@ -3,6 +3,13 @@
 This guide walks through implementing a custom broker adapter for APEX.
 Adapters are the bridge between APEX's order management and your broker's API.
 
+## Current runtime wiring
+
+- The desktop app currently registers adapters in `apex-tauri/src/state.rs`.
+- The canonical local execution broker ID is **`paper`**.
+- Keep broker IDs stable across Rust, Tauri DTOs, UI stores, and Playwright selectors. The paper adapter lives in `paper_trading.rs`, but the runtime ID exposed to the rest of the app is `paper`.
+- Local verification in this repo currently focuses on **paper/local flows first**, with live-broker adapters enabled behind configuration and session-token gating.
+
 ## Architecture Overview
 
 APEX uses a **hexagonal architecture** (ports & adapters). The core engine
@@ -279,8 +286,8 @@ fill_probability = 0.8
 
 ### Step 4 — Wire it up
 
-In your application bootstrap (e.g., `apex-tauri/src/main.rs`), add a match
-arm for the new adapter:
+In the current desktop runtime (`apex-tauri/src/state.rs`), register the new
+adapter alongside the existing broker map:
 
 ```rust
 let execution: Arc<dyn ExecutionPort> = match config.execution.adapter.as_str() {

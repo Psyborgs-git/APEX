@@ -277,7 +277,7 @@ Adding a new broker requires only implementing `ExecutionPort` and `MarketDataPo
 
 |Component   |Technology                                               |
 |------------|---------------------------------------------------------|
-|Build system|Cargo (Rust) + Vite (frontend) + Poetry (Python)         |
+|Build system|Cargo (Rust) + Bun/Vite (frontend) + Hatchling/pip (Python)|
 |Logging     |**tracing** (Rust, structured JSON) + **loguru** (Python)|
 |Metrics     |**Prometheus** (local scrape) + optional Grafana         |
 |Config      |**TOML** files + env var overrides                       |
@@ -1102,8 +1102,8 @@ All order placements, modifications, and cancellations logged with nanosecond ti
 - [x] Risk engine with hard stops (< 10μs latency target, atomic P&L tracking)
 - [x] Crash recovery on startup (reconcile stale Pending/Open orders with brokers)
 - [x] Position reconciliation loop (30s periodic polling for all registered brokers)
-- [x] E2E test framework (Playwright: 65 tests across 8 suites, all passing)
-- [x] Unit test coverage (Rust: 164 passing tests; Python SDK: 21 passing tests)
+- [x] E2E test framework (Playwright: 67 browser-mode tests, all passing)
+- [x] Unit test coverage (Rust workspace: 194 passing tests; Python SDK: 21 passing tests)
 - [x] Tauri IPC commands (20 commands: market, orders, alerts, risk, data, ML, health)
 - [x] Real-time event push system (7 event types via message bus → Tauri emitter)
 - [x] Health monitoring dashboard (adapter status, system metrics, real-time polling)
@@ -1149,6 +1149,7 @@ All order placements, modifications, and cancellations logged with nanosecond ti
 **Working Features:**
 - ✅ Full-stack foundation (Rust core, React UI, Python SDK)
 - ✅ Paper trading with realistic order execution (slippage + commission)
+- ✅ Root workflow wrappers via `bun run dev`, `bun run dev:web-only`, `bun run build`, and `bun run verify`
 - ✅ Yahoo Finance real-time quotes (3s polling)
 - ✅ Zerodha Kite adapter (market data + execution via REST API)
 - ✅ Risk engine with pre-trade validation and daily loss circuit breaker
@@ -1165,6 +1166,8 @@ All order placements, modifications, and cancellations logged with nanosecond ti
 - ✅ Health monitoring dashboard with adapter status
 - ✅ Command bar with order placement and workspace navigation
 - ✅ Tauri event bridge hooks for real-time data streaming
+- ✅ Browser-mode development fallback with mocked Tauri IPC plus polling for Playwright/UI work
+- ✅ Desktop/Tauri startup path verified through `scripts/dev.sh` and `cd apex-ui && bun run tauri:dev`
 - ✅ Hot path tracing instrumentation for performance analysis
 - ✅ Database migration files for production deployment
 - ✅ Production bundle configuration with Python sidecar
@@ -1189,33 +1192,71 @@ All order placements, modifications, and cancellations logged with nanosecond ti
 # Rust (stable 1.78+)
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
-# Node.js 20+ and pnpm
-npm install -g pnpm
+# Bun (latest stable)
+curl -fsSL https://bun.sh/install | bash
 
-# Python 3.11+ and Poetry
-pip install poetry
+# Python 3.11 recommended for the full sidecar/runtime
+# (the SDK tests also degrade cleanly on older local interpreters)
 
-# Tauri CLI
-cargo install tauri-cli
-
-# TimescaleDB (local)
-# https://docs.timescale.com/self-hosted/latest/install/
-
-# Redis
-brew install redis       # macOS
-sudo apt install redis   # Ubuntu
+# Optional local services for extended storage experiments
+# - TimescaleDB
+# - Redis
 ```
 
 ### Setup
 
 ```bash
 git clone https://github.com/yourorg/apex && cd apex
-pnpm install
-cd apex-python && poetry install && cd ..
-cp config/apex.example.toml config/apex.toml
-# Edit config/apex.toml: DB URLs, API keys
-cargo tauri dev
+cp config/apex.example.toml config/apex.toml   # if it does not already exist
+cp .env.example .env                           # if it does not already exist
+
+cd apex-ui && bun install && cd ..
+cd apex-python && python3 -m pip install -e ".[dev]" && cd ..
+
+# Desktop app (starts Vite on :3000 and launches the native window)
+bun run dev
+
+# Browser-only UI (used by Playwright and mock-IPC UI development)
+bun run dev:web-only
+
+# Full verification wrapper from the repo root
+bun run verify
 ```
+
+### Verified local workflows (March 2026)
+
+The following paths were exercised successfully in this repository state:
+
+```bash
+# Rust workspace tests
+cargo test --workspace
+
+# Python sidecar / SDK tests
+cd apex-python && python3 -m pytest tests
+
+# Frontend static verification
+cd apex-ui && bun run lint && bun run build
+
+# Browser-mode end-to-end tests (mocked IPC + polling)
+cd apex-ui && bun run test
+
+# Root wrapper covering DB setup + cargo check + UI lint/build + Python tests
+bun run verify
+```
+
+Observed results from this session:
+
+- `cargo test --workspace` → **194 passed**
+- `apex-python` pytest suite → **21 passed**
+- Playwright suite → **67 passed**
+- `bun run verify` → **passed**
+- Desktop smoke → native app launched successfully through both `scripts/dev.sh --skip-db` and `cd apex-ui && bun run tauri:dev`
+
+### Development modes
+
+- **Browser mode** (`bun run dev:web-only` or Playwright’s built-in dev server on port `1420`) uses mocked Tauri IPC plus polling so the UI can be exercised without the native shell.
+- **Desktop mode** (`bun run dev` or `cd apex-ui && bun run tauri:dev`) launches Vite and then starts the real `apex-tauri` binary.
+- The local SQLite path used by the desktop app is `data/apex.db`, which matches the setup script and current runtime wiring.
 
 ### Configuration (`config/apex.toml`)
 

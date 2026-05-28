@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "identifier": "io.apex.terminal",
   "build": {
-    "beforeDevCommand": "cd ../apex-ui && pnpm run dev",
+    "beforeDevCommand": "cd apex-ui && bun run dev",
     "devUrl": "http://localhost:3000",
-    "beforeBuildCommand": "cd ../apex-ui && pnpm run build",
+    "beforeBuildCommand": "cd apex-ui && bun run build",
     "frontendDist": "../apex-ui/dist"
   },
   "app": {

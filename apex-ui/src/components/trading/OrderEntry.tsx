@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { formatPrice } from '../../lib/format';
 import { placeOrder } from '../../lib/tauri';
+import { useBrokerStore } from '../../stores/brokerStore';
 
 interface OrderEntryProps {
   defaultSymbol?: string;
@@ -13,6 +14,32 @@ export const OrderEntry: React.FC<OrderEntryProps> = ({ defaultSymbol }) => {
   const [quantity, setQuantity] = useState('');
   const [price, setPrice] = useState('');
   const [status, setStatus] = useState<{ type: 'idle' | 'submitting' | 'success' | 'error'; message?: string }>({ type: 'idle' });
+  const brokerConnections = useBrokerStore((s) => s.connections);
+  const activeBrokerId = useBrokerStore((s) => s.activeBrokerId);
+  const setActiveBrokerId = useBrokerStore((s) => s.setActiveBrokerId);
+
+  const executionBrokers = useMemo(() => {
+    const available = brokerConnections.filter((broker) => broker.mode === 'paper' || broker.execution_available);
+    return available.length > 0
+      ? available
+      : [{
+          broker_id: 'paper',
+          display_name: 'Paper Trading',
+          mode: 'paper',
+          status: 'ready',
+          configured: true,
+          authenticated: true,
+          execution_available: true,
+          market_data_available: false,
+          token_field_label: '',
+          message: 'Paper trading is active for safe simulated execution.',
+        }];
+  }, [brokerConnections]);
+
+  const activeBroker = useMemo(
+    () => executionBrokers.find((broker) => broker.broker_id === activeBrokerId) ?? executionBrokers[0],
+    [activeBrokerId, executionBrokers],
+  );
 
   React.useEffect(() => {
     if (defaultSymbol) setSymbol(defaultSymbol);
@@ -28,6 +55,12 @@ export const OrderEntry: React.FC<OrderEntryProps> = ({ defaultSymbol }) => {
     e.preventDefault();
     if (!symbol || !quantity) return;
 
+    if (activeBroker?.mode === 'live' && !activeBroker.authenticated) {
+      setStatus({ type: 'error', message: `${activeBroker.display_name} needs a session token before live orders are enabled` });
+      setTimeout(() => setStatus({ type: 'idle' }), 5000);
+      return;
+    }
+
     setStatus({ type: 'submitting' });
     try {
       const orderId = await placeOrder({
@@ -37,10 +70,10 @@ export const OrderEntry: React.FC<OrderEntryProps> = ({ defaultSymbol }) => {
         quantity: parseFloat(quantity),
         price: orderType !== 'MARKET' ? parseFloat(price) || null : null,
         stop_price: null,
-        broker_id: 'paper',
+        broker_id: activeBroker?.broker_id ?? 'paper',
         tag: null,
       });
-      setStatus({ type: 'success', message: `Order placed: ${orderId}` });
+      setStatus({ type: 'success', message: `Order placed on ${activeBroker?.display_name ?? 'Paper Trading'}: ${orderId}` });
       setQuantity('');
       setPrice('');
       setTimeout(() => setStatus({ type: 'idle' }), 3000);
@@ -48,12 +81,26 @@ export const OrderEntry: React.FC<OrderEntryProps> = ({ defaultSymbol }) => {
       setStatus({ type: 'error', message: String(err) });
       setTimeout(() => setStatus({ type: 'idle' }), 5000);
     }
-  }, [symbol, side, orderType, quantity, price]);
+  }, [activeBroker, symbol, side, orderType, quantity, price]);
 
   return (
     <form onSubmit={handleSubmit} className="p-3 h-full flex flex-col gap-2" data-testid="order-entry-panel">
       <div className="flex items-center justify-between">
-        <span className="text-sm font-medium text-text-secondary">Order Entry</span>
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium text-text-secondary">Order Entry</span>
+          <select
+            value={activeBroker?.broker_id ?? 'paper'}
+            onChange={(e) => setActiveBrokerId(e.target.value)}
+            className="bg-surface-2 text-text-primary font-mono text-xs px-2 py-1 rounded border border-[var(--border-color)] focus:border-accent focus:outline-none"
+            data-testid="order-broker-select"
+          >
+            {executionBrokers.map((broker) => (
+              <option key={broker.broker_id} value={broker.broker_id}>
+                {broker.mode === 'paper' ? 'Paper (Simulated)' : broker.display_name}
+              </option>
+            ))}
+          </select>
+        </div>
         <div className="flex gap-1">
           <button
             type="button"
@@ -112,6 +159,12 @@ export const OrderEntry: React.FC<OrderEntryProps> = ({ defaultSymbol }) => {
           min="0"
         />
       </div>
+
+      {activeBroker?.mode === 'live' && !activeBroker.authenticated && (
+        <div className="text-[11px] text-warning font-mono" data-testid="order-broker-warning">
+          {activeBroker.display_name} needs a session token before live orders can be sent.
+        </div>
+      )}
 
       {orderType !== 'MARKET' && (
         <div className="grid grid-cols-2 gap-2">

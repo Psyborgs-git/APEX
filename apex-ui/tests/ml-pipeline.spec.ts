@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test';
 test.describe('Custom ML Pipeline Execution', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await expect(page.getByTestId('tab-strategy')).toBeVisible({ timeout: 10000 });
     // Navigate to Strategy IDE tab
     await page.getByTestId('tab-strategy').click();
   });
@@ -71,6 +71,16 @@ test.describe('Custom ML Pipeline Execution', () => {
     // Check for status indicator (always visible in toolbar)
     const statusIndicator = page.getByTestId('pipeline-status');
     await expect(statusIndicator).toBeVisible({ timeout: 5000 });
+  });
+
+  test('should run a strategy backtest and display metrics', async ({ page }) => {
+    const backtestButton = page.getByTestId('run-backtest');
+    await backtestButton.click();
+
+    const backtestResults = page.getByTestId('backtest-results');
+    await expect(backtestResults).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId('backtest-total-return')).toContainText('%');
+    await expect(page.getByTestId('backtest-trade-count')).toContainText('closed trades');
   });
 
   test('should switch between chart and strategy tabs', async ({ page }) => {

@@ -5,6 +5,9 @@ dist/
 __pycache__/
 *.pyc
 *.egg-info/
+.env
+.env.*
+!.env.example
 data/
 *.db
 *.db-shm
@@ -12,6 +15,8 @@ data/
 *.duckdb
 apex-ui/node_modules/
 apex-ui/dist/
+apex-ui/playwright-report/
+apex-ui/test-results/
 .pytest_cache/
 tsconfig.tsbuildinfo
 logs/

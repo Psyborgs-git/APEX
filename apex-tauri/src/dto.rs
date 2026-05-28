@@ -221,6 +221,106 @@ pub struct RiskStatusDto {
     pub max_daily_loss: f64,
 }
 
+/// General settings DTO for frontend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GeneralSettingsDto {
+    pub data_dir: String,
+}
+
+/// Adapter selection DTO for frontend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdapterPreferenceDto {
+    pub adapter: String,
+    #[serde(default)]
+    pub available_adapters: Vec<String>,
+}
+
+/// Risk configuration DTO for frontend settings.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RiskSettingsDto {
+    pub max_daily_loss: f64,
+    pub max_order_value: f64,
+}
+
+/// Storage settings DTO for frontend settings.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StorageSettingsDto {
+    pub backend: String,
+    pub sqlite_path: String,
+    pub postgres_url: String,
+    pub wal_mode: bool,
+    pub pool_size: usize,
+    #[serde(default)]
+    pub available_backends: Vec<String>,
+}
+
+/// App settings DTO for frontend settings panel.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppSettingsDto {
+    pub config_path: String,
+    pub runtime_storage_backend: String,
+    pub runtime_storage_target: String,
+    pub general: GeneralSettingsDto,
+    pub market_data: AdapterPreferenceDto,
+    pub execution: AdapterPreferenceDto,
+    pub risk: RiskSettingsDto,
+    pub storage: StorageSettingsDto,
+}
+
+/// App settings update request DTO from frontend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppSettingsUpdateDto {
+    pub general: GeneralSettingsDto,
+    pub market_data: AdapterPreferenceDto,
+    pub execution: AdapterPreferenceDto,
+    pub risk: RiskSettingsDto,
+    pub storage: StorageSettingsDto,
+}
+
+/// Research notebook cell DTO for frontend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotebookCellDto {
+    pub id: String,
+    pub kind: String,
+    pub content: String,
+    pub output: Option<String>,
+}
+
+/// Research notebook document DTO for frontend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotebookDocumentDto {
+    pub title: String,
+    pub path: String,
+    pub cells: Vec<NotebookCellDto>,
+    pub updated_at: String,
+}
+
+/// Research notebook summary DTO for frontend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotebookSummaryDto {
+    pub name: String,
+    pub path: String,
+    pub updated_at: String,
+}
+
+/// Run-request DTO for notebook cell execution.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotebookRunRequestDto {
+    pub path: String,
+    pub cells: Vec<NotebookCellDto>,
+    pub cell_id: String,
+}
+
+/// Result DTO for a notebook cell execution.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotebookCellExecutionDto {
+    pub cell_id: String,
+    pub success: bool,
+    pub stdout: String,
+    pub stderr: String,
+    pub finished_at: String,
+}
+
 /// ML model DTO for frontend.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MLModelDto {
@@ -274,6 +374,21 @@ pub struct SystemHealthDto {
     pub active_subscriptions: usize,
     pub open_orders: usize,
     pub active_strategies: usize,
+}
+
+/// Broker connection snapshot DTO for frontend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BrokerConnectionDto {
+    pub broker_id: String,
+    pub display_name: String,
+    pub mode: String,
+    pub status: String,
+    pub configured: bool,
+    pub authenticated: bool,
+    pub execution_available: bool,
+    pub market_data_available: bool,
+    pub token_field_label: String,
+    pub message: String,
 }
 
 #[cfg(test)]
@@ -366,5 +481,65 @@ mod tests {
         };
         let json = serde_json::to_string(&dto).unwrap();
         assert!(json.contains("session_pnl"));
+    }
+
+    #[test]
+    fn test_broker_connection_dto_serialization() {
+        let dto = BrokerConnectionDto {
+            broker_id: "paper".into(),
+            display_name: "Paper Trading".into(),
+            mode: "paper".into(),
+            status: "ready".into(),
+            configured: true,
+            authenticated: true,
+            execution_available: true,
+            market_data_available: false,
+            token_field_label: String::new(),
+            message: "Paper trading is available".into(),
+        };
+
+        let json = serde_json::to_string(&dto).unwrap();
+        assert!(json.contains("Paper Trading"));
+        assert!(json.contains("ready"));
+    }
+
+    #[test]
+    fn test_app_settings_update_dto_deserialization() {
+        let json = r#"{
+            "general": { "data_dir": "data" },
+            "market_data": { "adapter": "yahoo_finance" },
+            "execution": { "adapter": "paper" },
+            "risk": { "max_daily_loss": 50000, "max_order_value": 500000 },
+            "storage": {
+                "backend": "sqlite",
+                "sqlite_path": "apex.db",
+                "postgres_url": "",
+                "wal_mode": true,
+                "pool_size": 4
+            }
+        }"#;
+
+        let dto: AppSettingsUpdateDto = serde_json::from_str(json).unwrap();
+        assert_eq!(dto.execution.adapter, "paper");
+        assert_eq!(dto.storage.backend, "sqlite");
+    }
+
+    #[test]
+    fn test_notebook_document_dto_serialization() {
+        let notebook = NotebookDocumentDto {
+            title: "Research".into(),
+            path: "notebooks/research.apexnb.json".into(),
+            cells: vec![NotebookCellDto {
+                id: "cell-1".into(),
+                kind: "code".into(),
+                content: "print('hello')".into(),
+                output: Some("hello".into()),
+            }],
+            updated_at: Utc::now().to_rfc3339(),
+        };
+
+        let json = serde_json::to_string(&notebook).unwrap();
+        assert!(json.contains("Research"));
+        assert!(json.contains("cell-1"));
     }
 }

@@ -55,16 +55,13 @@ echo ""
 log "Checking build prerequisites..."
 
 command -v cargo  &>/dev/null || die "cargo not found. Install Rust: https://rustup.rs"
-command -v node   &>/dev/null || die "node not found. Install Node.js: https://nodejs.org"
-command -v pnpm   &>/dev/null || die "pnpm not found. Install: npm i -g pnpm"
+command -v bun    &>/dev/null || die "bun not found. Install: https://bun.sh"
 
 CARGO_VER=$(cargo --version)
-NODE_VER=$(node --version)
-PNPM_VER=$(pnpm --version)
+BUN_VER=$(bun --version)
 
 ok "cargo  : ${CARGO_VER}"
-ok "node   : ${NODE_VER}"
-ok "pnpm   : v${PNPM_VER}"
+ok "bun    : v${BUN_VER}"
 echo ""
 
 # ── Config ────────────────────────────────────────────────────────────
@@ -73,6 +70,17 @@ if [[ ! -f "${CONFIG_FILE}" ]]; then
     log "Creating default config..."
     cp "${ROOT_DIR}/config/apex.example.toml" "${CONFIG_FILE}"
     ok "Config written to ${CONFIG_FILE}"
+fi
+
+ENV_FILE="${ROOT_DIR}/.env"
+if [[ -f "${ENV_FILE}" ]]; then
+    log "Loading environment from ${ENV_FILE}..."
+    set -a
+    # shellcheck disable=SC1090
+    source "${ENV_FILE}"
+    set +a
+    ok "Environment loaded."
+    echo ""
 fi
 
 # ── Database schema ───────────────────────────────────────────────────
@@ -89,8 +97,8 @@ SOURCE_ICON="${ICONS_DIR}/app-icon.png"
 
 if [[ -f "${SOURCE_ICON}" ]]; then
     log "Generating app icons from ${SOURCE_ICON}..."
-    cd "${ROOT_DIR}/apex-ui"
-    pnpm exec tauri icon "${SOURCE_ICON}" --config ../apex-tauri/tauri.conf.json 2>/dev/null && \
+    cd "${ROOT_DIR}/apex-tauri"
+    bun x tauri icon "icons/app-icon.png" --config tauri.conf.json 2>/dev/null && \
         ok "Icons generated." || \
         warn "Icon generation skipped (using existing placeholders)."
     echo ""
@@ -99,8 +107,8 @@ fi
 # ── Build frontend ────────────────────────────────────────────────────
 log "Building frontend (TypeScript + Vite)..."
 cd "${ROOT_DIR}/apex-ui"
-pnpm install --frozen-lockfile 2>/dev/null || pnpm install
-pnpm run build
+bun install --frozen-lockfile 2>/dev/null || bun install
+bun run build
 ok "Frontend built → apex-ui/dist/"
 echo ""
 
@@ -114,7 +122,7 @@ if [[ "${BUNDLE_ONLY}" == false ]]; then
 fi
 
 # ── Build Tauri desktop app ───────────────────────────────────────────
-cd "${ROOT_DIR}/apex-ui"
+cd "${ROOT_DIR}"
 
 if [[ "${NO_BUNDLE}" == true ]]; then
     # ── Release binary only (fast, no installer) ──────────────────────
@@ -133,13 +141,13 @@ if [[ "${NO_BUNDLE}" == true ]]; then
 else
     # ── Full packaged app (DMG / deb / NSIS) ─────────────────────────
     log "Building Tauri app bundle (this will take a few minutes)..."
-    cd "${ROOT_DIR}/apex-ui"
+    cd "${ROOT_DIR}/apex-tauri"
 
-    TAURI_ARGS="--config ../apex-tauri/tauri.conf.json"
+    TAURI_ARGS="--config tauri.conf.json"
     [[ -n "${TARGET_FLAG}" ]] && TAURI_ARGS="${TAURI_ARGS} --target ${TARGET_FLAG}"
 
     # shellcheck disable=SC2086
-    pnpm exec tauri build ${TAURI_ARGS}
+    bun x tauri build ${TAURI_ARGS}
 
     ok "App bundle built."
 fi

@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test';
 test.describe('ML Workbench', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await expect(page.getByTestId('tab-ml')).toBeVisible({ timeout: 10000 });
     await page.getByTestId('tab-ml').click();
   });
 

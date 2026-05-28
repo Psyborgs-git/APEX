@@ -18,6 +18,8 @@ const MAX_QUANTITY: f64 = 1_000_000.0;
 const MAX_STRING_LEN: usize = 256;
 /// Maximum allowed alert rule JSON size (bytes).
 const MAX_ALERT_JSON_LEN: usize = 4096;
+/// Maximum allowed broker session token size.
+const MAX_SESSION_TOKEN_LEN: usize = 8192;
 
 /// Known broker IDs.
 const VALID_BROKERS: &[&str] = &[
@@ -117,6 +119,23 @@ pub fn validate_alert_json(json: &str) -> Result<(), String> {
     // Ensure it parses as valid JSON
     serde_json::from_str::<serde_json::Value>(json)
         .map_err(|e| format!("Invalid JSON: {}", e))?;
+    Ok(())
+}
+
+/// Validate a broker session token payload.
+pub fn validate_session_token(token: &str) -> Result<(), String> {
+    if token.trim().is_empty() {
+        return Err("Session token must not be empty".into());
+    }
+
+    if token.len() > MAX_SESSION_TOKEN_LEN {
+        return Err(format!(
+            "Session token too large ({} chars, max {})",
+            token.len(),
+            MAX_SESSION_TOKEN_LEN
+        ));
+    }
+
     Ok(())
 }
 

@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
@@ -101,9 +100,8 @@ pub struct EquityPoint {
 
 /// Internal position state during backtest
 #[derive(Debug, Clone)]
-struct SimPosition {
+pub struct SimPosition {
     symbol: Symbol,
-    side: OrderSide,
     quantity: f64,
     avg_price: f64,
     entry_time: DateTime<Utc>,
@@ -250,7 +248,6 @@ impl BacktestEngine {
                         symbol.0.clone(),
                         SimPosition {
                             symbol: symbol.clone(),
-                            side: OrderSide::Buy,
                             quantity,
                             avg_price: fill_price,
                             entry_time: bar.time,

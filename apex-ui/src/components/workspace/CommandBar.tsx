@@ -1,25 +1,25 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { placeOrder } from '../../lib/tauri';
 import type { NewOrderRequestDto } from '../../lib/types';
+import { useBrokerStore } from '../../stores/brokerStore';
+import type { CenterTab } from './workspaceTabs';
 
 /** Delay in ms before deactivating command bar on blur, to allow click events */
 const BLUR_DELAY_MS = 200;
-
-/** Valid center panel tab identifiers — shared between CommandBar and Workspace */
-export const VALID_TABS = ['chart', 'strategy', 'ml', 'health'] as const;
-export type CenterTab = (typeof VALID_TABS)[number];
 
 /** Map from command keywords to tab identifiers */
 const PANEL_MAP: Record<string, CenterTab> = {
   CHART: 'chart',
   STRATEGY: 'strategy',
   ML: 'ml',
+  DATA: 'data',
+  NOTEBOOK: 'notebook',
   HEALTH: 'health',
   ORDERS: 'chart',
   POSITIONS: 'chart',
 };
 
-export interface ParsedCommand {
+interface ParsedCommand {
   type: 'SYMBOL_DEFAULT' | 'SYMBOL_PANEL' | 'SYSTEM_PANEL' | 'ORDER' | 'UNKNOWN';
   symbol?: string;
   panel?: string;
@@ -29,7 +29,7 @@ export interface ParsedCommand {
   orderType?: string;
 }
 
-export function parseCommand(input: string): ParsedCommand {
+function parseCommand(input: string): ParsedCommand {
   const trimmed = input.trim().toUpperCase();
 
   // ":ORDERS" → system panel
@@ -74,6 +74,22 @@ export const CommandBar: React.FC<CommandBarProps> = ({ onSelectSymbol, onSwitch
   const [isActive, setIsActive] = useState(false);
   const [feedback, setFeedback] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const activeBrokerId = useBrokerStore((s) => s.activeBrokerId);
+  const brokerConnections = useBrokerStore((s) => s.connections);
+  const activeBroker = React.useMemo(
+    () => brokerConnections.find((broker) => broker.broker_id === activeBrokerId),
+    [activeBrokerId, brokerConnections],
+  );
+
+  const brokerBadgeLabel = activeBroker?.mode === 'paper'
+    ? 'Paper Trading'
+    : activeBroker?.display_name ?? activeBrokerId;
+
+  const brokerDotClass = activeBroker?.status === 'connected' || activeBroker?.status === 'ready'
+    ? 'bg-bull'
+    : activeBroker?.status === 'auth_required' || activeBroker?.status === 'not_configured'
+      ? 'bg-warning'
+      : 'bg-bear';
 
   const showFeedback = useCallback((message: string, type: 'success' | 'error') => {
     setFeedback({ message, type });
@@ -87,6 +103,14 @@ export const CommandBar: React.FC<CommandBarProps> = ({ onSelectSymbol, onSwitch
           showFeedback('Invalid order: missing symbol, side, or quantity', 'error');
           return;
         }
+        if (activeBroker && !activeBroker.execution_available) {
+          showFeedback(`${activeBroker.display_name} is not available for order routing yet`, 'error');
+          return;
+        }
+        if (activeBroker?.mode === 'live' && !activeBroker.authenticated) {
+          showFeedback(`${activeBroker.display_name} needs a session token before live orders are enabled`, 'error');
+          return;
+        }
         const request: NewOrderRequestDto = {
           symbol: cmd.symbol,
           side: cmd.side === 'BUY' ? 'Buy' : 'Sell',
@@ -94,12 +118,12 @@ export const CommandBar: React.FC<CommandBarProps> = ({ onSelectSymbol, onSwitch
           quantity: cmd.quantity,
           price: cmd.price ?? null,
           stop_price: null,
-          broker_id: 'paper',
+          broker_id: activeBrokerId,
           tag: 'command-bar',
         };
         try {
           const orderId = await placeOrder(request);
-          showFeedback(`Order placed: ${cmd.side} ${cmd.quantity} ${cmd.symbol} → ${orderId}`, 'success');
+          showFeedback(`Order placed on ${brokerBadgeLabel}: ${cmd.side} ${cmd.quantity} ${cmd.symbol} → ${orderId}`, 'success');
         } catch (err) {
           showFeedback(`Order failed: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
         }
@@ -136,7 +160,7 @@ export const CommandBar: React.FC<CommandBarProps> = ({ onSelectSymbol, onSwitch
       default:
         break;
     }
-  }, [onSelectSymbol, onSwitchTab, showFeedback]);
+  }, [activeBroker, activeBrokerId, brokerBadgeLabel, onSelectSymbol, onSwitchTab, showFeedback]);
 
   const handleSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
@@ -189,8 +213,8 @@ export const CommandBar: React.FC<CommandBarProps> = ({ onSelectSymbol, onSwitch
         </span>
       )}
       <div className="flex items-center gap-2 text-xs text-text-muted font-mono">
-        <span>Paper Trading</span>
-        <span className="w-2 h-2 rounded-full bg-bull"></span>
+        <span>{brokerBadgeLabel}</span>
+        <span className={`w-2 h-2 rounded-full ${brokerDotClass}`}></span>
       </div>
     </div>
   );

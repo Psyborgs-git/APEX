@@ -4,12 +4,11 @@
  * These hooks bridge Tauri's real-time event system with React state.
  * When running in the browser (no Tauri), they fall back to polling.
  */
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef } from 'react';
 import { useMarketStore } from '../stores/marketStore';
 import { useOrderStore } from '../stores/orderStore';
-import { useRiskStore } from '../stores/riskStore';
 import { useHealthStore } from '../stores/healthStore';
-import type { QuoteDto, OrderDto, PositionDto, RiskStatusDto, SystemHealthDto } from '../lib/types';
+import type { QuoteDto, OrderDto, PositionDto, SystemHealthDto } from '../lib/types';
 
 const IS_TAURI = typeof window !== 'undefined' && '__TAURI__' in window;
 

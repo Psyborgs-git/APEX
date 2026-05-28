@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import inspect
+import json
 import logging
 import os
 import sys
@@ -27,11 +28,25 @@ from typing import Any
 
 from apex_sdk.strategy import Strategy
 from apex_sdk.types import Bar, Tick, Timeframe
-from runtime.sidecar import IPCClient
+
+_SIDECAR_IMPORT_ERROR: Exception | None = None
+
+try:
+    from runtime.sidecar import IPCClient
+except Exception as exc:  # noqa: BLE001
+    IPCClient = None  # type: ignore[assignment]
+    _SIDECAR_IMPORT_ERROR = exc
 
 logger = logging.getLogger(__name__)
 
 LATENCY_WARN_NS: int = 1_000_000  # 1 ms
+
+
+class _NoopIPCClient:
+    """Fallback IPC client used when the sidecar transport is unavailable."""
+
+    def send(self, method: str, params: dict[str, Any]) -> None:
+        logger.debug("Dropping IPC message %s with params %s", method, params)
 
 
 # ------------------------------------------------------------------
@@ -121,6 +136,11 @@ def main(argv: list[str] | None = None) -> None:
         default=None,
         help="IPC socket path (default: $APEX_SIDECAR_SOCKET)",
     )
+    parser.add_argument(
+        "--params",
+        default="{}",
+        help="JSON params passed to strategy.on_init()",
+    )
     args = parser.parse_args(argv)
 
     logging.basicConfig(
@@ -129,23 +149,48 @@ def main(argv: list[str] | None = None) -> None:
     )
 
     socket_path = args.socket or os.environ.get(
-        "APEX_SIDECAR_SOCKET", "/tmp/apex_sidecar.sock"
+        "APEX_SIDECAR_SOCKET", "/tmp/apex_strategy.sock"
     )
-    ipc = IPCClient(socket_path)
 
-    module = _load_strategy_module(args.script)
-    cls = _find_strategy_class(module)
-    strategy = cls(strategy_id=args.id, ipc_client=ipc)
+    try:
+        params = json.loads(args.params or "{}")
+    except json.JSONDecodeError as exc:
+        logger.error("Invalid --params JSON: %s", exc)
+        raise SystemExit(2) from exc
 
-    logger.info("Initializing strategy %s (%s)", args.id, cls.__name__)
-    strategy.on_init({})
+    if not isinstance(params, dict):
+        logger.error("--params must decode to a JSON object")
+        raise SystemExit(2)
 
-    # In a full implementation the runner would read events from the IPC
-    # socket in a loop.  For now we simply call on_stop so the subprocess
-    # exits cleanly when there are no events to process.
-    logger.info("Strategy %s running — waiting for events", args.id)
-    strategy.on_stop()
-    logger.info("Strategy %s stopped", args.id)
+    if IPCClient is None:
+        logger.warning(
+            "runtime.sidecar unavailable (%s); using no-op IPC client",
+            _SIDECAR_IMPORT_ERROR,
+        )
+        ipc_client = _NoopIPCClient()
+    else:
+        ipc_client = IPCClient(socket_path)
+
+    try:
+        module = _load_strategy_module(args.script)
+        cls = _find_strategy_class(module)
+        strategy = cls(strategy_id=args.id, ipc_client=ipc_client)
+
+        logger.info("Initializing strategy %s (%s)", args.id, cls.__name__)
+        strategy.on_init(params)
+
+        # Event-loop wiring is still pending; for IDE execution we at least
+        # perform init/stop hooks so strategies can validate imports, params,
+        # subscriptions, and logging behavior.
+        logger.info(
+            "Strategy %s initialized — no event stream configured, shutting down",
+            args.id,
+        )
+        strategy.on_stop()
+        logger.info("Strategy %s stopped", args.id)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Strategy %s failed", args.id)
+        raise SystemExit(1) from exc
 
 
 if __name__ == "__main__":

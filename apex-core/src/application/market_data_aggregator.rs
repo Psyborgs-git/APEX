@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -7,17 +8,24 @@ use dashmap::DashMap;
 use tokio::sync::Mutex;
 use tracing::{info, info_span, warn};
 
+use crate::application::data_quality::DataQualityChecker;
 use crate::bus::message_bus::{BusMessage, MessageBus, Topic};
 use crate::domain::models::*;
+use crate::ports::market_data::AdapterHealth;
 use crate::ports::market_data::MarketDataPort;
+use crate::ports::storage::StoragePort;
 
 /// Market Data Aggregator — the system's sensory cortex
 pub struct MarketDataAggregator {
-    adapters: Vec<Box<dyn MarketDataPort>>,
+    adapters: Vec<Arc<dyn MarketDataPort>>,
     bus: Arc<MessageBus>,
+    storage: Option<Arc<dyn StoragePort>>,
     quote_cache: Arc<DashMap<String, Quote>>,
     tick_buffer: Arc<Mutex<Vec<Tick>>>,
     symbol_map: HashMap<String, String>,
+    started_adapters: Arc<DashMap<String, bool>>,
+    flush_task_started: Arc<AtomicBool>,
+    data_quality_checker: Arc<DataQualityChecker>,
 }
 
 impl MarketDataAggregator {
@@ -26,14 +34,18 @@ impl MarketDataAggregator {
         Self {
             adapters: Vec::new(),
             bus,
+            storage: None,
             quote_cache: Arc::new(DashMap::new()),
             tick_buffer: Arc::new(Mutex::new(Vec::new())),
             symbol_map: HashMap::new(),
+            started_adapters: Arc::new(DashMap::new()),
+            flush_task_started: Arc::new(AtomicBool::new(false)),
+            data_quality_checker: Arc::new(DataQualityChecker::new()),
         }
     }
 
     /// Add a market data adapter
-    pub fn add_adapter(&mut self, adapter: Box<dyn MarketDataPort>) {
+    pub fn add_adapter(&mut self, adapter: Arc<dyn MarketDataPort>) {
         info!("Registering market data adapter: {}", adapter.adapter_id());
         self.adapters.push(adapter);
     }
@@ -41,6 +53,11 @@ impl MarketDataAggregator {
     /// Register a symbol alias mapping
     pub fn add_symbol_mapping(&mut self, alias: String, canonical: String) {
         self.symbol_map.insert(alias, canonical);
+    }
+
+    /// Attach a storage backend for durable tick persistence.
+    pub fn set_storage(&mut self, storage: Arc<dyn StoragePort>) {
+        self.storage = Some(storage);
     }
 
     /// Get the shared quote cache
@@ -56,18 +73,43 @@ impl MarketDataAggregator {
     /// Subscribe to symbols across all adapters and start processing
     #[tracing::instrument(skip(self, symbols))]
     pub async fn start(&self, symbols: &[Symbol]) -> Result<()> {
+        let mut subscribed_any = false;
+        let mut last_error = None;
+
         for adapter in &self.adapters {
-            let mut tick_stream = adapter.subscribe(symbols).await?;
+            let adapter_id = adapter.adapter_id().to_string();
+
+            if self.started_adapters.contains_key(&adapter_id) {
+                continue;
+            }
+
+            let mut tick_stream = match adapter.subscribe(symbols).await {
+                Ok(stream) => stream,
+                Err(err) => {
+                    warn!(adapter = %adapter_id, error = %err, "Market data adapter subscription failed");
+                    last_error = Some(err);
+                    continue;
+                }
+            };
+
+            self.started_adapters.insert(adapter_id.clone(), true);
+            subscribed_any = true;
             let bus = self.bus.clone();
             let quote_cache = self.quote_cache.clone();
             let tick_buffer = self.tick_buffer.clone();
-            let adapter_id = adapter.adapter_id().to_string();
+            let data_quality_checker = self.data_quality_checker.clone();
 
             // Spawn a task per adapter to read from its tick stream
             tokio::spawn(async move {
                 while let Some(tick) = tick_stream.recv().await {
                     let symbol_key = tick.symbol.0.clone();
                     let span = info_span!("tick_pipeline", symbol = %symbol_key, source = %adapter_id);
+
+                    // Validate tick with data quality checker
+                    if data_quality_checker.validate_tick(&tick).is_err() {
+                        warn!("Tick validation failed for {}, skipping", symbol_key);
+                        continue;
+                    }
 
                     let tick_clone = span.in_scope(|| {
                         // Update quote cache
@@ -106,24 +148,36 @@ impl MarketDataAggregator {
             });
         }
 
-        // Start tick buffer flush task (every 100ms)
-        let tick_buffer = self.tick_buffer.clone();
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_millis(100));
-            loop {
-                interval.tick().await;
-                let ticks: Vec<Tick> = {
-                    let mut buffer = tick_buffer.lock().await;
-                    if buffer.is_empty() {
-                        continue;
-                    }
-                    buffer.drain(..).collect()
-                };
-                // In production, these would be written to storage
-                // For now, we just drain the buffer
-                let _count = ticks.len();
+        if !subscribed_any && !self.adapters.is_empty() {
+            if let Some(err) = last_error {
+                return Err(err);
             }
-        });
+        }
+
+        // Start tick buffer flush task (every 100ms)
+        if !self.flush_task_started.swap(true, Ordering::SeqCst) {
+            let tick_buffer = self.tick_buffer.clone();
+            let storage = self.storage.clone();
+            tokio::spawn(async move {
+                let mut interval = tokio::time::interval(Duration::from_millis(100));
+                loop {
+                    interval.tick().await;
+                    let ticks: Vec<Tick> = {
+                        let mut buffer = tick_buffer.lock().await;
+                        if buffer.is_empty() {
+                            continue;
+                        }
+                        buffer.drain(..).collect()
+                    };
+
+                    if let Some(storage) = storage.as_ref() {
+                        if let Err(error) = storage.write_ticks(&ticks).await {
+                            warn!(error = %error, tick_count = ticks.len(), "Failed to persist tick batch");
+                        }
+                    }
+                }
+            });
+        }
 
         Ok(())
     }
@@ -136,6 +190,19 @@ impl MarketDataAggregator {
     /// Get the number of registered adapters
     pub fn adapter_count(&self) -> usize {
         self.adapters.len()
+    }
+
+    /// Snapshot market data adapter health by adapter id.
+    pub fn adapter_health(&self) -> Vec<(String, AdapterHealth)> {
+        self.adapters
+            .iter()
+            .map(|adapter| (adapter.adapter_id().to_string(), adapter.health()))
+            .collect()
+    }
+
+    /// Number of actively cached subscriptions/quotes.
+    pub fn active_subscription_count(&self) -> usize {
+        self.quote_cache.len()
     }
 }
 

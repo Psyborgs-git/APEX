@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use reqwest::Client;
 use std::sync::Arc;
@@ -52,7 +52,10 @@ impl NewsEngine {
         let client = Client::builder()
             .timeout(Duration::from_secs(30))
             .build()
-            .unwrap();
+            .unwrap_or_else(|error| {
+                warn!(error = %error, "Failed to build configured HTTP client, falling back to default client");
+                Client::new()
+            });
 
         Self {
             feeds: Arc::new(DashMap::new()),
@@ -111,29 +114,12 @@ impl NewsEngine {
     fn parse_rss_content(&self, content: &str, source: &str) -> Result<Vec<NewsItem>> {
         let mut items = Vec::new();
 
-        // Extremely simplified parsing - just extract title, link, description
-        // In production, use proper XML parsing
-
-        for line in content.lines() {
-            let line = line.trim();
-
-            // Look for <item> or <entry> blocks
-            if line.contains("<title>") && line.contains("</title>") {
-                let title = self.extract_xml_tag_content(line, "title");
-
-                let url = format!("http://example.com/{}", Uuid::new_v4()); // Placeholder
-
-                let item = NewsItem {
-                    id: Uuid::new_v4(),
-                    headline: title,
-                    summary: String::new(),
-                    source: source.to_string(),
-                    url,
-                    published: Utc::now(),
-                    symbols: vec![],
-                    sentiment: None,
-                };
-
+        for block in self
+            .extract_feed_blocks(content, "item")
+            .into_iter()
+            .chain(self.extract_feed_blocks(content, "entry"))
+        {
+            if let Some(item) = self.parse_feed_block(&block, source) {
                 items.push(item);
             }
         }
@@ -141,19 +127,175 @@ impl NewsEngine {
         Ok(items)
     }
 
-    /// Extract content from XML tag
-    fn extract_xml_tag_content(&self, line: &str, tag: &str) -> String {
-        let start_tag = format!("<{}>", tag);
-        let end_tag = format!("</{}>", tag);
+    fn extract_feed_blocks(&self, content: &str, tag: &str) -> Vec<String> {
+        let mut blocks = Vec::new();
+        let start_prefix = format!("<{tag}");
+        let end_tag = format!("</{tag}>");
+        let mut search_start = 0;
 
-        if let Some(start_pos) = line.find(&start_tag) {
-            if let Some(end_pos) = line.find(&end_tag) {
-                let content_start = start_pos + start_tag.len();
-                return line[content_start..end_pos].to_string();
+        while let Some(start_rel) = content[search_start..].find(&start_prefix) {
+            let start_idx = search_start + start_rel;
+            let Some(open_end_rel) = content[start_idx..].find('>') else {
+                break;
+            };
+            let content_start = start_idx + open_end_rel + 1;
+            let Some(close_rel) = content[content_start..].find(&end_tag) else {
+                break;
+            };
+            let end_idx = content_start + close_rel + end_tag.len();
+            blocks.push(content[start_idx..end_idx].to_string());
+            search_start = end_idx;
+        }
+
+        blocks
+    }
+
+    fn parse_feed_block(&self, block: &str, source: &str) -> Option<NewsItem> {
+        let headline = self.extract_first_tag_content(block, &["title"]);
+        if headline.is_empty() {
+            return None;
+        }
+
+        let url = self.extract_link(block)?;
+        let summary = self.extract_first_tag_content(block, &["description", "summary", "content"]);
+        let published = self
+            .extract_published_at(block)
+            .unwrap_or_else(Utc::now);
+
+        Some(NewsItem {
+            id: Uuid::new_v4(),
+            headline,
+            summary,
+            source: source.to_string(),
+            url,
+            published,
+            symbols: vec![],
+            sentiment: None,
+        })
+    }
+
+    fn extract_first_tag_content(&self, block: &str, tags: &[&str]) -> String {
+        for tag in tags {
+            let content = self.extract_xml_tag_content(block, tag);
+            if !content.is_empty() {
+                return content;
             }
         }
 
         String::new()
+    }
+
+    /// Extract sanitized content from an XML tag.
+    fn extract_xml_tag_content(&self, block: &str, tag: &str) -> String {
+        let start_prefix = format!("<{tag}");
+        let end_tag = format!("</{tag}>");
+
+        let Some(start_pos) = block.find(&start_prefix) else {
+            return String::new();
+        };
+        let Some(start_end_rel) = block[start_pos..].find('>') else {
+            return String::new();
+        };
+        let content_start = start_pos + start_end_rel + 1;
+        let Some(end_rel) = block[content_start..].find(&end_tag) else {
+            return String::new();
+        };
+
+        self.sanitize_xml_text(&block[content_start..content_start + end_rel])
+    }
+
+    fn extract_link(&self, block: &str) -> Option<String> {
+        let mut search_start = 0;
+
+        while let Some(link_rel) = block[search_start..].find("<link") {
+            let link_start = search_start + link_rel;
+            let Some(link_end_rel) = block[link_start..].find('>') else {
+                break;
+            };
+            let tag_fragment = &block[link_start..link_start + link_end_rel + 1];
+            if let Some(href) = self.extract_xml_attribute(tag_fragment, "href") {
+                return Some(href);
+            }
+            search_start = link_start + link_end_rel + 1;
+        }
+
+        let fallback = self.extract_first_tag_content(block, &["link", "guid", "id"]);
+        if fallback.is_empty() {
+            None
+        } else {
+            Some(fallback)
+        }
+    }
+
+    fn extract_xml_attribute(&self, tag_fragment: &str, attribute: &str) -> Option<String> {
+        for quote in ['"', '\''] {
+            let pattern = format!("{attribute}={quote}");
+            let Some(start_rel) = tag_fragment.find(&pattern) else {
+                continue;
+            };
+            let value_start = start_rel + pattern.len();
+            let rest = &tag_fragment[value_start..];
+            let Some(end_rel) = rest.find(quote) else {
+                continue;
+            };
+
+            let value = self.sanitize_xml_text(&rest[..end_rel]);
+            if !value.is_empty() {
+                return Some(value);
+            }
+        }
+
+        None
+    }
+
+    fn extract_published_at(&self, block: &str) -> Option<DateTime<Utc>> {
+        let raw = self.extract_first_tag_content(block, &["pubDate", "published", "updated", "dc:date"]);
+        if raw.is_empty() {
+            return None;
+        }
+
+        DateTime::parse_from_rfc2822(&raw)
+            .or_else(|_| DateTime::parse_from_rfc3339(&raw))
+            .map(|timestamp| timestamp.with_timezone(&Utc))
+            .ok()
+    }
+
+    fn sanitize_xml_text(&self, text: &str) -> String {
+        let without_cdata = text
+            .trim()
+            .trim_start_matches("<![CDATA[")
+            .trim_end_matches("]]>")
+            .trim();
+
+        let stripped = self.strip_markup(without_cdata);
+        self.decode_xml_entities(&stripped)
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    fn strip_markup(&self, text: &str) -> String {
+        let mut output = String::new();
+        let mut inside_tag = false;
+
+        for ch in text.chars() {
+            match ch {
+                '<' => inside_tag = true,
+                '>' => inside_tag = false,
+                _ if !inside_tag => output.push(ch),
+                _ => {}
+            }
+        }
+
+        output
+    }
+
+    fn decode_xml_entities(&self, text: &str) -> String {
+        text.replace("&amp;", "&")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&quot;", "\"")
+            .replace("&#39;", "'")
     }
 
     /// Extract ticker symbols from text using simple heuristics
@@ -378,4 +520,50 @@ mod tests {
         engine.remove_feed("Test Feed");
         assert_eq!(engine.list_feeds().len(), 0);
     }
+
+        #[test]
+        fn test_parse_rss_content_extracts_real_fields() {
+                let (tx, _rx) = mpsc::unbounded_channel();
+                let engine = NewsEngine::new(tx);
+                let content = r#"
+                        <rss>
+                            <channel>
+                                <item>
+                                    <title><![CDATA[Apple &amp; Microsoft rally]]></title>
+                                    <link>https://example.com/apple-microsoft</link>
+                                    <description><![CDATA[<p>$AAPL and MSFT moved higher after earnings.</p>]]></description>
+                                    <pubDate>Mon, 31 Mar 2026 10:30:00 GMT</pubDate>
+                                </item>
+                            </channel>
+                        </rss>
+                "#;
+
+                let items = engine.parse_rss_content(content, "Example Feed").unwrap();
+                assert_eq!(items.len(), 1);
+                assert_eq!(items[0].headline, "Apple & Microsoft rally");
+                assert_eq!(items[0].url, "https://example.com/apple-microsoft");
+                assert!(items[0].summary.contains("AAPL"));
+        }
+
+        #[test]
+        fn test_parse_atom_content_extracts_href_link() {
+                let (tx, _rx) = mpsc::unbounded_channel();
+                let engine = NewsEngine::new(tx);
+                let content = r#"
+                        <feed>
+                            <entry>
+                                <title>TSLA expands factory output</title>
+                                <link rel="alternate" href="https://example.com/tsla-output" />
+                                <summary>TSLA announced new production milestones.</summary>
+                                <updated>2026-03-31T12:15:00Z</updated>
+                            </entry>
+                        </feed>
+                "#;
+
+                let items = engine.parse_rss_content(content, "Atom Feed").unwrap();
+                assert_eq!(items.len(), 1);
+                assert_eq!(items[0].url, "https://example.com/tsla-output");
+                assert_eq!(items[0].headline, "TSLA expands factory output");
+                assert!(items[0].summary.contains("production milestones"));
+        }
 }

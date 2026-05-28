@@ -1,7 +1,12 @@
 pub mod alerts;
+pub mod brokers;
 pub mod data;
 pub mod health;
 pub mod market;
 pub mod ml;
+pub mod notebook;
 pub mod orders;
+pub mod python_runtime;
 pub mod risk;
+pub mod settings;
+pub mod strategy;

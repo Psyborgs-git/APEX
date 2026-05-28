@@ -48,9 +48,9 @@ test.describe('Health Monitor', () => {
     const adapters = page.getByTestId('health-adapters');
     await expect(adapters).toBeVisible();
 
-    // Should show at least yahoo_finance and paper_trading adapters
+    // Should show at least yahoo_finance and paper adapters
     const yahoo = page.getByTestId('adapter-yahoo_finance');
-    const paper = page.getByTestId('adapter-paper_trading');
+    const paper = page.getByTestId('adapter-paper');
     await expect(yahoo).toBeVisible({ timeout: 10000 });
     await expect(paper).toBeVisible({ timeout: 10000 });
   });

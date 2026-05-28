@@ -42,8 +42,7 @@ check_cmd() {
 
 echo "Checking prerequisites..."
 check_cmd cargo
-check_cmd node
-check_cmd pnpm || check_cmd npm
+check_cmd bun
 echo "✓ All prerequisites found."
 echo ""
 
@@ -54,6 +53,16 @@ if [[ ! -f "${CONFIG_FILE}" ]]; then
     echo "Config not found. Copying example config..."
     cp "${ROOT_DIR}/config/apex.example.toml" "${CONFIG_FILE}"
     echo "✓ Created ${CONFIG_FILE}"
+fi
+
+ENV_FILE="${ROOT_DIR}/.env"
+if [[ -f "${ENV_FILE}" ]]; then
+    echo "Loading environment from ${ENV_FILE}..."
+    set -a
+    # shellcheck disable=SC1090
+    source "${ENV_FILE}"
+    set +a
+    echo "✓ Environment loaded."
 fi
 
 # ── Database ─────────────────────────────────────────────────────────
@@ -70,11 +79,7 @@ echo ""
 echo "Installing frontend dependencies..."
 cd "${ROOT_DIR}/apex-ui"
 
-if command -v pnpm &>/dev/null; then
-    pnpm install --frozen-lockfile 2>/dev/null || pnpm install
-else
-    npm install
-fi
+bun install --frozen-lockfile 2>/dev/null || bun install
 echo "✓ Frontend dependencies installed."
 echo ""
 
@@ -99,11 +104,7 @@ trap cleanup EXIT INT TERM
 echo "Starting Vite dev server on http://localhost:3000 ..."
 cd "${ROOT_DIR}/apex-ui"
 
-if command -v pnpm &>/dev/null; then
-    pnpm dev &
-else
-    npm run dev &
-fi
+bun run dev &
 VITE_PID=$!
 echo "  → Vite PID: ${VITE_PID}"
 

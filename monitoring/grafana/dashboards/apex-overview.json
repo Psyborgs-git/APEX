@@ -1,0 +1,224 @@
+{
+  "dashboard": {
+    "title": "APEX Terminal Overview",
+    "uid": "apex-overview",
+    "tags": ["apex", "trading"],
+    "timezone": "browser",
+    "refresh": "5s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Ticks Received",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "rate(apex_ticks_received_total[1m])",
+            "legendFormat": "Ticks/sec"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "unit": "ops"
+          }
+        }
+      },
+      {
+        "id": 2,
+        "title": "Ticks Processed vs Rejected",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(apex_ticks_processed_total[1m])",
+            "legendFormat": "Processed"
+          },
+          {
+            "expr": "rate(apex_ticks_rejected_total[1m])",
+            "legendFormat": "Rejected"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "unit": "ops"
+          }
+        }
+      },
+      {
+        "id": 3,
+        "title": "Quote Cache Size",
+        "type": "gauge",
+        "targets": [
+          {
+            "expr": "apex_quote_cache_size",
+            "legendFormat": "Cache Size"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "thresholds"},
+            "unit": "short"
+          }
+        }
+      },
+      {
+        "id": 4,
+        "title": "Adapter Health",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "apex_adapter_health",
+            "legendFormat": "Health"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "thresholds"},
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": 0},
+                {"color": "yellow", "value": 0.5},
+                {"color": "green", "value": 1}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 5,
+        "title": "Orders Submitted",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "rate(apex_orders_submitted_total[1m])",
+            "legendFormat": "Orders/min"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "unit": "ops"
+          }
+        }
+      },
+      {
+        "id": 6,
+        "title": "Order Status",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(apex_orders_filled_total[1m])",
+            "legendFormat": "Filled"
+          },
+          {
+            "expr": "rate(apex_orders_cancelled_total[1m])",
+            "legendFormat": "Cancelled"
+          },
+          {
+            "expr": "rate(apex_orders_rejected_total[1m])",
+            "legendFormat": "Rejected"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "unit": "ops"
+          }
+        }
+      },
+      {
+        "id": 7,
+        "title": "Open Positions",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "apex_position_count",
+            "legendFormat": "Positions"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "unit": "short"
+          }
+        }
+      },
+      {
+        "id": 8,
+        "title": "Storage Write Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(apex_ticks_written_total[1m])",
+            "legendFormat": "Written"
+          },
+          {
+            "expr": "rate(apex_ticks_write_errors_total[1m])",
+            "legendFormat": "Errors"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "unit": "ops"
+          }
+        }
+      },
+      {
+        "id": 9,
+        "title": "Storage Latency",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(apex_storage_latency_seconds_bucket[5m]))",
+            "legendFormat": "95th percentile"
+          },
+          {
+            "expr": "histogram_quantile(0.50, rate(apex_storage_latency_seconds_bucket[5m]))",
+            "legendFormat": "50th percentile"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "unit": "s"
+          }
+        }
+      },
+      {
+        "id": 10,
+        "title": "Active Adapters",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "apex_active_adapters",
+            "legendFormat": "Adapters"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "unit": "short"
+          }
+        }
+      },
+      {
+        "id": 11,
+        "title": "Active Strategies",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "apex_active_strategies",
+            "legendFormat": "Strategies"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "unit": "short"
+          }
+        }
+      }
+    ]
+  }
+}

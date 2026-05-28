@@ -51,19 +51,19 @@ Tests comprehensive trading automation including:
 
 ```bash
 # Run all tests headless
-pnpm test
+bun run test
 
 # Run tests with UI
-pnpm test:ui
+bun run test:ui
 
 # Run tests in headed mode (see browser)
-pnpm test:headed
+bun run test:headed
 
 # Run specific test file
-pnpm test order-placement.spec.ts
+bunx playwright test order-placement.spec.ts
 
 # Run tests in debug mode
-pnpm exec playwright test --debug
+bunx playwright test --debug
 ```
 
 ## Configuration
@@ -72,15 +72,28 @@ The test configuration is in `playwright.config.ts` and includes:
 - Test directory: `./tests`
 - Base URL: `http://localhost:1420`
 - Browser: Chromium
-- Automatic dev server startup
+- Automatic browser-mode Vite dev server startup (`bun run dev --host 127.0.0.1 --port 1420`)
 - Trace on first retry
 - HTML reporter
 
 ## Requirements
 
-- Playwright browsers installed (`pnpm exec playwright install`)
-- Tauri dev server running (started automatically by test config)
-- All dependencies installed (`pnpm install`)
+- Playwright browsers installed (`bunx playwright install`)
+- All dependencies installed (`cd apex-ui && bun install`)
+
+No native Tauri window is required for this suite. The Playwright config boots a
+browser-only Vite app on port `1420`, and the frontend uses mocked Tauri IPC
+plus polling in that mode.
+
+For a separate desktop smoke test, use one of these verified launchers:
+
+```bash
+# From the repo root
+bun run dev
+
+# From apex-ui (delegates to the same root launcher)
+bun run tauri:dev
+```
 
 ## Test Data IDs
 
@@ -92,7 +105,7 @@ Tests rely on `data-testid` attributes in components. Ensure components include 
 
 ## Notes
 
-- Tests are designed to work with mock data in development mode
+- Tests are designed to work with browser-mode mock data and deterministic IPC responses
 - Some tests may require specific setup or fixtures
-- Tests assume the Tauri application starts successfully
-- Timeout is set to 120 seconds for app startup
+- The desktop shell is validated separately from Playwright
+- As of the latest verification pass, the full Playwright suite completes with **67 passing tests**

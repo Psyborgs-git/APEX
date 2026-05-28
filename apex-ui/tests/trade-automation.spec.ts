@@ -58,6 +58,7 @@ test.describe('Trade Automation Features', () => {
     await expect(priceElement).toBeVisible({ timeout: 5000 });
 
     const initialPrice = await priceElement.textContent();
+    expect(initialPrice).not.toBeNull();
 
     // Wait for potential update
     await page.waitForTimeout(3000);

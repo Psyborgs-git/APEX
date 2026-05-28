@@ -9,10 +9,19 @@ The SDK is bundled with the APEX Python sidecar. For development:
 
 ```bash
 cd apex-python
-pip install -e ".[dev]"
+python3 -m pip install -e ".[dev]"
 ```
 
-Requires **Python ≥ 3.11**.
+Recommended runtime: **Python ≥ 3.11** for the full sidecar and desktop app.
+The SDK's shared dataclasses now fall back cleanly on older local interpreters
+that do not support slotted dataclasses, but the packaged sidecar target
+remains Python 3.11+.
+
+## Development modes
+
+- **Browser/Vite mode** (used by Playwright and browser-only UI work) returns deterministic mocked Tauri responses for strategy file listing, run output, and backtest results.
+- **Desktop/Tauri mode** invokes the real Tauri commands and the Python sidecar/runtime behind them.
+- If you are validating strategy flows end-to-end, prefer the desktop launcher: `bun run dev` from the repo root, or `cd apex-ui && bun run tauri:dev`.
 
 ---
 
@@ -303,6 +312,17 @@ max_concurrent = 4
 max_restarts = 3
 latency_warn_threshold = "1ms"
 ```
+
+The local launch scripts also respect the `.env` runtime overrides used by the
+desktop app:
+
+```bash
+APEX_STRATEGY_PYTHON_PATH=python3
+APEX_SIDECAR_SOCKET=/tmp/apex_strategy.sock
+```
+
+Use `.env.example` as the scaffold for these values when bootstrapping a fresh
+checkout.
 
 ## IPC Protocol
 

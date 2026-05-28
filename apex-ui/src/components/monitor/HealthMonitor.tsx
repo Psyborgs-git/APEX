@@ -1,6 +1,8 @@
 import React, { useEffect, useCallback } from 'react';
 import { useHealthStore } from '../../stores/healthStore';
-import { getSystemHealth } from '../../lib/tauri';
+import { getRiskStatus, getSystemHealth, resetHalt } from '../../lib/tauri';
+import { useRiskStore } from '../../stores/riskStore';
+import { PnlValue } from '../common/PnlValue';
 
 const HEALTH_POLL_MS = 5000;
 
@@ -19,15 +21,31 @@ const STATUS_DOTS: Record<string, string> = {
 export const HealthMonitor: React.FC = React.memo(() => {
   const health = useHealthStore((s) => s.health);
   const setHealth = useHealthStore((s) => s.setHealth);
+  const riskStatus = useRiskStore((s) => s.status);
+  const setRiskStatus = useRiskStore((s) => s.setStatus);
 
   const poll = useCallback(async () => {
     try {
-      const h = await getSystemHealth();
+      const [h, risk] = await Promise.all([
+        getSystemHealth(),
+        getRiskStatus().catch(() => null),
+      ]);
       if (h) setHealth(h);
+      if (risk) setRiskStatus(risk);
     } catch {
       /* backend not available */
     }
-  }, [setHealth]);
+  }, [setHealth, setRiskStatus]);
+
+  const handleResetHalt = useCallback(async () => {
+    try {
+      await resetHalt();
+      const refreshed = await getRiskStatus();
+      setRiskStatus(refreshed);
+    } catch {
+      /* backend not available */
+    }
+  }, [setRiskStatus]);
 
   useEffect(() => {
     poll();
@@ -76,6 +94,51 @@ export const HealthMonitor: React.FC = React.memo(() => {
             value={health ? String(health.active_strategies) : '--'}
             testId="health-active-strategies"
           />
+        </div>
+
+        <div className="rounded border border-[var(--border-color)] bg-surface-0 p-3" data-testid="health-risk-panel">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h4 className="text-xs font-medium text-text-secondary">Risk Guardrails</h4>
+              <p className="mt-1 text-xs text-text-muted">
+                Monitor the live daily-loss circuit breaker and reset it explicitly when you are ready.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void handleResetHalt()}
+              disabled={!riskStatus.is_halted}
+              className="rounded border border-[var(--border-color)] bg-surface-1 px-3 py-2 text-xs hover:bg-surface-2 disabled:opacity-50"
+              data-testid="health-reset-halt"
+            >
+              Reset Halt
+            </button>
+          </div>
+
+          <div className="mt-3 grid grid-cols-3 gap-3">
+            <div className="rounded border border-[var(--border-color)] bg-surface-1 p-3">
+              <div className="text-xs text-text-muted">Session P&L</div>
+              <div className="mt-1 text-sm font-mono text-text-primary">
+                <PnlValue value={riskStatus.session_pnl} className="text-sm" />
+              </div>
+            </div>
+
+            <MetricCard
+              label="Max Daily Loss"
+              value={new Intl.NumberFormat('en-IN', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              }).format(riskStatus.max_daily_loss)}
+              testId="health-risk-max-loss"
+            />
+
+            <div className="rounded border border-[var(--border-color)] bg-surface-1 p-3">
+              <div className="text-xs text-text-muted">Trading State</div>
+              <div className={`mt-1 text-sm font-medium ${riskStatus.is_halted ? 'text-bear' : 'text-bull'}`}>
+                {riskStatus.is_halted ? 'Halted' : 'Active'}
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Adapter list */}

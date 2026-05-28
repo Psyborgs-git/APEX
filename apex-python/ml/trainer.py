@@ -7,6 +7,7 @@ can discover registered models without importing Python.
 
 from __future__ import annotations
 
+import argparse
 import json
 import logging
 from dataclasses import dataclass, field
@@ -192,15 +193,18 @@ class ModelTrainer:
         timestamp = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         model_filename = f"{config.algorithm}_{timestamp}.joblib"
         model_path = out_dir / model_filename
+        model_id = model_path.stem
 
         joblib.dump(model, model_path)
         logger.info("Model saved to %s", model_path)
 
         metadata = {
+            "model_id": model_id,
             "algorithm": config.algorithm,
             "hyperparams": config.hyperparams,
             "feature_names": feature_names,
             "target_column": config.target_column,
+            "data_path": config.data_path,
             "n_splits": config.n_splits,
             "metrics": metrics,
             "model_file": model_filename,
@@ -217,3 +221,45 @@ class ModelTrainer:
             metadata_path=metadata_path,
             model_path=model_path,
         )
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Train an APEX ML model")
+    parser.add_argument(
+        "--config-json",
+        required=True,
+        help="JSON-encoded TrainingConfig payload",
+    )
+    return parser.parse_args()
+
+
+def main() -> int:
+    logging.basicConfig(level=logging.INFO)
+    args = _parse_args()
+
+    try:
+        raw_config = json.loads(args.config_json)
+        config = TrainingConfig(**raw_config)
+        trained = ModelTrainer().train(config)
+
+        payload = {
+            "model_id": trained.model_path.stem,
+            "algorithm": config.algorithm,
+            "metrics": trained.metrics,
+            "feature_names": trained.feature_names,
+            "created_at": json.loads(trained.metadata_path.read_text())["created_utc"],
+            "model_path": str(trained.model_path),
+            "metadata_path": str(trained.metadata_path),
+            "data_path": config.data_path,
+            "target_column": config.target_column,
+        }
+        print(json.dumps(payload))
+        return 0
+    except Exception as exc:  # pragma: no cover - surfaced via stderr to Rust
+        logger.exception("Training failed")
+        print(f"Training failed: {exc}", flush=True)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

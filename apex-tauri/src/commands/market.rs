@@ -58,7 +58,6 @@ pub async fn get_ohlcv(
         limit: Some(1000),
     };
 
-    use apex_core::ports::storage::StoragePort;
     match state.storage.query_ohlcv(params).await {
         Ok(bars) if !bars.is_empty() => {
             Ok(bars.iter().map(OHLCVDto::from).collect())

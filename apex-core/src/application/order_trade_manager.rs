@@ -8,13 +8,14 @@ use tracing::{info, warn};
 use crate::bus::message_bus::{BusMessage, MessageBus, Topic};
 use crate::domain::models::*;
 use crate::ports::execution::ExecutionPort;
+use crate::ports::market_data::AdapterHealth;
 
 use super::risk_engine::{RiskEngine, RiskVerdict};
 
 /// Order & Trade Manager — manages all order lifecycle
 pub struct OrderTradeManager {
     risk_engine: Arc<RiskEngine>,
-    execution: HashMap<String, Box<dyn ExecutionPort>>,
+    execution: HashMap<String, Arc<dyn ExecutionPort>>,
     bus: Arc<MessageBus>,
     open_orders: Arc<DashMap<String, Order>>,
     positions: Arc<DashMap<String, Position>>,
@@ -36,7 +37,7 @@ impl OrderTradeManager {
     }
 
     /// Register an execution adapter
-    pub fn register_execution(&mut self, broker_id: String, adapter: Box<dyn ExecutionPort>) {
+    pub fn register_execution(&mut self, broker_id: String, adapter: Arc<dyn ExecutionPort>) {
         info!("Registering execution adapter: {}", broker_id);
         self.execution.insert(broker_id, adapter);
     }
@@ -115,6 +116,30 @@ impl OrderTradeManager {
                         source: "manual".into(),
                     })
             ),
+        );
+
+        Ok(())
+    }
+
+    /// Modify an existing order.
+    #[tracing::instrument(skip(self, order_id, params), fields(order_id = %order_id.0))]
+    pub async fn modify_order(
+        &self,
+        order_id: &OrderId,
+        broker_id: &str,
+        params: &ModifyParams,
+    ) -> Result<()> {
+        let adapter = self.execution.get(broker_id)
+            .ok_or_else(|| anyhow!("No execution adapter found for broker: {}", broker_id))?;
+
+        adapter.modify_order(order_id, params).await?;
+
+        let order = adapter.get_order_status(order_id).await?;
+        self.open_orders.insert(order_id.0.clone(), order.clone());
+
+        self.bus.publish(
+            Topic::OrderUpdate(order_id.0.clone()),
+            BusMessage::OrderData(order),
         );
 
         Ok(())
@@ -218,10 +243,18 @@ impl OrderTradeManager {
     }
 
     /// Get account balance from a broker
-    async fn get_account_balance(&self, broker_id: &str) -> Result<AccountBalance> {
+    pub async fn get_account_balance(&self, broker_id: &str) -> Result<AccountBalance> {
         let adapter = self.execution.get(broker_id)
             .ok_or_else(|| anyhow!("No execution adapter found for broker: {}", broker_id))?;
         adapter.get_account_balance().await
+    }
+
+    /// Snapshot execution adapter health by broker id.
+    pub fn execution_health(&self) -> Vec<(String, AdapterHealth)> {
+        self.execution
+            .iter()
+            .map(|(broker_id, adapter)| (broker_id.clone(), adapter.health()))
+            .collect()
     }
 
     /// Get all open orders
@@ -244,6 +277,14 @@ impl OrderTradeManager {
         self.execution.keys().cloned().collect()
     }
 
+    /// Get the list of authenticated broker IDs.
+    pub fn authenticated_broker_ids(&self) -> Vec<String> {
+        self.execution
+            .iter()
+            .filter_map(|(broker_id, adapter)| adapter.is_authenticated().then(|| broker_id.clone()))
+            .collect()
+    }
+
     /// Start a periodic position reconciliation loop.
     ///
     /// Every `interval` seconds, reconcile positions with all registered
@@ -258,7 +299,7 @@ impl OrderTradeManager {
             loop {
                 tokio::time::sleep(interval).await;
 
-                let broker_ids = otm.broker_ids();
+                let broker_ids = otm.authenticated_broker_ids();
                 for broker_id in &broker_ids {
                     if let Err(e) = otm.reconcile_positions(broker_id).await {
                         warn!(broker_id = %broker_id, error = %e, "Reconciliation failed");

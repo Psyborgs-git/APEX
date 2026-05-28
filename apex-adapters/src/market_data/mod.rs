@@ -1,6 +1,9 @@
 pub mod angel_one_market_data;
+pub mod binance;
+pub mod coinbase;
 pub mod groww_market_data;
 pub mod historical_downloader;
+pub mod polymarket;
 pub mod robinhood_market_data;
 pub mod yahoo_finance;
 pub mod zerodha_kite;

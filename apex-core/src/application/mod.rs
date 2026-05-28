@@ -10,3 +10,5 @@ pub mod backtest_engine;
 pub mod indicators;
 pub mod scanner;
 pub mod sentiment;
+pub mod data_quality;
+pub mod metrics;

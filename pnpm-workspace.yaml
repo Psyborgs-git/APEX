@@ -1,4 +1,0 @@
-packages:
-  - 'apex-ui'
-allowBuilds:
-  esbuild: true

@@ -1,0 +1,21 @@
+{
+  "name": "apex",
+  "private": true,
+  "packageManager": "bun@1.3.11",
+  "scripts": {
+    "dev": "bash scripts/dev.sh",
+    "dev:web-only": "bash scripts/dev.sh --web-only",
+    "db:setup": "bash scripts/setup_db.sh",
+    "build": "bash scripts/build.sh",
+    "build:no-bundle": "bash scripts/build.sh --no-bundle",
+    "build:bundle-only": "bash scripts/build.sh --bundle-only",
+    "build:all": "bash scripts/build-all.sh",
+    "lint": "cd apex-ui && bun run lint",
+    "test": "cd apex-ui && bun run test",
+    "test:ui": "cd apex-ui && bun run test:ui",
+    "test:headed": "cd apex-ui && bun run test:headed",
+    "test:rust": "cargo test --workspace",
+    "test:python": "cd apex-python && if [ -x ./.venv/bin/python ]; then ./.venv/bin/python -m pytest tests; else python3 -m pytest tests; fi",
+    "verify": "bun run db:setup && cargo check --workspace && cd apex-ui && bun run lint && bun run build && cd ../apex-python && if [ -x ./.venv/bin/python ]; then ./.venv/bin/python -m pytest tests; else python3 -m pytest tests; fi"
+  }
+}

@@ -1,11 +1,288 @@
-import type { QuoteDto, OrderDto, PositionDto, NewOrderRequestDto, RiskStatusDto, MLModelDto, MLTrainingRequestDto, MLTrainingResultDto, SystemHealthDto, AdapterHealthDto } from './types';
+import type { QuoteDto, OrderDto, PositionDto, NewOrderRequestDto, RiskStatusDto, MLModelDto, MLTrainingRequestDto, MLTrainingResultDto, SystemHealthDto, AdapterHealthDto, AlertRuleDto, StrategyFileDto, StrategyExecutionResultDto, StrategyBacktestRequestDto, StrategyBacktestResultDto, AccountBalanceDto, BrokerConnectionDto, AppSettingsDto, AppSettingsUpdateDto, NotebookCellExecutionDto, NotebookDocumentDto, NotebookRunRequestDto, NotebookSummaryDto, OHLCVDto } from './types';
 
 const IS_TAURI = typeof window !== 'undefined' && '__TAURI__' in window;
 
-let mockPositions: PositionDto[] = [];
-let mockOrders: OrderDto[] = [];
+const DEFAULT_STRATEGY_TEMPLATE = `"""
+APEX Strategy Template
+Subclass Strategy and override on_bar / on_tick.
+"""
+from apex_sdk import Strategy, Bar, Signal, Timeframe
+
+
+class MyStrategy(Strategy):
+    def on_init(self, params: dict) -> None:
+        self.subscribe(["RELIANCE.NS"], Timeframe.M5)
+        self.log("Strategy initialized")
+
+    def on_stop(self) -> None:
+        self.log("Strategy stopped")
+`;
+
+const mockPositions: PositionDto[] = [];
+const mockOrders: OrderDto[] = [];
 let mockModels: MLModelDto[] = [];
+let mockAlertRules: AlertRuleDto[] = [];
+let mockStrategyFiles: StrategyFileDto[] = [
+  {
+    name: 'my_strategy.py',
+    path: 'strategies/my_strategy.py',
+    content: DEFAULT_STRATEGY_TEMPLATE,
+  },
+];
+let mockNotebooks: NotebookDocumentDto[] = [
+  {
+    title: 'Market Research',
+    path: 'notebooks/market-research.apexnb.json',
+    updated_at: new Date().toISOString(),
+    cells: [
+      {
+        id: 'nb-cell-1',
+        kind: 'markdown',
+        content: '# Market Research\n\nUse this notebook for quick experiments and notes.',
+        output: null,
+      },
+      {
+        id: 'nb-cell-2',
+        kind: 'code',
+        content: 'prices = [101.5, 102.2, 104.1]\nprint("Average", sum(prices) / len(prices))',
+        output: 'Average 102.6',
+      },
+    ],
+  },
+];
 let mockTrainingCounter = 0;
+let mockBrokerConnections: BrokerConnectionDto[] = [
+  {
+    broker_id: 'paper',
+    display_name: 'Paper Trading',
+    mode: 'paper',
+    status: 'ready',
+    configured: true,
+    authenticated: true,
+    execution_available: true,
+    market_data_available: false,
+    token_field_label: '',
+    message: 'Paper trading is active for safe simulated execution.',
+  },
+  {
+    broker_id: 'zerodha',
+    display_name: 'Zerodha Kite',
+    mode: 'live',
+    status: 'auth_required',
+    configured: true,
+    authenticated: false,
+    execution_available: true,
+    market_data_available: true,
+    token_field_label: 'Access Token',
+    message: 'Zerodha Kite is configured for live orders, account access, and market data. Paste an Access Token to enable live connectivity.',
+  },
+  {
+    broker_id: 'angel_one',
+    display_name: 'Angel One',
+    mode: 'live',
+    status: 'auth_required',
+    configured: true,
+    authenticated: false,
+    execution_available: true,
+    market_data_available: true,
+    token_field_label: 'JWT Token',
+    message: 'Angel One is configured for live orders, account access, and market data. Paste a JWT Token to enable live connectivity.',
+  },
+  {
+    broker_id: 'groww',
+    display_name: 'Groww',
+    mode: 'live',
+    status: 'auth_required',
+    configured: true,
+    authenticated: false,
+    execution_available: true,
+    market_data_available: true,
+    token_field_label: 'Access Token',
+    message: 'Groww is configured for live orders, account access, and market data. Paste an Access Token to enable live connectivity.',
+  },
+  {
+    broker_id: 'robinhood',
+    display_name: 'Robinhood',
+    mode: 'live',
+    status: 'auth_required',
+    configured: true,
+    authenticated: false,
+    execution_available: true,
+    market_data_available: true,
+    token_field_label: 'Access Token',
+    message: 'Robinhood is configured for live orders, account access, and market data. Paste an Access Token to enable live connectivity.',
+  },
+];
+
+let mockAppSettings: AppSettingsDto = {
+  config_path: 'config/apex.toml',
+  runtime_storage_backend: 'sqlite',
+  runtime_storage_target: 'data/apex.db',
+  general: {
+    data_dir: 'data',
+  },
+  market_data: {
+    adapter: 'yahoo_finance',
+    available_adapters: ['yahoo_finance', 'zerodha', 'angel_one', 'groww', 'robinhood'],
+  },
+  execution: {
+    adapter: 'paper',
+    available_adapters: ['paper', 'zerodha', 'angel_one', 'groww', 'robinhood'],
+  },
+  risk: {
+    max_daily_loss: 50_000,
+    max_order_value: 500_000,
+  },
+  storage: {
+    backend: 'sqlite',
+    sqlite_path: 'apex.db',
+    postgres_url: '',
+    wal_mode: true,
+    pool_size: 4,
+    available_backends: ['sqlite', 'timescale'],
+  },
+};
+
+function cloneMockSettings(): AppSettingsDto {
+  return JSON.parse(JSON.stringify(mockAppSettings)) as AppSettingsDto;
+}
+
+function buildMockHealthAdapters(): AdapterHealthDto[] {
+  const now = new Date().toISOString();
+  const adapters: AdapterHealthDto[] = [
+    { adapter_id: 'yahoo_finance', adapter_type: 'market_data', status: 'healthy', message: 'Connected', last_check: now },
+    { adapter_id: 'paper', adapter_type: 'execution', status: 'healthy', message: 'Active', last_check: now },
+  ];
+
+  for (const broker of mockBrokerConnections) {
+    if (broker.mode !== 'live' || !broker.configured) {
+      continue;
+    }
+
+    const status = broker.authenticated ? 'healthy' : 'degraded';
+    const message = broker.authenticated ? 'Connected' : 'Awaiting session token';
+
+    if (broker.market_data_available) {
+      adapters.push({
+        adapter_id: broker.broker_id === 'zerodha' ? 'zerodha_kite' : broker.broker_id,
+        adapter_type: 'market_data',
+        status,
+        message,
+        last_check: now,
+      });
+    }
+
+    if (broker.execution_available) {
+      adapters.push({
+        adapter_id: broker.broker_id,
+        adapter_type: 'execution',
+        status,
+        message,
+        last_check: now,
+      });
+    }
+  }
+
+  return adapters;
+}
+
+function buildMockBacktestResult(request: StrategyBacktestRequestDto): StrategyBacktestResultDto {
+  const baseEquity = request.initial_capital ?? 100_000;
+  const symbol = request.symbol || 'RELIANCE.NS';
+  const timeframe = request.timeframe || '1d';
+  const strategyName = request.path.split('/').pop() ?? 'strategy.py';
+  const now = Date.now();
+
+  return {
+    strategy_name: strategyName,
+    strategy_path: request.path,
+    inferred_strategy: 'Price vs SMA(20)',
+    symbol,
+    timeframe,
+    bars_analyzed: 180,
+    metrics: {
+      total_return: 12_850,
+      total_return_pct: 12.85,
+      annualized_return_pct: 18.42,
+      sharpe_ratio: 1.34,
+      max_drawdown: 4_250,
+      max_drawdown_pct: 4.25,
+      total_trades: 9,
+      winning_trades: 6,
+      losing_trades: 3,
+      win_rate: 66.67,
+      profit_factor: 1.92,
+      avg_trade_pnl: 1427.78,
+      avg_win: 2650,
+      avg_loss: 1015,
+      max_consecutive_wins: 3,
+      max_consecutive_losses: 1,
+      final_equity: baseEquity + 12_850,
+    },
+    trades: [
+      {
+        symbol,
+        side: 'Buy',
+        entry_time: new Date(now - 1000 * 60 * 60 * 24 * 20).toISOString(),
+        entry_price: 2430.25,
+        exit_time: new Date(now - 1000 * 60 * 60 * 24 * 15).toISOString(),
+        exit_price: 2518.4,
+        quantity: request.quantity ?? 10,
+        pnl: 852.1,
+        commission: 17.8,
+      },
+      {
+        symbol,
+        side: 'Buy',
+        entry_time: new Date(now - 1000 * 60 * 60 * 24 * 10).toISOString(),
+        entry_price: 2498.6,
+        exit_time: new Date(now - 1000 * 60 * 60 * 24 * 4).toISOString(),
+        exit_price: 2587.9,
+        quantity: request.quantity ?? 10,
+        pnl: 871.4,
+        commission: 18.2,
+      },
+    ],
+    equity_curve: Array.from({ length: 12 }, (_, index) => ({
+      time: new Date(now - (11 - index) * 1000 * 60 * 60 * 24 * 7).toISOString(),
+      equity: baseEquity + index * 1100 + (index % 3 === 0 ? -320 : 0),
+      drawdown: index % 3 === 0 ? 0.022 : 0.0,
+    })),
+    notes: [
+      'Browser-mode mock backtest: using deterministic sample historical bars.',
+      'In the desktop app, this runs against cached or live Yahoo Finance OHLCV data.',
+    ],
+  };
+}
+
+function buildMockHistoricalData(symbol: string, timeframe = '1d', limit = 100): OHLCVDto[] {
+  const now = Date.now();
+  const stepMs = timeframe.endsWith('m')
+    ? 60_000 * Math.max(1, Number.parseInt(timeframe, 10) || 1)
+    : timeframe.endsWith('h')
+      ? 60 * 60_000 * Math.max(1, Number.parseInt(timeframe, 10) || 1)
+      : 24 * 60 * 60_000;
+
+  return Array.from({ length: Math.min(limit, 250) }, (_, index) => {
+    const base = 150 + Math.sin(index / 4) * 4 + index * 0.15;
+    const open = Number((base + Math.cos(index) * 0.8).toFixed(2));
+    const close = Number((base + Math.sin(index / 2) * 1.1).toFixed(2));
+    const high = Number((Math.max(open, close) + 1.25).toFixed(2));
+    const low = Number((Math.min(open, close) - 1.15).toFixed(2));
+    return {
+      time: new Date(now - (Math.min(limit, 250) - index) * stepMs).toISOString(),
+      open,
+      high,
+      low,
+      close,
+      volume: 1000 + index * 17 + symbol.length * 23,
+    };
+  });
+}
+
+function cloneNotebook(doc: NotebookDocumentDto): NotebookDocumentDto {
+  return JSON.parse(JSON.stringify(doc)) as NotebookDocumentDto;
+}
 
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (IS_TAURI) {
@@ -32,7 +309,193 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
   }
   if (cmd === 'get_positions') return [...mockPositions] as any;
   if (cmd === 'get_open_orders') return [...mockOrders] as any;
+  if (cmd === 'get_account_balance') {
+    const brokerId = (args?.broker_id as string) || 'paper';
+    const broker = mockBrokerConnections.find((connection) => connection.broker_id === brokerId);
+
+    if (broker?.mode === 'live' && !broker.authenticated) {
+      throw new Error(`${broker.display_name} is not authenticated yet`);
+    }
+
+    const balance: AccountBalanceDto = brokerId === 'robinhood'
+      ? {
+          total_value: 25000,
+          cash: 12500,
+          margin_used: 0,
+          margin_available: 12500,
+          unrealized_pnl: 420,
+          realized_pnl: 180,
+          currency: 'USD',
+        }
+      : {
+          total_value: 1_250_000,
+          cash: 845_000,
+          margin_used: 120_000,
+          margin_available: 725_000,
+          unrealized_pnl: 12_400,
+          realized_pnl: 3_250,
+          currency: 'INR',
+        };
+
+    return balance as any;
+  }
   if (cmd === 'get_risk_status') return { session_pnl: mockPositions.reduce((a,b)=>a+b.pnl, 0), is_halted: false, max_daily_loss: 50000 } as any;
+  if (cmd === 'get_historical_data') {
+    const symbol = (args?.symbol as string) || 'RELIANCE.NS';
+    const timeframe = args?.timeframe as string | undefined;
+    const limit = Number(args?.limit ?? 100);
+    return buildMockHistoricalData(symbol, timeframe, limit) as any;
+  }
+  if (cmd === 'get_app_settings') return cloneMockSettings() as any;
+  if (cmd === 'save_app_settings') {
+    const request = args?.request as AppSettingsUpdateDto;
+    mockAppSettings = {
+      ...mockAppSettings,
+      general: { ...request.general },
+      market_data: {
+        adapter: request.market_data.adapter,
+        available_adapters: [...mockAppSettings.market_data.available_adapters],
+      },
+      execution: {
+        adapter: request.execution.adapter,
+        available_adapters: [...mockAppSettings.execution.available_adapters],
+      },
+      risk: { ...request.risk },
+      storage: {
+        ...request.storage,
+        available_backends: [...mockAppSettings.storage.available_backends],
+      },
+    };
+
+    return cloneMockSettings() as any;
+  }
+  if (cmd === 'list_notebooks') {
+    return mockNotebooks.map((notebook) => ({
+      name: notebook.title,
+      path: notebook.path,
+      updated_at: notebook.updated_at,
+    })) as any;
+  }
+  if (cmd === 'load_notebook') {
+    const path = args?.path as string;
+    const notebook = mockNotebooks.find((entry) => entry.path === path);
+    if (!notebook) {
+      throw new Error(`Notebook not found: ${path}`);
+    }
+    return cloneNotebook(notebook) as any;
+  }
+  if (cmd === 'create_notebook') {
+    const rawPath = (args?.path as string | undefined)?.trim() || `notebooks/notebook-${mockNotebooks.length + 1}.apexnb.json`;
+    const normalizedPath = rawPath.endsWith('.apexnb.json') ? rawPath : `${rawPath}.apexnb.json`;
+    const created: NotebookDocumentDto = {
+      title: normalizedPath.split('/').pop()?.replace(/\.apexnb\.json$/, '') || 'Research Notebook',
+      path: normalizedPath,
+      updated_at: new Date().toISOString(),
+      cells: [
+        {
+          id: `nb-cell-${Date.now()}`,
+          kind: 'markdown',
+          content: '# Research Notebook',
+          output: null,
+        },
+      ],
+    };
+    mockNotebooks = [...mockNotebooks.filter((entry) => entry.path !== normalizedPath), created];
+    return cloneNotebook(created) as any;
+  }
+  if (cmd === 'save_notebook') {
+    const notebook = args?.notebook as NotebookDocumentDto;
+    const saved = {
+      ...notebook,
+      updated_at: new Date().toISOString(),
+    };
+    const existingIndex = mockNotebooks.findIndex((entry) => entry.path === saved.path);
+    if (existingIndex >= 0) {
+      mockNotebooks = mockNotebooks.map((entry, index) => index === existingIndex ? saved : entry);
+    } else {
+      mockNotebooks = [...mockNotebooks, saved];
+    }
+    return cloneNotebook(saved) as any;
+  }
+  if (cmd === 'run_notebook_cell') {
+    const request = args?.request as NotebookRunRequestDto;
+    const targetCell = request.cells.find((cell) => cell.id === request.cell_id);
+    if (!targetCell) {
+      throw new Error(`Notebook cell not found: ${request.cell_id}`);
+    }
+    const sourceCells = request.cells.filter((cell) => cell.kind === 'code');
+    const stdout = [`Executed ${targetCell.id}`, `Code cells in scope: ${sourceCells.length}`];
+    return {
+      cell_id: request.cell_id,
+      success: true,
+      stdout: stdout.join('\n'),
+      stderr: '',
+      finished_at: new Date().toISOString(),
+    } as NotebookCellExecutionDto as any;
+  }
+  if (cmd === 'list_strategy_files') return [...mockStrategyFiles] as any;
+  if (cmd === 'create_strategy_file') {
+    const path = args?.path as string;
+    const name = path.split('/').pop() ?? 'strategy.py';
+    const content = (args?.content as string | undefined) ?? DEFAULT_STRATEGY_TEMPLATE;
+    const created: StrategyFileDto = { name, path, content };
+    mockStrategyFiles = [...mockStrategyFiles.filter((file) => file.path !== path), created];
+    return created as any;
+  }
+  if (cmd === 'save_strategy_file') {
+    const path = args?.path as string;
+    const name = path.split('/').pop() ?? 'strategy.py';
+    const content = args?.content as string;
+    const saved: StrategyFileDto = { name, path, content };
+    const existing = mockStrategyFiles.findIndex((file) => file.path === path);
+    if (existing >= 0) {
+      mockStrategyFiles = mockStrategyFiles.map((file, index) => index === existing ? saved : file);
+    } else {
+      mockStrategyFiles = [...mockStrategyFiles, saved];
+    }
+    return saved as any;
+  }
+  if (cmd === 'delete_strategy_file') {
+    const path = args?.path as string;
+    const before = mockStrategyFiles.length;
+    mockStrategyFiles = mockStrategyFiles.filter((file) => file.path !== path);
+    return (before !== mockStrategyFiles.length) as any;
+  }
+  if (cmd === 'run_strategy_file') {
+    const path = args?.path as string;
+    const name = path.split('/').pop() ?? 'strategy.py';
+    return {
+      success: true,
+      output: [
+        `Initializing strategy ${name}`,
+        'Strategy initialized',
+        `Strategy ${name} stopped`,
+      ],
+      error: null,
+      exit_code: 0,
+      started_at: new Date().toISOString(),
+      finished_at: new Date().toISOString(),
+    } as StrategyExecutionResultDto as any;
+  }
+  if (cmd === 'run_strategy_backtest') {
+    return buildMockBacktestResult(args?.request as StrategyBacktestRequestDto) as any;
+  }
+  if (cmd === 'add_alert') {
+    const id = args?.id as string;
+    const rule = args?.rule_json as string;
+    mockAlertRules = [
+      ...mockAlertRules.filter((existing) => existing.id !== id),
+      { id, rule, enabled: true },
+    ];
+    return undefined as any;
+  }
+  if (cmd === 'remove_alert') {
+    const ruleId = args?.rule_id as string;
+    const before = mockAlertRules.length;
+    mockAlertRules = mockAlertRules.filter((rule) => rule.id !== ruleId);
+    return (mockAlertRules.length < before) as any;
+  }
+  if (cmd === 'get_alert_rules') return [...mockAlertRules] as any;
   if (cmd === 'list_ml_models') return [...mockModels] as any;
   if (cmd === 'train_ml_model') {
     const req = args?.request as MLTrainingRequestDto;
@@ -56,12 +519,71 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
     mockModels = mockModels.filter(m => m.model_id !== id);
     return true as any;
   }
+  if (cmd === 'list_broker_connections') {
+    return [...mockBrokerConnections] as any;
+  }
+  if (cmd === 'set_broker_session') {
+    const brokerId = args?.broker_id as string;
+    const sessionToken = (args?.session_token as string | undefined)?.trim();
+
+    if (!sessionToken) {
+      throw new Error('Session token must not be empty');
+    }
+
+    let updated: BrokerConnectionDto | undefined;
+    mockBrokerConnections = mockBrokerConnections.map((connection) => {
+      if (connection.broker_id !== brokerId) {
+        return connection;
+      }
+
+      updated = {
+        ...connection,
+        authenticated: true,
+        status: connection.mode === 'paper' ? 'ready' : 'connected',
+        message: `${connection.display_name} is authenticated and ready for safe live data and account checks.`,
+      };
+
+      return updated;
+    });
+
+    if (!updated) {
+      throw new Error(`Unknown broker: ${brokerId}`);
+    }
+
+    return updated as any;
+  }
+  if (cmd === 'clear_broker_session') {
+    const brokerId = args?.broker_id as string;
+
+    let updated: BrokerConnectionDto | undefined;
+    mockBrokerConnections = mockBrokerConnections.map((connection) => {
+      if (connection.broker_id !== brokerId) {
+        return connection;
+      }
+
+      updated = connection.mode === 'paper'
+        ? connection
+        : {
+            ...connection,
+            authenticated: false,
+            status: connection.configured ? 'auth_required' : 'not_configured',
+            message: connection.configured
+              ? `${connection.display_name} is configured for live connectivity. Paste a ${connection.token_field_label || 'session token'} to enable it.`
+              : connection.message,
+          };
+
+      return updated;
+    });
+
+    if (!updated) {
+      throw new Error(`Unknown broker: ${brokerId}`);
+    }
+
+    return updated as any;
+  }
   if (cmd === 'get_system_health') {
     return {
-      adapters: [
-        { adapter_id: 'yahoo_finance', adapter_type: 'market_data', status: 'healthy', message: 'Connected', last_check: new Date().toISOString() },
-        { adapter_id: 'paper_trading', adapter_type: 'execution', status: 'healthy', message: 'Active', last_check: new Date().toISOString() },
-      ] as AdapterHealthDto[],
+      adapters: buildMockHealthAdapters(),
       uptime_secs: Math.floor((Date.now() - performance.timeOrigin) / 1000),
       memory_usage_mb: 128,
       active_subscriptions: 5,
@@ -80,15 +602,48 @@ export async function placeOrder(r: NewOrderRequestDto): Promise<string> { retur
 export async function cancelOrder(o: string, b: string): Promise<void> { return invoke<void>('cancel_order', { order_id: o, broker_id: b }); }
 export async function getPositions(): Promise<PositionDto[]> { return invoke<PositionDto[]>('get_positions'); }
 export async function getOpenOrders(): Promise<OrderDto[]> { return invoke<OrderDto[]>('get_open_orders'); }
+export async function getAccountBalance(brokerId: string): Promise<AccountBalanceDto> { return invoke<AccountBalanceDto>('get_account_balance', { broker_id: brokerId }); }
 export async function getRiskStatus(): Promise<RiskStatusDto> { return invoke<RiskStatusDto>('get_risk_status'); }
 export async function resetHalt(): Promise<void> { return invoke<void>('reset_halt'); }
+export async function getHistoricalData(symbol: string, timeframe?: string, limit?: number): Promise<OHLCVDto[]> {
+  return invoke<OHLCVDto[]>('get_historical_data', { symbol, timeframe, limit });
+}
+export async function getAppSettings(): Promise<AppSettingsDto> { return invoke<AppSettingsDto>('get_app_settings'); }
+export async function saveAppSettings(request: AppSettingsUpdateDto): Promise<AppSettingsDto> {
+  return invoke<AppSettingsDto>('save_app_settings', { request });
+}
+export async function listNotebooks(): Promise<NotebookSummaryDto[]> { return invoke<NotebookSummaryDto[]>('list_notebooks'); }
+export async function loadNotebook(path: string): Promise<NotebookDocumentDto> {
+  return invoke<NotebookDocumentDto>('load_notebook', { path });
+}
+export async function createNotebook(path: string): Promise<NotebookDocumentDto> {
+  return invoke<NotebookDocumentDto>('create_notebook', { path });
+}
+export async function saveNotebook(notebook: NotebookDocumentDto): Promise<NotebookDocumentDto> {
+  return invoke<NotebookDocumentDto>('save_notebook', { notebook });
+}
+export async function runNotebookCell(request: NotebookRunRequestDto): Promise<NotebookCellExecutionDto> {
+  return invoke<NotebookCellExecutionDto>('run_notebook_cell', { request });
+}
+export async function listStrategyFiles(): Promise<StrategyFileDto[]> { return invoke<StrategyFileDto[]>('list_strategy_files'); }
+export async function createStrategyFile(path: string, content?: string): Promise<StrategyFileDto> { return invoke<StrategyFileDto>('create_strategy_file', { path, content }); }
+export async function saveStrategyFile(path: string, content: string): Promise<StrategyFileDto> { return invoke<StrategyFileDto>('save_strategy_file', { path, content }); }
+export async function deleteStrategyFile(path: string): Promise<boolean> { return invoke<boolean>('delete_strategy_file', { path }); }
+export async function runStrategyFile(path: string, params?: Record<string, unknown>): Promise<StrategyExecutionResultDto> { return invoke<StrategyExecutionResultDto>('run_strategy_file', { path, params_json: JSON.stringify(params ?? {}) }); }
+export async function runStrategyBacktest(request: StrategyBacktestRequestDto): Promise<StrategyBacktestResultDto> { return invoke<StrategyBacktestResultDto>('run_strategy_backtest', { request }); }
 export async function addAlert(i: string, r: string): Promise<void> { return invoke<void>('add_alert', { id: i, rule_json: r }); }
 export async function removeAlert(r: string): Promise<boolean> { return invoke<boolean>('remove_alert', { rule_id: r }); }
+export async function getAlertRules(): Promise<AlertRuleDto[]> { return invoke<AlertRuleDto[]>('get_alert_rules'); }
 
 // ML Workbench
 export async function listMLModels(): Promise<MLModelDto[]> { return invoke<MLModelDto[]>('list_ml_models'); }
 export async function trainMLModel(r: MLTrainingRequestDto): Promise<MLTrainingResultDto> { return invoke<MLTrainingResultDto>('train_ml_model', { request: r }); }
 export async function deleteMLModel(id: string): Promise<boolean> { return invoke<boolean>('delete_ml_model', { model_id: id }); }
+
+// Broker connectivity
+export async function listBrokerConnections(): Promise<BrokerConnectionDto[]> { return invoke<BrokerConnectionDto[]>('list_broker_connections'); }
+export async function setBrokerSession(brokerId: string, sessionToken: string): Promise<BrokerConnectionDto> { return invoke<BrokerConnectionDto>('set_broker_session', { broker_id: brokerId, session_token: sessionToken }); }
+export async function clearBrokerSession(brokerId: string): Promise<BrokerConnectionDto> { return invoke<BrokerConnectionDto>('clear_broker_session', { broker_id: brokerId }); }
 
 // Health Monitor
 export async function getSystemHealth(): Promise<SystemHealthDto> { return invoke<SystemHealthDto>('get_system_health'); }

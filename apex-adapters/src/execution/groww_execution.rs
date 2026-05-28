@@ -11,7 +11,7 @@ use chrono::Utc;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, RwLock};
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 /// Groww execution adapter
 ///
@@ -121,6 +121,14 @@ impl GrowwExecutionAdapter {
         info!("Groww access token updated");
     }
 
+    /// Clear access token.
+    pub fn clear_access_token(&self) {
+        let mut access_token = self.access_token.write().unwrap();
+        *access_token = None;
+        self.set_health(AdapterHealth::Unhealthy("Not authenticated".to_string()));
+        info!("Groww access token cleared");
+    }
+
     /// Get authorization header
     fn get_auth_header(&self) -> Result<String> {
         let token = self.access_token.read().unwrap();
@@ -131,7 +139,7 @@ impl GrowwExecutionAdapter {
     }
 
     /// Check if authenticated
-    fn is_authenticated(&self) -> bool {
+    pub fn is_authenticated(&self) -> bool {
         self.access_token.read().unwrap().is_some()
     }
 
@@ -429,11 +437,15 @@ impl ExecutionPort for GrowwExecutionAdapter {
         }
 
         let data: serde_json::Value = response.json().await?;
-        let margin = data.get("data")
-            .ok_or_else(|| anyhow::anyhow!("No margin data"))?;
+        let margin: GrowwMarginData = serde_json::from_value(
+            data.get("data")
+                .cloned()
+                .ok_or_else(|| anyhow::anyhow!("No margin data"))?,
+        )
+        .context("Failed to parse Groww margin data")?;
 
-        let available = margin.get("availableCash").and_then(|v| v.as_f64()).unwrap_or(0.0);
-        let used = margin.get("usedMargin").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let available = margin.available_cash;
+        let used = margin.used_margin;
 
         Ok(AccountBalance {
             total_value: available + used,
@@ -461,6 +473,10 @@ impl ExecutionPort for GrowwExecutionAdapter {
 
     fn health(&self) -> AdapterHealth {
         self.health.read().unwrap().clone()
+    }
+
+    fn is_authenticated(&self) -> bool {
+        GrowwExecutionAdapter::is_authenticated(self)
     }
 }
 

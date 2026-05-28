@@ -9,6 +9,7 @@ interface OrderState {
   setOrders: (orders: OrderDto[]) => void;
   setPositions: (positions: PositionDto[]) => void;
   setAccountBalance: (balance: AccountBalanceDto) => void;
+  clearAccountBalance: () => void;
 }
 
 export const useOrderStore = create<OrderState>((set) => ({
@@ -27,4 +28,5 @@ export const useOrderStore = create<OrderState>((set) => ({
   setOrders: (orders: OrderDto[]) => set({ openOrders: orders }),
   setPositions: (positions: PositionDto[]) => set({ positions }),
   setAccountBalance: (balance: AccountBalanceDto) => set({ accountBalance: balance }),
+  clearAccountBalance: () => set({ accountBalance: null }),
 }));

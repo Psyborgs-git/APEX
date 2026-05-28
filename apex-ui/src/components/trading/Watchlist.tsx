@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useMarketStore } from '../../stores/marketStore';
 import { PnlValue } from '../common/PnlValue';
-import { formatPrice, formatVolume } from '../../lib/format';
+import { formatPrice } from '../../lib/format';
 
 interface WatchlistRowProps {
   symbol: string;
