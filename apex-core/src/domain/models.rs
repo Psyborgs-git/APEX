@@ -16,6 +16,12 @@ pub struct Tick {
     pub last:     f64,
     pub volume:   u64,
     pub source:   String,
+    /// Day open when the feed provides it (REST-poll adapters like Yahoo).
+    #[serde(default)]
+    pub open:      Option<f64>,
+    /// Percent change vs previous close when the feed provides it.
+    #[serde(default)]
+    pub change_pct: Option<f64>,
 }
 
 /// A full quote snapshot for a symbol
@@ -253,6 +259,8 @@ mod tests {
             last: 2500.75,
             volume: 1000,
             source: "test".into(),
+            open: None,
+            change_pct: None,
         };
         let json = serde_json::to_string(&tick).unwrap();
         let deserialized: Tick = serde_json::from_str(&json).unwrap();

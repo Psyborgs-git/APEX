@@ -86,6 +86,11 @@ const CandleChartInner: React.FC<CandleChartProps> = ({ symbol, ohlcvData, heigh
       rightPriceScale: {
         borderColor: CHART_COLORS.border,
       },
+      localization: {
+        // System locale can be 'C' (no ICU data in some webviews) — pin a real
+        // locale so price/time formatting never throws.
+        locale: 'en-US',
+      },
       timeScale: {
         borderColor: CHART_COLORS.border,
         timeVisible: true,
@@ -126,7 +131,17 @@ const CandleChartInner: React.FC<CandleChartProps> = ({ symbol, ohlcvData, heigh
     const chart = chartRef.current;
     if (!candleSeries || !volumeSeries || !chart || bars.length === 0) return;
 
-    const candles: CandlestickData<Time>[] = bars.map((bar) => ({
+    // Collapse duplicate bar timestamps — a charting series requires strictly
+    // ascending unique times.
+    const seen = new Set<number>();
+    const uniqueBars = bars.filter((bar) => {
+      const t = new Date(bar.time).getTime();
+      if (seen.has(t)) return false;
+      seen.add(t);
+      return true;
+    });
+
+    const candles: CandlestickData<Time>[] = uniqueBars.map((bar) => ({
       time: toChartTime(bar.time),
       open: bar.open,
       high: bar.high,
@@ -134,7 +149,7 @@ const CandleChartInner: React.FC<CandleChartProps> = ({ symbol, ohlcvData, heigh
       close: bar.close,
     }));
 
-    const volumes: HistogramData<Time>[] = bars.map((bar) => ({
+    const volumes: HistogramData<Time>[] = uniqueBars.map((bar) => ({
       time: toChartTime(bar.time),
       value: bar.volume,
       color: bar.close >= bar.open ? CHART_COLORS.volumeUp : CHART_COLORS.volumeDown,
@@ -189,7 +204,7 @@ const CandleChartInner: React.FC<CandleChartProps> = ({ symbol, ohlcvData, heigh
         setBars(bars);
       } catch (err) {
         if (!cancelled) {
-          setLoadError(err instanceof Error ? err.message : 'Failed to load chart data');
+          setLoadError(typeof err === 'string' ? err : err instanceof Error ? err.message : 'Failed to load chart data');
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -209,6 +224,7 @@ const CandleChartInner: React.FC<CandleChartProps> = ({ symbol, ohlcvData, heigh
     const intervalId = setInterval(() => {
       const q = getQuote(symbol);
       if (!q || !candleSeriesRef.current || !volumeSeriesRef.current) return;
+      if (![q.open, q.high, q.low, q.last, q.volume].every((v) => Number.isFinite(v))) return;
 
       const bucketStart = (Math.floor(Date.now() / 1000 / bucketSecs) * bucketSecs) as Time;
       candleSeriesRef.current.update({

@@ -155,6 +155,8 @@ impl MarketDataPort for RobinhoodMarketDataAdapter {
                                 last: quote.last,
                                 volume: quote.volume,
                                 source: "robinhood".to_string(),
+                                open: Some(quote.open),
+                                change_pct: Some(quote.change_pct),
                             };
 
                             if tx.send(tick).await.is_err() {

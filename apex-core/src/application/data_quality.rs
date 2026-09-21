@@ -340,6 +340,11 @@ mod tests {
             last: 50000.5,
             volume: 1000,
             source: "binance".into(),
+
+            open: None,
+
+            change_pct: None,
+
         };
 
         assert!(checker.validate_tick(&tick).is_ok());
@@ -356,6 +361,11 @@ mod tests {
             last: -1.0,
             volume: 1000,
             source: "binance".into(),
+
+            open: None,
+
+            change_pct: None,
+
         };
 
         assert!(checker.validate_tick(&tick).is_err());
@@ -375,6 +385,11 @@ mod tests {
             last: 50000.5,
             volume: 1000,
             source: "binance".into(),
+
+            open: None,
+
+            change_pct: None,
+
         };
 
         assert!(checker.validate_tick(&tick).is_err());
@@ -428,6 +443,8 @@ mod tests {
                 last: 50000.5,
                 volume: 1000,
                 source: "binance".into(),
+            open: None,
+            change_pct: None,
             },
             Tick {
                 time: Utc::now() + chrono::Duration::seconds(100),
@@ -437,6 +454,8 @@ mod tests {
                 last: 50001.5,
                 volume: 1000,
                 source: "binance".into(),
+            open: None,
+            change_pct: None,
             },
         ];
 
@@ -457,6 +476,8 @@ mod tests {
                 last: 50000.5,
                 volume: 1000,
                 source: "binance".into(),
+            open: None,
+            change_pct: None,
             },
             Tick {
                 time,
@@ -466,6 +487,8 @@ mod tests {
                 last: 50000.5,
                 volume: 1000,
                 source: "binance".into(),
+            open: None,
+            change_pct: None,
             },
         ];
 
@@ -485,6 +508,8 @@ mod tests {
                 last: 50000.0,
                 volume: 1000,
                 source: "binance".into(),
+            open: None,
+            change_pct: None,
             },
             Tick {
                 time: Utc::now() + chrono::Duration::seconds(1),
@@ -494,6 +519,8 @@ mod tests {
                 last: 60000.0,
                 volume: 1000,
                 source: "binance".into(),
+            open: None,
+            change_pct: None,
             },
         ];
 

@@ -7,6 +7,7 @@ import {
   forceCollide,
   type SimulationNodeDatum,
   type SimulationLinkDatum,
+  type Simulation,
 } from 'd3-force';
 import { select } from 'd3';
 import { zoom as d3Zoom, type D3ZoomEvent } from 'd3';
@@ -59,12 +60,19 @@ const VectorGraphInner: React.FC<VectorGraphProps> = ({
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [dimensions, setDimensions] = useState({ width: 600, height: 400 });
 
-  // Clone data to avoid mutating props
-  const simNodes = useMemo(() => nodes.map((n) => ({ ...n })), [nodes]);
-  const simEdges = useMemo(
-    () => edges.map((e) => ({ ...e, source: e.source, target: e.target })),
-    [edges],
-  );
+  // Clone data to avoid mutating props; drop edges whose endpoints are
+  // missing — d3 forceLink throws "node not found" on those, which would
+  // escape to the nearest error boundary and blank the panel.
+  const simNodes = useMemo(() => {
+    const seen = new Set<string>();
+    return nodes.filter((n) => (seen.has(n.id) ? false : (seen.add(n.id), true))).map((n) => ({ ...n }));
+  }, [nodes]);
+  const simEdges = useMemo(() => {
+    const ids = new Set(simNodes.map((n) => n.id));
+    return edges
+      .filter((e) => ids.has(String(e.source)) && ids.has(String(e.target)))
+      .map((e) => ({ ...e, source: e.source, target: e.target }));
+  }, [edges, simNodes]);
 
   // Resize observer
   useEffect(() => {
@@ -138,8 +146,9 @@ const VectorGraphInner: React.FC<VectorGraphProps> = ({
       .attr('d', 'M0,-5L10,0L0,5')
       .attr('fill', '#5c5c7a');
 
-    // Create simulation
-    const simulation = forceSimulation<GraphNode>(simNodes)
+    let simulation: Simulation<GraphNode, GraphEdge>;
+    try {
+      simulation = forceSimulation<GraphNode>(simNodes)
       .force(
         'link',
         forceLink<GraphNode, GraphEdge>(simEdges)
@@ -152,6 +161,10 @@ const VectorGraphInner: React.FC<VectorGraphProps> = ({
         'collision',
         forceCollide<GraphNode>().radius((d) => NODE_RADII[d.type] + 4),
       );
+    } catch (err) {
+      console.error('[apex] graph simulation init failed', err);
+      return;
+    }
 
     // Edges
     const link = g

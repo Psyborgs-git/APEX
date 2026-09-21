@@ -291,11 +291,51 @@ impl NewsEngine {
     }
 
     fn decode_xml_entities(&self, text: &str) -> String {
-        text.replace("&amp;", "&")
+        let named = text
+            .replace("&amp;", "&")
             .replace("&lt;", "<")
             .replace("&gt;", ">")
             .replace("&quot;", "\"")
-            .replace("&#39;", "'")
+            .replace("&apos;", "'")
+            .replace("&nbsp;", " ")
+            .replace("&mdash;", "—")
+            .replace("&ndash;", "–")
+            .replace("&hellip;", "…")
+            .replace("&#39;", "'");
+
+        // Numeric entities: &#8217; decimal, &#x2019; hex (RSS feeds leak these).
+        let mut out = String::with_capacity(named.len());
+        let mut rest = named.as_str();
+        while let Some(pos) = rest.find("&#") {
+            out.push_str(&rest[..pos]);
+            let tail = &rest[pos + 2..];
+            let (digits, is_hex) = match tail.strip_prefix('x').or_else(|| tail.strip_prefix('X')) {
+                Some(h) => (h, true),
+                None => (tail, false),
+            };
+            let end = digits
+                .find(|c: char| !(c.is_ascii_digit() || (is_hex && c.is_ascii_hexdigit())));
+            let (digits, after) = match end {
+                Some(e) => (&digits[..e], &digits[e..]),
+                None => (digits, ""),
+            };
+            if let Some(stripped) = after.strip_prefix(';') {
+                let parsed = if is_hex {
+                    u32::from_str_radix(digits, 16).ok()
+                } else {
+                    digits.parse::<u32>().ok()
+                };
+                if let Some(code) = parsed.and_then(char::from_u32) {
+                    out.push(code);
+                    rest = stripped;
+                    continue;
+                }
+            }
+            out.push_str("&#");
+            rest = tail;
+        }
+        out.push_str(rest);
+        out
     }
 
     /// Extract ticker symbols from text using simple heuristics

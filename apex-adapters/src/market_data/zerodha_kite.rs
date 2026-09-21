@@ -178,6 +178,8 @@ impl MarketDataPort for ZerodhaKiteAdapter {
                                 last: quote.last,
                                 volume: quote.volume,
                                 source: "zerodha_kite".to_string(),
+                                open: Some(quote.open),
+                                change_pct: Some(quote.change_pct),
                             };
 
                             if tx.send(tick).await.is_err() {

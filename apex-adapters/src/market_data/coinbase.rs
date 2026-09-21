@@ -76,6 +76,8 @@ impl CoinbaseAdapter {
             last: msg.price,
             volume: (msg.size * 1e8) as u64, // Convert to base units
             source: "coinbase".into(),
+            open: None,
+            change_pct: None,
         })
     }
 

@@ -161,6 +161,11 @@ mod tests {
             last: 150.02,
             volume: 100,
             source: "test".into(),
+
+            open: None,
+
+            change_pct: None,
+
         };
 
         let count = bus.publish(
@@ -212,6 +217,11 @@ mod tests {
             last: 150.02,
             volume: 100,
             source: "test".into(),
+
+            open: None,
+
+            change_pct: None,
+
         };
 
         bus.publish(Topic::Tick("AAPL".into()), BusMessage::TickData(tick));

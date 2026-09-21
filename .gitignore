@@ -21,3 +21,5 @@ apex-ui/test-results/
 tsconfig.tsbuildinfo
 logs/
 models/
+strategies/
+notebooks/

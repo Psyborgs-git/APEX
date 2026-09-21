@@ -164,6 +164,8 @@ impl MarketDataPort for AngelOneMarketDataAdapter {
                                 last: quote.last,
                                 volume: quote.volume,
                                 source: "angel_one".to_string(),
+                                open: Some(quote.open),
+                                change_pct: Some(quote.change_pct),
                             };
 
                             if tx.send(tick).await.is_err() {

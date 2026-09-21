@@ -49,7 +49,7 @@ export const CopilotPanel: React.FC = () => {
         {
           id: nextId.current++,
           role: 'assistant',
-          content: err instanceof Error ? err.message : 'Copilot request failed',
+          content: typeof err === 'string' ? err : err instanceof Error ? err.message : 'Copilot request failed',
           error: true,
         },
       ]);

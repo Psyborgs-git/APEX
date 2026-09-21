@@ -1,0 +1,73 @@
+# APEX Terminal — Live Audit Report
+
+Date: 2025-09-21 (session audit)
+App: `apex-tauri` (debug build, `cargo run --bin apex-tauri`) — WebKitGTK window on `:0`, Vite dev server at `http://localhost:3000`. Backend had `OPEN_ROUTER` set. Working tree contained the session's edits (`withGlobalTauri`, CSP fix, new tabs incl. MARKET, CommandBar).
+Window geometry during audit: 1600×1127 (maximized, below the intended ~1920 design width).
+
+Method: live UI-driven testing via screenshot/mouse/keyboard on the real Tauri window, plus targeted code reading to root-cause failures. Screen recording of the session captured with pass/fail annotations.
+
+---
+
+## Verified working
+
+| Area | Result | Evidence |
+|---|---|---|
+| Real market data (withGlobalTauri fix) | Live Yahoo quotes flow — RELIANCE.NS ₹1,247.40, TCS ₹2,128.70, AAPL $336.13 etc. — not the old mock 150.20 | watchlist + chart header |
+| Tab sweep | All 13 center tabs render without crashing: Chart, Market, Blotter, Book, News, Scanner, Graph, Strategy IDE, ML Workbench, Stored Data, Notebook, Copilot, Health | |
+| News | Real headlines from CoinDesk / MarketWatch Top Stories / CNBC Markets populate and keep growing (75→77 items during session) | News tab |
+| CommandBar | Space opens palette; `:NEWS` + Enter switches to News tab with "Switched to NEWS" toast | screenshot `ss_669563b3.png` |
+| Copilot | **Real OpenRouter reply**: asked "what do you see in my positions?" → "No open positions currently. Session P&L: 0.00" with model badge shown — honest, context-aware, not mock | `ss_8670e843.png` |
+| Market tab (new) | Renders: index cards (S&P/NASDAQ/DOW/NIFTY/BTC/ETH/GOLD/WTI/EUR-USD/USD-INR) show `--` empty state, Watchlist Breadth 0/0/7, Latest Headlines populated | `ss_cc5b386a.png` |
+| Health tab | Adapter rows render: yahoo **healthy**, robinhood healthy, paper healthy; **binance unhealthy** (HTTP 451), **coinbase degraded** (WS reset without close), **polymarket unhealthy** (404). Uptime ~1h58m, Subscriptions 7 | `ss_92a7403a.png` |
+| Strategy IDE / ML Workbench / Stored Data / Notebook | All render. Stored Data shows honest empty state "No stored OHLCV rows returned for the current query" (consistent with empty `ohlcv` table) | `ss_32192f2b.png`, `ss_7eafdb7c.png`, `ss_ad016181.png`, `ss_3482dd1a.png` |
+| Scanner | Scan ran and returned rows; row click jumps to chart (verified earlier in session) | |
+| Book (equity) | Synthetic book path renders for equities | verified earlier in session |
+
+---
+
+## Defects found
+
+### CRITICAL — Graph "Compute from watchlist" kills the whole webview
+Clicking **Compute from watchlist** on the Graph tab turns the **entire window black** — sidebar, tabs, statusbar, everything. `WebKitWebProcess` stays alive but pegged at ~66% CPU; window must be **reloaded** (right-click → Reload) to recover.
+**Reproduced 2/2 times** (once on fresh state, once after reload). Likely a frontend renderer hang — e.g. a layout/render loop that never settles on empty/NaN correlation data (sqlite `ohlcv` is empty so correlations have no data). Backend `apex-tauri` process stayed alive.
+Impact: user-facing crash-level failure reachable from one click.
+
+### CRITICAL — Paper orders never fill (order pipeline dead)
+Placing a MARKET BUY returns **"No quote available for symbol"**. Root cause (code): `PaperTradingAdapter::update_quote` is never called in the production wiring, so the paper adapter has no quote to fill against. Consequences: Orders table stays empty, Positions stays "0 open", Session P&L permanently 0.00, Blotter empty. The entire paper-trading loop is dead despite a healthy `paper` adapter.
+(Verified earlier in session; still reproducible.)
+
+### HIGH — Chart tab shows no candles
+Chart area renders black with only the TradingView watermark — no historical candles. Two compounding causes (code-verified): `Workspace.tsx` passes no `ohlcvData` to the chart component, and sqlite `ohlcv` table is empty (0 rows) — `get_historical_data` is never called, so there is no history source at all. Only 1s live ticks would draw, and even those don't visibly render.
+
+### HIGH — Creating an alert fails: "Unable to save alert"
+Alerts panel "+" → fill AAPL / Price Above / 1 → Save → red **"Unable to save alert"** shown in the rules area; rule list stays "No active alerts" (nothing persisted). The submit path runs and the `add_alert` invoke rejects. The actual error reason is **swallowed** — UI only shows a generic string, so the real failure (likely a Tauri arg-name mismatch `rule_json` vs expected `ruleJson`, or `AlertRule` deserialization of `{"PriceAbove":{"symbol","threshold"}}`) can't be seen in-app.
+Compounding layout bug: the Alerts panel is `h-40` (160px) fixed-height; the create form (~170px+) overflows so the **Save button renders below the panel's bottom edge** — only a ~10px sliver is clickable and it sits flush against the statusbar.
+
+### HIGH — Crypto order book broken (BTCUSDT)
+BTCUSDT book errors instead of showing live depth: Binance returns **HTTP 451 (geo-restricted)** — confirmed by the Health tab adapter row — and the synthetic fallback also fails because there is no Yahoo quote for the symbol. No graceful "feed unavailable" empty state; the panel just errors.
+
+### MEDIUM — Watchlist CHG% stuck at +0.00% for every symbol
+Aggregator hardcodes `change_pct: 0.0`. Cascades into the new Market tab: **Top Gainers** shows "No advancing symbols", **Top Losers** empty, **Watchlist Breadth** permanently "0 advancing / 0 declining / 7 flat" — those widgets can never show real breadth.
+
+### MEDIUM — News headlines leak raw HTML entities
+Headlines render `&#x2018;` `&#x2019;` `&apos;` etc. literally (e.g. "&#x2018;&#x2019;m burned out&#x2019;", "bitcoin &apos;crypto winter&apos;"). RSS titles need entity-decoding before display.
+
+### MEDIUM — Keyboard: Space hijacks focused buttons
+`CommandBar.tsx` opens the palette on Space whenever the focused element isn't an input/textarea — **buttons aren't excluded**. So Space on a focused button opens the CommandBar instead of activating the button. (Observed while working around the clipped alert Save button.)
+
+### LOW / notes
+- **Health tab "Memory: 0 MB"** — memory metric reads 0 (probably not wired).
+- Right-column Alerts panel is cramped into `h-40` at this window height; create form doesn't fit (see alert defect).
+- WebKit devtools unusable in this environment: Inspect Element spawns a hidden `WebKitWebProcess` window that reloads the page and swallows clicks — console-error capture not possible; only visible symptoms reported.
+- Binance 451 / Coinbase WS reset / Polymarket 404 are environmental (geo-blocked host) — but the app surfaces raw errors with no degradation path (e.g. crypto book has no fallback).
+- Alerts are in-memory only (`AlertEngine.rules: RwLock<Vec>`), not persisted — restart loses them; also `evaluate_quote` fires on every matching tick with no dedup/cooldown, so a hit alert would spam `alert-fired` each tick (unverified at runtime because creation fails).
+
+---
+
+## Coverage / not fully tested
+- **ORDER command via CommandBar** — blocked by the paper-quote defect (#2).
+- **Alert firing path** (`alert-fired` banner in News) — blocked by alert-creation failure (#4).
+- Order Entry fill → Blotter/Positions round trip — blocked by #2.
+- Notebook cell **Run**, Strategy **Run/Backtest**, ML **Train Model**, Load Stored Data fetch — UI renders, execution paths not exercised.
+- Book tab live crypto depth — blocked by geo-block (no Binance access from this host).
+- Console error capture — WebKit inspector unusable (above).

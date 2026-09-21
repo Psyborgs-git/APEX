@@ -185,7 +185,16 @@ export const CommandBar: React.FC<CommandBarProps> = ({ onSelectSymbol, onSwitch
   }, [input, executeCommand]);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (e.key === ' ' && !isActive && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) {
+    const el = e.target as HTMLElement | null;
+    const tag = el?.tagName;
+    const isEditable =
+      el instanceof HTMLInputElement ||
+      el instanceof HTMLTextAreaElement ||
+      tag === 'BUTTON' ||
+      tag === 'SELECT' ||
+      tag === 'A' ||
+      el?.isContentEditable === true;
+    if (e.key === ' ' && !isActive && !isEditable) {
       e.preventDefault();
       setIsActive(true);
       setTimeout(() => inputRef.current?.focus(), 0);

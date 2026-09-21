@@ -310,7 +310,7 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
   if (cmd === 'get_positions') return [...mockPositions] as any;
   if (cmd === 'get_open_orders') return [...mockOrders] as any;
   if (cmd === 'get_account_balance') {
-    const brokerId = (args?.broker_id as string) || 'paper';
+    const brokerId = (args?.brokerId as string) || 'paper';
     const broker = mockBrokerConnections.find((connection) => connection.broker_id === brokerId);
 
     if (broker?.mode === 'live' && !broker.authenticated) {
@@ -482,7 +482,7 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
   }
   if (cmd === 'add_alert') {
     const id = args?.id as string;
-    const rule = args?.rule_json as string;
+    const rule = args?.ruleJson as string;
     mockAlertRules = [
       ...mockAlertRules.filter((existing) => existing.id !== id),
       { id, rule, enabled: true },
@@ -490,7 +490,7 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
     return undefined as any;
   }
   if (cmd === 'remove_alert') {
-    const ruleId = args?.rule_id as string;
+    const ruleId = args?.ruleId as string;
     const before = mockAlertRules.length;
     mockAlertRules = mockAlertRules.filter((rule) => rule.id !== ruleId);
     return (mockAlertRules.length < before) as any;
@@ -515,7 +515,7 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
     return { model_id: modelId, metrics: model.metrics, feature_names: model.feature_names, status: 'completed' } as any;
   }
   if (cmd === 'delete_ml_model') {
-    const id = args?.model_id as string;
+    const id = args?.modelId as string;
     mockModels = mockModels.filter(m => m.model_id !== id);
     return true as any;
   }
@@ -523,8 +523,8 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
     return [...mockBrokerConnections] as any;
   }
   if (cmd === 'set_broker_session') {
-    const brokerId = args?.broker_id as string;
-    const sessionToken = (args?.session_token as string | undefined)?.trim();
+    const brokerId = args?.brokerId as string;
+    const sessionToken = (args?.sessionToken as string | undefined)?.trim();
 
     if (!sessionToken) {
       throw new Error('Session token must not be empty');
@@ -553,7 +553,7 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
     return updated as any;
   }
   if (cmd === 'clear_broker_session') {
-    const brokerId = args?.broker_id as string;
+    const brokerId = args?.brokerId as string;
 
     let updated: BrokerConnectionDto | undefined;
     mockBrokerConnections = mockBrokerConnections.map((connection) => {
@@ -696,10 +696,10 @@ function buildMockGraph(): GraphDto {
 export async function getQuote(s: string): Promise<QuoteDto> { return invoke<QuoteDto>('get_quote', { symbol: s }); }
 export async function subscribeSymbols(s: string[]): Promise<void> { return invoke<void>('subscribe_symbols', { symbols: s }); }
 export async function placeOrder(r: NewOrderRequestDto): Promise<string> { return invoke<string>('place_order', { request: r }); }
-export async function cancelOrder(o: string, b: string): Promise<void> { return invoke<void>('cancel_order', { order_id: o, broker_id: b }); }
+export async function cancelOrder(o: string, b: string): Promise<void> { return invoke<void>('cancel_order', { orderId: o, brokerId: b }); }
 export async function getPositions(): Promise<PositionDto[]> { return invoke<PositionDto[]>('get_positions'); }
 export async function getOpenOrders(): Promise<OrderDto[]> { return invoke<OrderDto[]>('get_open_orders'); }
-export async function getAccountBalance(brokerId: string): Promise<AccountBalanceDto> { return invoke<AccountBalanceDto>('get_account_balance', { broker_id: brokerId }); }
+export async function getAccountBalance(brokerId: string): Promise<AccountBalanceDto> { return invoke<AccountBalanceDto>('get_account_balance', { brokerId }); }
 export async function getRiskStatus(): Promise<RiskStatusDto> { return invoke<RiskStatusDto>('get_risk_status'); }
 export async function resetHalt(): Promise<void> { return invoke<void>('reset_halt'); }
 export async function getHistoricalData(symbol: string, timeframe?: string, limit?: number): Promise<OHLCVDto[]> {
@@ -726,21 +726,21 @@ export async function listStrategyFiles(): Promise<StrategyFileDto[]> { return i
 export async function createStrategyFile(path: string, content?: string): Promise<StrategyFileDto> { return invoke<StrategyFileDto>('create_strategy_file', { path, content }); }
 export async function saveStrategyFile(path: string, content: string): Promise<StrategyFileDto> { return invoke<StrategyFileDto>('save_strategy_file', { path, content }); }
 export async function deleteStrategyFile(path: string): Promise<boolean> { return invoke<boolean>('delete_strategy_file', { path }); }
-export async function runStrategyFile(path: string, params?: Record<string, unknown>): Promise<StrategyExecutionResultDto> { return invoke<StrategyExecutionResultDto>('run_strategy_file', { path, params_json: JSON.stringify(params ?? {}) }); }
+export async function runStrategyFile(path: string, params?: Record<string, unknown>): Promise<StrategyExecutionResultDto> { return invoke<StrategyExecutionResultDto>('run_strategy_file', { path, paramsJson: JSON.stringify(params ?? {}) }); }
 export async function runStrategyBacktest(request: StrategyBacktestRequestDto): Promise<StrategyBacktestResultDto> { return invoke<StrategyBacktestResultDto>('run_strategy_backtest', { request }); }
-export async function addAlert(i: string, r: string): Promise<void> { return invoke<void>('add_alert', { id: i, rule_json: r }); }
-export async function removeAlert(r: string): Promise<boolean> { return invoke<boolean>('remove_alert', { rule_id: r }); }
+export async function addAlert(i: string, r: string): Promise<void> { return invoke<void>('add_alert', { id: i, ruleJson: r }); }
+export async function removeAlert(r: string): Promise<boolean> { return invoke<boolean>('remove_alert', { ruleId: r }); }
 export async function getAlertRules(): Promise<AlertRuleDto[]> { return invoke<AlertRuleDto[]>('get_alert_rules'); }
 
 // ML Workbench
 export async function listMLModels(): Promise<MLModelDto[]> { return invoke<MLModelDto[]>('list_ml_models'); }
 export async function trainMLModel(r: MLTrainingRequestDto): Promise<MLTrainingResultDto> { return invoke<MLTrainingResultDto>('train_ml_model', { request: r }); }
-export async function deleteMLModel(id: string): Promise<boolean> { return invoke<boolean>('delete_ml_model', { model_id: id }); }
+export async function deleteMLModel(id: string): Promise<boolean> { return invoke<boolean>('delete_ml_model', { modelId: id }); }
 
 // Broker connectivity
 export async function listBrokerConnections(): Promise<BrokerConnectionDto[]> { return invoke<BrokerConnectionDto[]>('list_broker_connections'); }
-export async function setBrokerSession(brokerId: string, sessionToken: string): Promise<BrokerConnectionDto> { return invoke<BrokerConnectionDto>('set_broker_session', { broker_id: brokerId, session_token: sessionToken }); }
-export async function clearBrokerSession(brokerId: string): Promise<BrokerConnectionDto> { return invoke<BrokerConnectionDto>('clear_broker_session', { broker_id: brokerId }); }
+export async function setBrokerSession(brokerId: string, sessionToken: string): Promise<BrokerConnectionDto> { return invoke<BrokerConnectionDto>('set_broker_session', { brokerId, sessionToken }); }
+export async function clearBrokerSession(brokerId: string): Promise<BrokerConnectionDto> { return invoke<BrokerConnectionDto>('clear_broker_session', { brokerId }); }
 
 // Health Monitor
 export async function getSystemHealth(): Promise<SystemHealthDto> { return invoke<SystemHealthDto>('get_system_health'); }
@@ -767,7 +767,7 @@ export async function getOrderBook(symbol: string): Promise<OrderBookDto> {
 // Relationship graph
 export async function getGraph(): Promise<GraphDto> { return invoke<GraphDto>('get_graph'); }
 export async function computeCorrelations(symbols: string[], windowDays?: number): Promise<GraphDto> {
-  return invoke<GraphDto>('compute_correlations', { symbols, window_days: windowDays });
+  return invoke<GraphDto>('compute_correlations', { symbols, windowDays });
 }
 
 // Market scanner

@@ -15,6 +15,7 @@ import { GraphPanel } from '../graph/GraphPanel';
 import { ScannerPanel } from '../scanner/ScannerPanel';
 import { CopilotPanel } from '../copilot/CopilotPanel';
 import { MarketOverview } from '../market/MarketOverview';
+import { ErrorBoundary } from '../common/ErrorBoundary';
 import { addAlert, clearBrokerSession, getAlertRules, getAppSettings, listBrokerConnections, removeAlert, saveAppSettings, setBrokerSession, subscribeSymbols } from '../../lib/tauri';
 import type { AlertRuleDto, AppSettingsDto, AppSettingsUpdateDto, BrokerConnectionDto } from '../../lib/types';
 import { useMarketStore } from '../../stores/marketStore';
@@ -836,6 +837,7 @@ export const Workspace: React.FC = () => {
             ))}
           </div>
 
+          <ErrorBoundary key={centerTab} label={CENTER_TABS.find((t) => t.id === centerTab)?.label ?? 'Panel'}>
           {centerTab === 'chart' ? (
             <>
               <div className="flex-1 bg-surface-1 rounded-lg border border-[var(--border-color)] overflow-hidden">
@@ -894,6 +896,7 @@ export const Workspace: React.FC = () => {
               <HealthMonitor />
             </div>
           )}
+          </ErrorBoundary>
         </div>
 
         {/* Right: Positions & Alerts */}
@@ -901,7 +904,7 @@ export const Workspace: React.FC = () => {
           <div className="flex-1 bg-surface-1 rounded-lg overflow-hidden border border-[var(--border-color)]">
             <PositionsPanel />
           </div>
-          <div className="h-40 bg-surface-1 rounded-lg border border-[var(--border-color)] p-3">
+          <div className="h-52 bg-surface-1 rounded-lg border border-[var(--border-color)] p-3 overflow-y-auto">
             <AlertConsole />
           </div>
         </div>
@@ -948,7 +951,11 @@ const AlertConsole: React.FC = () => {
         await refreshRules();
         setError(null);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Unable to save alert');
+        setError(
+          err instanceof Error ? err.message
+          : typeof err === 'string' ? err
+          : 'Unable to save alert',
+        );
         return;
       }
 

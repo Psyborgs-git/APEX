@@ -109,6 +109,20 @@ impl SqliteStorage {
             );
             ",
         )?;
+
+        // Bars are keyed by (symbol, time); drop historical duplicates before
+        // adding the unique index, then upsert on write.
+        conn.execute(
+            "DELETE FROM ohlcv WHERE rowid NOT IN (
+                 SELECT MIN(rowid) FROM ohlcv GROUP BY symbol, time
+             )",
+            [],
+        )?;
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_ohlcv_symbol_time_unique
+             ON ohlcv(symbol, time)",
+            [],
+        )?;
         Ok(())
     }
 }
@@ -144,7 +158,7 @@ impl StoragePort for SqliteStorage {
         let tx = conn.unchecked_transaction()?;
         {
             let mut stmt = tx.prepare_cached(
-                "INSERT INTO ohlcv (time, symbol, open, high, low, close, volume)
+                "INSERT OR REPLACE INTO ohlcv (time, symbol, open, high, low, close, volume)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             )?;
             for bar in bars {
@@ -166,10 +180,14 @@ impl StoragePort for SqliteStorage {
     async fn query_ohlcv(&self, params_q: OHLCVQuery) -> Result<Vec<OHLCV>> {
         let conn = self.conn.lock().await;
         let mut stmt = conn.prepare(
-            "SELECT time, symbol, open, high, low, close, volume FROM ohlcv
-             WHERE symbol = ?1 AND time >= ?2 AND time <= ?3
-             ORDER BY time ASC
-             LIMIT ?4",
+            "SELECT time, symbol, open, high, low, close, volume FROM (
+                 SELECT time, symbol, open, high, low, close, volume FROM ohlcv
+                 WHERE symbol = ?1 AND time >= ?2 AND time <= ?3
+                 GROUP BY symbol, time
+                 ORDER BY time DESC
+                 LIMIT ?4
+             )
+             ORDER BY time ASC",
         )?;
 
         let limit = params_q.limit.unwrap_or(10000) as i64;
@@ -424,6 +442,8 @@ mod tests {
                 last: 150.02,
                 volume: 100,
                 source: "test".into(),
+            open: None,
+            change_pct: None,
             },
             Tick {
                 time: Utc::now(),
@@ -433,6 +453,8 @@ mod tests {
                 last: 150.12,
                 volume: 200,
                 source: "test".into(),
+            open: None,
+            change_pct: None,
             },
         ];
         storage.write_ticks(&ticks).await.unwrap();

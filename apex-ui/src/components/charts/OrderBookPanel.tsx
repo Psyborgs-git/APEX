@@ -22,7 +22,7 @@ export const OrderBookPanel: React.FC<{ defaultSymbol?: string }> = ({ defaultSy
       setBook(await getOrderBook(symbol));
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'No order book available');
+      setError(typeof err === 'string' ? err : err instanceof Error ? err.message : 'No order book available');
       setBook(null);
     }
   }, [symbol]);

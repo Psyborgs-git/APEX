@@ -39,6 +39,10 @@ pub struct StoredAlert {
 pub struct AlertEngine {
     bus: Arc<MessageBus>,
     rules: Arc<tokio::sync::RwLock<Vec<StoredAlert>>>,
+    /// Per-rule "currently triggered" latch — an alert fires on the
+    /// false→true edge and re-arms once the condition clears, so a
+    /// sustained breach emits exactly one notification.
+    triggered: Arc<dashmap::DashMap<String, bool>>,
 }
 
 impl AlertEngine {
@@ -47,6 +51,7 @@ impl AlertEngine {
         Self {
             bus,
             rules: Arc::new(tokio::sync::RwLock::new(Vec::new())),
+            triggered: Arc::new(dashmap::DashMap::new()),
         }
     }
 
@@ -61,6 +66,7 @@ impl AlertEngine {
         let mut rules = self.rules.write().await;
         let len_before = rules.len();
         rules.retain(|r| r.id != rule_id);
+        self.triggered.remove(rule_id);
         rules.len() < len_before
     }
 
@@ -114,8 +120,12 @@ impl AlertEngine {
                 _ => false,
             };
 
-            if fired {
-                self.fire_alert(&stored_alert.id, &stored_alert.rule);
+            let was_triggered = self.triggered.get(&stored_alert.id).map(|v| *v).unwrap_or(false);
+            if fired != was_triggered {
+                self.triggered.insert(stored_alert.id.clone(), fired);
+                if fired {
+                    self.fire_alert(&stored_alert.id, &stored_alert.rule);
+                }
             }
         }
     }
@@ -129,8 +139,14 @@ impl AlertEngine {
             }
 
             if let AlertRule::DailyPnl { threshold } = &stored_alert.rule {
-                if pnl < *threshold {
-                    self.fire_alert(&stored_alert.id, &stored_alert.rule);
+                let fired = pnl < *threshold;
+                let was_triggered =
+                    self.triggered.get(&stored_alert.id).map(|v| *v).unwrap_or(false);
+                if fired != was_triggered {
+                    self.triggered.insert(stored_alert.id.clone(), fired);
+                    if fired {
+                        self.fire_alert(&stored_alert.id, &stored_alert.rule);
+                    }
                 }
             }
         }

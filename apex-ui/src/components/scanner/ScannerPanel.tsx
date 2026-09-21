@@ -79,7 +79,7 @@ export const ScannerPanel: React.FC = () => {
       );
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Scan failed');
+      setError(typeof err === 'string' ? err : err instanceof Error ? err.message : 'Scan failed');
     } finally {
       setBusy(false);
     }

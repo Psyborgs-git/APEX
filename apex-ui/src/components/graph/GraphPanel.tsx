@@ -21,11 +21,13 @@ function toViewModel(dto: GraphDto): { nodes: GraphNode[]; edges: GraphEdge[] } 
   const edges: GraphEdge[] = dto.edges.map((e) => {
     const et = e.data.edge_type as { CorrelatedWith?: { coefficient?: number; window?: string } } | null;
     const corr = et && typeof et === 'object' && 'CorrelatedWith' in et ? et.CorrelatedWith : undefined;
+    const w = Number.isFinite(e.data.weight) ? e.data.weight : 0.1;
+    const coeff = corr?.coefficient;
     return {
       source: e.source,
       target: e.target,
-      weight: Math.max(0.1, Math.min(1, e.data.weight)),
-      label: corr?.coefficient !== undefined ? `ρ ${corr.coefficient.toFixed(2)}` : undefined,
+      weight: Math.max(0.1, Math.min(1, w)),
+      label: coeff !== undefined && Number.isFinite(coeff) ? `ρ ${coeff.toFixed(2)}` : undefined,
     };
   });
   return { nodes, edges };
@@ -43,7 +45,7 @@ export const GraphPanel: React.FC = () => {
       setGraph(await getGraph());
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to load graph');
+      setError(typeof err === 'string' ? err : err instanceof Error ? err.message : 'Unable to load graph');
     }
   }, []);
 
@@ -53,7 +55,7 @@ export const GraphPanel: React.FC = () => {
       setGraph(await computeCorrelations(watchlist.slice(0, 40), windowDays));
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Correlation compute failed');
+      setError(typeof err === 'string' ? err : err instanceof Error ? err.message : 'Correlation compute failed');
     } finally {
       setBusy(false);
     }

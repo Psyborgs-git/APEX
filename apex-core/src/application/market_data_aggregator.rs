@@ -112,17 +112,32 @@ impl MarketDataAggregator {
                     }
 
                     let tick_clone = span.in_scope(|| {
-                        // Update quote cache
+                        // Update quote cache; accumulate day OHLC across ticks so
+                        // WS feeds that only report last-trades still show a real
+                        // open/high/low and the change % reported by poll adapters.
+                        let prev = quote_cache.get(&symbol_key).map(|q| q.clone());
                         let quote = Quote {
                             symbol: tick.symbol.clone(),
                             bid: tick.bid,
                             ask: tick.ask,
                             last: tick.last,
-                            open: tick.last,
-                            high: tick.last,
-                            low: tick.last,
+                            open: tick
+                                .open
+                                .or_else(|| prev.as_ref().map(|p| p.open))
+                                .unwrap_or(tick.last),
+                            high: prev
+                                .as_ref()
+                                .map(|p| p.high.max(tick.last))
+                                .unwrap_or(tick.last),
+                            low: prev
+                                .as_ref()
+                                .map(|p| p.low.min(tick.last))
+                                .unwrap_or(tick.last),
                             volume: tick.volume,
-                            change_pct: 0.0,
+                            change_pct: tick
+                                .change_pct
+                                .or_else(|| prev.as_ref().map(|p| p.change_pct))
+                                .unwrap_or(0.0),
                             vwap: tick.last,
                             updated_at: tick.time,
                         };

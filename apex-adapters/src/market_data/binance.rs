@@ -109,6 +109,8 @@ impl BinanceAdapter {
             last: msg.price,
             volume: msg.quantity as u64,
             source: "binance".into(),
+            open: None,
+            change_pct: None,
         })
     }
 

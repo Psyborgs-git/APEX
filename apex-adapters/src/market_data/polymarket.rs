@@ -155,6 +155,8 @@ impl PolymarketAdapter {
                         last: price,
                         volume: 0,
                         source: "polymarket".into(),
+                        open: None,
+                        change_pct: None,
                     }));
                 }
             }

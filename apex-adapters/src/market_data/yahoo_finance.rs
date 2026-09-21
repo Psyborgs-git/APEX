@@ -46,6 +46,16 @@ impl YahooFinanceAdapter {
     /// Symbols with a suffix (`.NS`, `.BO`, `/`) are passed through as-is.
     /// Plain symbols (e.g. "AAPL") are assumed to be US stocks and need no suffix.
     fn format_symbol(symbol: &Symbol) -> String {
+        let s = symbol.0.to_uppercase();
+        // Normalise exchange-style crypto pairs (BTCUSDT, ETHUSDC) to Yahoo's
+        // dash convention (BTC-USD, ETH-USD).
+        for quote_ccy in ["USDT", "USDC"] {
+            if let Some(base) = s.strip_suffix(quote_ccy) {
+                if base.len() >= 2 && base.chars().all(|c| c.is_ascii_alphabetic()) {
+                    return format!("{}-USD", base);
+                }
+            }
+        }
         symbol.0.clone()
     }
 
@@ -282,6 +292,8 @@ impl MarketDataPort for YahooFinanceAdapter {
                                         last: quote.last,
                                         volume: quote.volume,
                                         source: "yahoo".into(),
+                                        open: Some(quote.open),
+                                        change_pct: Some(quote.change_pct),
                                     };
 
                                     if tx.send(tick).await.is_err() {

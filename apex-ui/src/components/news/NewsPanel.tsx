@@ -38,7 +38,7 @@ export const NewsPanel: React.FC = () => {
       setItems(next);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to load news');
+      setError(typeof err === 'string' ? err : err instanceof Error ? err.message : 'Unable to load news');
     } finally {
       setIsLoading(false);
     }

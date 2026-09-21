@@ -26,7 +26,7 @@ export const OrderBlotter: React.FC = () => {
       setOrders(await getOrders(undefined, 200));
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to load orders');
+      setError(typeof err === 'string' ? err : err instanceof Error ? err.message : 'Unable to load orders');
     }
   }, []);
 
@@ -42,7 +42,7 @@ export const OrderBlotter: React.FC = () => {
       await cancelOrder(order.id, order.broker_id || activeBrokerId);
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Cancel failed');
+      setError(typeof err === 'string' ? err : err instanceof Error ? err.message : 'Cancel failed');
     } finally {
       setBusyId(null);
     }

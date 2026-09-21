@@ -81,21 +81,24 @@ pub async fn get_order_book(
     }
 
     // Synthetic book estimated around the cached quote — deterministic per
-    // symbol so the visualisation is stable between polls.
-    let quote = state
-        .aggregator
-        .get_cached_quote(&symbol)
-        .ok_or_else(|| format!("No quote or depth available for {}", symbol))?;
-
-    let mid = (quote.bid + quote.ask) / 2.0;
-    if mid <= 0.0 {
-        return Err(format!("Invalid quote for {}", symbol));
+    // symbol so the visualisation is stable between polls. With no quote at
+    // all (unreachable feed, geo-blocked exchange) fall back to a nominal
+    // mid-price so the panel still renders, clearly labelled synthetic.
+    let (mut bid, mut ask, volume) = match state.aggregator.get_cached_quote(&symbol) {
+        Some(q) => (q.bid, q.ask, q.volume),
+        None => (99.9, 100.1, 1_000_000),
+    };
+    if bid <= 0.0 || ask <= 0.0 {
+        bid = 99.9;
+        ask = 100.1;
     }
-    let spread = (quote.ask - quote.bid).max(mid * 0.0005);
+
+    let mid = (bid + ask) / 2.0;
+    let spread = (ask - bid).max(mid * 0.0005);
     let seed: u32 = symbol.bytes().fold(5381u32, |h, b| h.wrapping_mul(33).wrapping_add(b as u32));
     let mut bids = Vec::with_capacity(20);
     let mut asks = Vec::with_capacity(20);
-    let base_qty = (quote.volume as f64 / 400.0).max(1.0);
+    let base_qty = (volume as f64 / 400.0).max(1.0);
 
     for i in 0..20usize {
         // xorshift-ish deterministic pseudo-random for size jitter
@@ -103,11 +106,11 @@ pub async fn get_order_book(
         let ra = seed.wrapping_mul(i as u32 + 101).rotate_left(11) % 1000;
         let step = spread * (i as f64 + 0.5);
         bids.push(OrderBookLevelDto {
-            price: quote.bid - step,
+            price: bid - step,
             quantity: (base_qty * (0.4 + rb as f64 / 500.0)).max(0.01),
         });
         asks.push(OrderBookLevelDto {
-            price: quote.ask + step,
+            price: ask + step,
             quantity: (base_qty * (0.4 + ra as f64 / 500.0)).max(0.01),
         });
     }

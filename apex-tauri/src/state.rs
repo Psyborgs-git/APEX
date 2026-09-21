@@ -319,6 +319,7 @@ pub struct AppState {
     pub history_source: Arc<dyn MarketDataPort>,
     pub copilot: CopilotConfig,
     pub http: reqwest::Client,
+    pub paper: Arc<PaperTradingAdapter>,
     brokers: HashMap<String, BrokerRuntimeEntry>,
     pub started_at: Instant,
 }
@@ -364,7 +365,7 @@ impl AppState {
 
         // Register paper trading adapter — always available as default execution.
         let paper = Arc::new(PaperTradingAdapter::new());
-        otm_inner.register_execution("paper".to_string(), paper);
+        otm_inner.register_execution("paper".to_string(), paper.clone());
         brokers.insert(
             "paper".to_string(),
             BrokerRuntimeEntry {
@@ -766,6 +767,7 @@ impl AppState {
                 .timeout(std::time::Duration::from_secs(30))
                 .build()
                 .unwrap_or_default(),
+            paper,
             brokers,
             started_at: Instant::now(),
         })
@@ -818,10 +820,14 @@ impl AppState {
         // Forward quote updates
         let bus = self.bus.clone();
         let handle = app_handle.clone();
+        let paper = self.paper.clone();
         tokio::spawn(async move {
             let mut rx = bus.subscribe(Topic::Quote("*".into()));
             while let Ok(msg) = rx.recv().await {
                 if let BusMessage::QuoteData(quote) = msg {
+                    // Feed every streamed quote to the paper adapter so market
+                    // orders can fill; emit to the UI at the same time.
+                    paper.update_quote(&quote);
                     let dto = crate::dto::QuoteDto::from(&quote);
                     let _ = handle.emit("quote-update", &dto);
                 }
