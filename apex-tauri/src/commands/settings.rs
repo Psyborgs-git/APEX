@@ -7,9 +7,9 @@ use toml_edit::{value, DocumentMut, Item, Table};
 use crate::commands::python_runtime::RuntimePaths;
 use crate::config::{AppConfig, StorageConfig};
 use crate::dto::{
-    AdapterPreferenceDto, AcpSettingsDto, AppearanceSettingsDto, AppSettingsDto,
-    AppSettingsUpdateDto, GeneralSettingsDto, LlmProviderDto, LlmSettingsDto,
-    RiskSettingsDto, StorageSettingsDto,
+    AcpSettingsDto, AdapterPreferenceDto, AppSettingsDto, AppSettingsUpdateDto,
+    AppearanceSettingsDto, GeneralSettingsDto, LlmProviderDto, LlmSettingsDto, RiskSettingsDto,
+    StorageSettingsDto,
 };
 use crate::state::AppState;
 
@@ -31,7 +31,9 @@ fn env_key_present(name: &str) -> bool {
     if name.trim().is_empty() {
         return false;
     }
-    std::env::var(name).map(|v| !v.trim().is_empty()).unwrap_or(false)
+    std::env::var(name)
+        .map(|v| !v.trim().is_empty())
+        .unwrap_or(false)
 }
 
 #[tauri::command]
@@ -50,7 +52,8 @@ pub async fn save_app_settings(
     state: State<'_, AppState>,
 ) -> Result<AppSettingsDto, String> {
     validate_settings_request(&request).map_err(|error| error.to_string())?;
-    write_settings_to_file(runtime_paths.config_file(), &request).map_err(|error| error.to_string())?;
+    write_settings_to_file(runtime_paths.config_file(), &request)
+        .map_err(|error| error.to_string())?;
     let config = AppConfig::load(&runtime_paths).map_err(|error| error.to_string())?;
     Ok(build_settings_dto(&config, &runtime_paths, &state))
 }
@@ -69,11 +72,17 @@ fn build_settings_dto(
         },
         market_data: AdapterPreferenceDto {
             adapter: config.market_data.adapter.clone(),
-            available_adapters: MARKET_DATA_ADAPTERS.iter().map(|adapter| (*adapter).to_string()).collect(),
+            available_adapters: MARKET_DATA_ADAPTERS
+                .iter()
+                .map(|adapter| (*adapter).to_string())
+                .collect(),
         },
         execution: AdapterPreferenceDto {
             adapter: config.execution.adapter.clone(),
-            available_adapters: EXECUTION_ADAPTERS.iter().map(|adapter| (*adapter).to_string()).collect(),
+            available_adapters: EXECUTION_ADAPTERS
+                .iter()
+                .map(|adapter| (*adapter).to_string())
+                .collect(),
         },
         risk: RiskSettingsDto {
             max_daily_loss: config.risk.max_daily_loss,
@@ -85,7 +94,10 @@ fn build_settings_dto(
             postgres_url: config.storage.postgres_url.clone().unwrap_or_default(),
             wal_mode: config.storage.wal_mode,
             pool_size: config.storage.pool_size,
-            available_backends: STORAGE_BACKENDS.iter().map(|backend| (*backend).to_string()).collect(),
+            available_backends: STORAGE_BACKENDS
+                .iter()
+                .map(|backend| (*backend).to_string())
+                .collect(),
         },
         appearance: AppearanceSettingsDto {
             theme: config.appearance.theme.clone(),
@@ -99,7 +111,11 @@ fn build_settings_dto(
                 .iter()
                 .map(|p| LlmProviderDto {
                     id: p.id.clone(),
-                    name: if p.name.is_empty() { p.id.clone() } else { p.name.clone() },
+                    name: if p.name.is_empty() {
+                        p.id.clone()
+                    } else {
+                        p.name.clone()
+                    },
                     base_url: p.base_url.clone(),
                     model: p.model.clone(),
                     api_kind: p.api_kind.clone(),
@@ -229,7 +245,10 @@ fn write_settings_to_file(
     doc["risk"]["max_daily_loss"] = value(request.risk.max_daily_loss);
     doc["risk"]["max_order_value"] = value(request.risk.max_order_value);
     doc["storage"]["backend"] = value(request.storage.backend.trim());
-    doc["storage"]["sqlite_path"] = value(non_empty_or_default(&request.storage.sqlite_path, "apex.db"));
+    doc["storage"]["sqlite_path"] = value(non_empty_or_default(
+        &request.storage.sqlite_path,
+        "apex.db",
+    ));
     doc["storage"]["postgres_url"] = value(request.storage.postgres_url.trim());
     doc["storage"]["wal_mode"] = value(request.storage.wal_mode);
     doc["storage"]["pool_size"] = value(request.storage.pool_size as i64);

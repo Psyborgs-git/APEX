@@ -352,7 +352,8 @@ impl MarketDataPort for BinanceAdapter {
                 }
                 Err(e) => {
                     error!("Failed to connect to Binance WebSocket: {}", e);
-                    *status.write().await = AdapterHealth::Unhealthy(format!("Connection failed: {}", e));
+                    *status.write().await =
+                        AdapterHealth::Unhealthy(format!("Connection failed: {}", e));
                 }
             }
         });
@@ -381,12 +382,16 @@ impl MarketDataPort for BinanceAdapter {
         // For production, need to implement proper date range fetching
         let interval = Self::timeframe_to_interval(&timeframe);
         let mut all_bars = Vec::new();
-        let current_bars = self.fetch_klines(symbol, interval, timeframe.clone(), 1000).await?;
+        let current_bars = self
+            .fetch_klines(symbol, interval, timeframe.clone(), 1000)
+            .await?;
 
         // Filter by date range
-        all_bars.extend(current_bars.into_iter().filter(|bar| {
-            bar.time >= from && bar.time <= to
-        }));
+        all_bars.extend(
+            current_bars
+                .into_iter()
+                .filter(|bar| bar.time >= from && bar.time <= to),
+        );
 
         Ok(all_bars)
     }
@@ -489,14 +494,26 @@ mod tests {
 
     #[test]
     fn test_format_symbol() {
-        assert_eq!(BinanceAdapter::format_symbol(&Symbol("BTC/USDT".into())), "btcusdt");
-        assert_eq!(BinanceAdapter::format_symbol(&Symbol("ETH/BTC".into())), "ethbtc");
+        assert_eq!(
+            BinanceAdapter::format_symbol(&Symbol("BTC/USDT".into())),
+            "btcusdt"
+        );
+        assert_eq!(
+            BinanceAdapter::format_symbol(&Symbol("ETH/BTC".into())),
+            "ethbtc"
+        );
     }
 
     #[test]
     fn test_parse_symbol() {
-        assert_eq!(BinanceAdapter::parse_symbol("btcusdt"), Symbol("BTC/USDT".into()));
-        assert_eq!(BinanceAdapter::parse_symbol("ethbtc"), Symbol("ETH/BTC".into()));
+        assert_eq!(
+            BinanceAdapter::parse_symbol("btcusdt"),
+            Symbol("BTC/USDT".into())
+        );
+        assert_eq!(
+            BinanceAdapter::parse_symbol("ethbtc"),
+            Symbol("ETH/BTC".into())
+        );
     }
 
     #[test]

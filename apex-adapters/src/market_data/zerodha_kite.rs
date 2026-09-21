@@ -1,8 +1,8 @@
+use anyhow::{Context, Result};
 use apex_core::{
     domain::models::*,
     ports::market_data::{AdapterHealth, MarketDataPort, TickStream},
 };
-use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use reqwest::Client;
@@ -215,14 +215,12 @@ impl MarketDataPort for ZerodhaKiteAdapter {
         }
 
         let instrument = self.symbol_to_instrument_token(symbol);
-        let url = format!(
-            "https://api.kite.trade/quote/ohlc?i={}",
-            instrument
-        );
+        let url = format!("https://api.kite.trade/quote/ohlc?i={}", instrument);
 
         let auth_header = self.get_auth_header()?;
 
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .header("Authorization", auth_header)
             .header("X-Kite-Version", "3")
@@ -234,10 +232,16 @@ impl MarketDataPort for ZerodhaKiteAdapter {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
             self.set_health(AdapterHealth::Degraded(format!("HTTP {}", status)));
-            return Err(anyhow::anyhow!("Zerodha API error {}: {}", status, error_text));
+            return Err(anyhow::anyhow!(
+                "Zerodha API error {}: {}",
+                status,
+                error_text
+            ));
         }
 
-        let data: serde_json::Value = response.json().await
+        let data: serde_json::Value = response
+            .json()
+            .await
             .context("Failed to parse Zerodha response")?;
 
         // Extract quote data from nested response
@@ -246,23 +250,24 @@ impl MarketDataPort for ZerodhaKiteAdapter {
             .and_then(|d| d.get(&instrument))
             .ok_or_else(|| anyhow::anyhow!("Quote data not found in response"))?;
 
-        let zerodha_quote: ZerodhaQuote = serde_json::from_value(quote_data.clone())
-            .context("Failed to deserialize quote")?;
+        let zerodha_quote: ZerodhaQuote =
+            serde_json::from_value(quote_data.clone()).context("Failed to deserialize quote")?;
 
         // Calculate bid/ask from depth or use last_price
-        let (bid, ask) = if !zerodha_quote.depth.buy.is_empty() && !zerodha_quote.depth.sell.is_empty() {
-            (
-                zerodha_quote.depth.buy[0].price,
-                zerodha_quote.depth.sell[0].price,
-            )
-        } else {
-            // Approximate bid/ask if depth not available
-            let spread = zerodha_quote.last_price * 0.0005; // 0.05% spread
-            (
-                zerodha_quote.last_price - spread,
-                zerodha_quote.last_price + spread,
-            )
-        };
+        let (bid, ask) =
+            if !zerodha_quote.depth.buy.is_empty() && !zerodha_quote.depth.sell.is_empty() {
+                (
+                    zerodha_quote.depth.buy[0].price,
+                    zerodha_quote.depth.sell[0].price,
+                )
+            } else {
+                // Approximate bid/ask if depth not available
+                let spread = zerodha_quote.last_price * 0.0005; // 0.05% spread
+                (
+                    zerodha_quote.last_price - spread,
+                    zerodha_quote.last_price + spread,
+                )
+            };
 
         self.set_health(AdapterHealth::Healthy);
 
@@ -305,7 +310,8 @@ impl MarketDataPort for ZerodhaKiteAdapter {
 
         let auth_header = self.get_auth_header()?;
 
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .header("Authorization", auth_header)
             .header("X-Kite-Version", "3")
@@ -317,7 +323,9 @@ impl MarketDataPort for ZerodhaKiteAdapter {
             return Err(anyhow::anyhow!("Zerodha API error: {}", response.status()));
         }
 
-        let hist_data: ZerodhaHistoricalData = response.json().await
+        let hist_data: ZerodhaHistoricalData = response
+            .json()
+            .await
             .context("Failed to parse historical data")?;
 
         let mut bars = Vec::new();
@@ -348,7 +356,11 @@ impl MarketDataPort for ZerodhaKiteAdapter {
             bars.push(bar);
         }
 
-        debug!("Fetched {} historical bars for {} from Zerodha", bars.len(), symbol.0);
+        debug!(
+            "Fetched {} historical bars for {} from Zerodha",
+            bars.len(),
+            symbol.0
+        );
         Ok(bars)
     }
 

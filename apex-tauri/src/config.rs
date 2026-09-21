@@ -95,9 +95,8 @@ fn ensure_config_file(runtime_paths: &RuntimePaths) -> Result<()> {
     }
 
     if let Some(parent) = config_path.parent() {
-        fs::create_dir_all(parent).with_context(|| {
-            format!("Failed to create config directory {}", parent.display())
-        })?;
+        fs::create_dir_all(parent)
+            .with_context(|| format!("Failed to create config directory {}", parent.display()))?;
     }
 
     fs::write(config_path, DEFAULT_CONFIG_TEMPLATE).with_context(|| {
@@ -307,7 +306,11 @@ impl StorageConfig {
     pub fn postgres_url(&self) -> Option<String> {
         preferred_env_var("APEX_POSTGRES_URL")
             .or_else(|| preferred_env_var("DATABASE_URL"))
-            .or_else(|| self.postgres_url.clone().and_then(normalize_optional_string))
+            .or_else(|| {
+                self.postgres_url
+                    .clone()
+                    .and_then(normalize_optional_string)
+            })
     }
 }
 

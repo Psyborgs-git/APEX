@@ -4,9 +4,9 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{debug, info};
 
+use super::indicators;
 use crate::domain::models::*;
 use crate::ports::market_data::MarketDataPort;
-use super::indicators;
 
 /// Market scanner — scans symbols against user-defined criteria
 ///
@@ -84,7 +84,11 @@ impl MarketScanner {
 
     /// Run a scan against all symbols in the universe
     pub async fn run_scan(&self, config: &ScanConfig) -> Result<ScanOutput> {
-        info!("Starting scan '{}' across {} symbols", config.name, config.universe.len());
+        info!(
+            "Starting scan '{}' across {} symbols",
+            config.name,
+            config.universe.len()
+        );
 
         let mut results = Vec::new();
 
@@ -165,13 +169,15 @@ impl MarketScanner {
         }
 
         // Check if we need historical data for indicator criteria
-        let needs_historical = config.criteria.iter().any(|c| matches!(
-            c,
-            ScanCriterion::RsiAbove(_, _)
-            | ScanCriterion::RsiBelow(_, _)
-            | ScanCriterion::AboveSma(_)
-            | ScanCriterion::BelowSma(_)
-        ));
+        let needs_historical = config.criteria.iter().any(|c| {
+            matches!(
+                c,
+                ScanCriterion::RsiAbove(_, _)
+                    | ScanCriterion::RsiBelow(_, _)
+                    | ScanCriterion::AboveSma(_)
+                    | ScanCriterion::BelowSma(_)
+            )
+        });
 
         if needs_historical {
             let to = Utc::now();
@@ -179,13 +185,16 @@ impl MarketScanner {
             let lookback_days = match &config.timeframe {
                 Timeframe::M1 | Timeframe::M3 | Timeframe::M5 => 1 + (config.lookback_bars / 78), // ~78 bars per day for M5
                 Timeframe::M15 | Timeframe::M30 => 1 + (config.lookback_bars / 26), // ~26 bars per day for M15
-                Timeframe::H1 | Timeframe::H4 => 1 + (config.lookback_bars / 7),  // ~7 bars per day for H1
+                Timeframe::H1 | Timeframe::H4 => 1 + (config.lookback_bars / 7), // ~7 bars per day for H1
                 Timeframe::D1 => config.lookback_bars,
                 Timeframe::W1 => config.lookback_bars * 7,
                 _ => config.lookback_bars,
             };
             let from = to - chrono::Duration::days(lookback_days.max(1) as i64);
-            let bars = self.market_data.get_historical_ohlcv(symbol, config.timeframe.clone(), from, to).await?;
+            let bars = self
+                .market_data
+                .get_historical_ohlcv(symbol, config.timeframe.clone(), from, to)
+                .await?;
 
             if bars.is_empty() {
                 return Ok(None);
@@ -288,15 +297,13 @@ mod tests {
             config_name: "test".to_string(),
             scanned_count: 10,
             matched_count: 2,
-            results: vec![
-                ScanResult {
-                    symbol: Symbol("AAPL".to_string()),
-                    last_price: 150.0,
-                    change_pct: 2.5,
-                    volume: 5_000_000,
-                    matched_at: Utc::now(),
-                },
-            ],
+            results: vec![ScanResult {
+                symbol: Symbol("AAPL".to_string()),
+                last_price: 150.0,
+                change_pct: 2.5,
+                volume: 5_000_000,
+                matched_at: Utc::now(),
+            }],
             completed_at: Utc::now(),
         };
         let json = serde_json::to_string(&output).unwrap();

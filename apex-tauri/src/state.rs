@@ -2,6 +2,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
+use crate::commands::python_runtime::RuntimePaths;
+use crate::config::CopilotConfig;
+use crate::config::{AppConfig, StorageBackendKind};
 use anyhow::{anyhow, Result};
 use apex_adapters::execution::angel_one_execution::AngelOneExecutionAdapter;
 use apex_adapters::execution::binance::BinanceExecutionAdapter;
@@ -20,8 +23,6 @@ use apex_adapters::market_data::yahoo_finance::YahooFinanceAdapter;
 use apex_adapters::market_data::zerodha_kite::ZerodhaKiteAdapter;
 use apex_adapters::storage::sqlite_storage::SqliteStorage;
 use apex_adapters::storage::timescale::TimescaleAdapter;
-use crate::commands::python_runtime::RuntimePaths;
-use crate::config::{AppConfig, StorageBackendKind};
 use apex_core::application::alert_engine::AlertEngine;
 use apex_core::application::circuit_breaker::reconcile_on_startup;
 use apex_core::application::graph_engine::GraphEngine;
@@ -35,7 +36,6 @@ use apex_core::bus::message_bus::{BusMessage, MessageBus, Topic};
 use apex_core::ports::execution::ExecutionPort;
 use apex_core::ports::market_data::MarketDataPort;
 use apex_core::ports::storage::StoragePort;
-use crate::config::CopilotConfig;
 
 fn env_var(name: &str) -> Option<String> {
     let raw = std::env::var(name).ok()?;
@@ -250,7 +250,10 @@ impl BrokerRuntimeEntry {
         }
 
         if !applied {
-            return Err(anyhow!("{} does not expose a live session surface", self.display_name));
+            return Err(anyhow!(
+                "{} does not expose a live session surface",
+                self.display_name
+            ));
         }
 
         Ok(())
@@ -438,7 +441,11 @@ impl AppState {
         let mut angel_market_data_available = false;
 
         if let (Some(api_key), Some(client_code)) = (angel_api_key, angel_client_code) {
-            match AngelOneExecutionAdapter::new(api_key.clone(), client_code, angel_jwt_token.clone()) {
+            match AngelOneExecutionAdapter::new(
+                api_key.clone(),
+                client_code,
+                angel_jwt_token.clone(),
+            ) {
                 Ok(adapter) => {
                     let adapter = Arc::new(adapter);
                     otm_inner.register_execution("angel_one".to_string(), adapter.clone());
@@ -563,7 +570,8 @@ impl AppState {
                 display_name: "Robinhood",
                 mode: "live",
                 token_label: Some("Access Token"),
-                config_hint: "ROBINHOOD_ACCESS_TOKEN (market data) and ROBINHOOD_CLIENT_ID (execution)",
+                config_hint:
+                    "ROBINHOOD_ACCESS_TOKEN (market data) and ROBINHOOD_CLIENT_ID (execution)",
                 execution_available: robinhood_execution_available,
                 market_data_available: robinhood_market_data_available,
                 execution: robinhood_execution,
@@ -615,8 +623,12 @@ impl AppState {
         let mut coinbase_execution_available = false;
         let mut coinbase_market_data_available = false;
 
-        if let (Some(api_key), Some(api_secret), Some(passphrase)) = (coinbase_api_key, coinbase_api_secret, coinbase_passphrase) {
-            let adapter = Arc::new(CoinbaseExecutionAdapter::new(api_key, api_secret, passphrase));
+        if let (Some(api_key), Some(api_secret), Some(passphrase)) =
+            (coinbase_api_key, coinbase_api_secret, coinbase_passphrase)
+        {
+            let adapter = Arc::new(CoinbaseExecutionAdapter::new(
+                api_key, api_secret, passphrase,
+            ));
             otm_inner.register_execution("coinbase".to_string(), adapter.clone());
             coinbase_execution = Some(ExecutionHandle::Coinbase(adapter));
             coinbase_execution_available = true;
@@ -795,7 +807,9 @@ impl AppState {
     }
 
     pub fn broker_connection(&self, broker_id: &str) -> Option<crate::dto::BrokerConnectionDto> {
-        self.brokers.get(broker_id).map(|broker| broker.to_dto(broker_id))
+        self.brokers
+            .get(broker_id)
+            .map(|broker| broker.to_dto(broker_id))
     }
 
     pub fn set_broker_session(&self, broker_id: &str, session_token: &str) -> Result<()> {
@@ -920,12 +934,16 @@ impl AppState {
     }
 }
 
-async fn build_storage(runtime_paths: &RuntimePaths, config: &AppConfig) -> Result<StorageBootstrap> {
+async fn build_storage(
+    runtime_paths: &RuntimePaths,
+    config: &AppConfig,
+) -> Result<StorageBootstrap> {
     match config.storage.backend_kind()? {
         StorageBackendKind::Sqlite => {
             let sqlite_path = config.resolved_sqlite_path(runtime_paths)?;
             let sqlite_path_text = sqlite_path.to_string_lossy().to_string();
-            let sqlite = SqliteStorage::new_with_options(&sqlite_path_text, config.storage.wal_mode)?;
+            let sqlite =
+                SqliteStorage::new_with_options(&sqlite_path_text, config.storage.wal_mode)?;
             sqlite.init_schema().await?;
 
             Ok(StorageBootstrap {

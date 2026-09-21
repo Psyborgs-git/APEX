@@ -13,7 +13,12 @@ pub trait NewsPort: Send + Sync {
     /// Subscribe to news updates with given filters
     async fn subscribe(&self, filters: NewsFilter) -> Result<NewsStream>;
     /// Search historical news
-    async fn search(&self, query: &str, since: DateTime<Utc>, limit: usize) -> Result<Vec<NewsItem>>;
+    async fn search(
+        &self,
+        query: &str,
+        since: DateTime<Utc>,
+        limit: usize,
+    ) -> Result<Vec<NewsItem>>;
     /// Unique adapter identifier
     fn adapter_id(&self) -> &'static str;
 }

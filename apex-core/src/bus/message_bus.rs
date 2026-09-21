@@ -165,7 +165,6 @@ mod tests {
             open: None,
 
             change_pct: None,
-
         };
 
         let count = bus.publish(
@@ -221,18 +220,15 @@ mod tests {
             open: None,
 
             change_pct: None,
-
         };
 
         bus.publish(Topic::Tick("AAPL".into()), BusMessage::TickData(tick));
 
         // AAPL subscriber should get the message
-        let result: Result<BusMessage, _> = tokio::time::timeout(
-            std::time::Duration::from_millis(100),
-            rx_aapl.recv(),
-        )
-        .await
-        .expect("timed out waiting for message");
+        let result: Result<BusMessage, _> =
+            tokio::time::timeout(std::time::Duration::from_millis(100), rx_aapl.recv())
+                .await
+                .expect("timed out waiting for message");
         assert!(result.is_ok());
     }
 
@@ -321,8 +317,10 @@ mod tests {
         let msg = rx.recv().await.expect("channel closed");
         assert!(matches!(msg, BusMessage::QuoteData(_)));
         // No second copy should arrive on the same channel
-        assert!(tokio::time::timeout(std::time::Duration::from_millis(50), rx.recv())
-            .await
-            .is_err());
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(50), rx.recv())
+                .await
+                .is_err()
+        );
     }
 }

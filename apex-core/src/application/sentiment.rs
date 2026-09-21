@@ -109,10 +109,28 @@ static LEXICON: LazyLock<HashMap<&'static str, f32>> = LazyLock::new(|| {
 
 /// Words that negate the next sentiment-bearing token.
 const NEGATION_WORDS: &[&str] = &[
-    "not", "no", "never", "neither", "nobody", "nothing",
-    "nowhere", "nor", "cannot", "without", "hardly", "barely",
-    "scarcely", "don't", "doesn't", "didn't", "isn't", "wasn't",
-    "shouldn't", "wouldn't", "couldn't", "won't",
+    "not",
+    "no",
+    "never",
+    "neither",
+    "nobody",
+    "nothing",
+    "nowhere",
+    "nor",
+    "cannot",
+    "without",
+    "hardly",
+    "barely",
+    "scarcely",
+    "don't",
+    "doesn't",
+    "didn't",
+    "isn't",
+    "wasn't",
+    "shouldn't",
+    "wouldn't",
+    "couldn't",
+    "won't",
 ];
 
 /// Degree modifiers: word → multiplier.
@@ -240,7 +258,9 @@ fn normalize(score: f32, alpha: f32) -> f32 {
 /// Simple whitespace + punctuation tokeniser.
 fn tokenise(text: &str) -> Vec<&str> {
     text.split(|c: char| c.is_whitespace() || c == ',' || c == ';' || c == ':')
-        .map(|s| s.trim_matches(|c: char| c == '.' || c == '(' || c == ')' || c == '"' || c == '\''))
+        .map(|s| {
+            s.trim_matches(|c: char| c == '.' || c == '(' || c == ')' || c == '"' || c == '\'')
+        })
         .filter(|s| !s.is_empty())
         .collect()
 }
@@ -268,21 +288,30 @@ mod tests {
         let plain = score("This stock is bullish");
         let negated = score("This stock is not bullish");
         assert!(plain > 0.0, "plain should be positive: {plain}");
-        assert!(negated < plain, "negation should lower score: {negated} vs {plain}");
+        assert!(
+            negated < plain,
+            "negation should lower score: {negated} vs {plain}"
+        );
     }
 
     #[test]
     fn degree_modifier_amplifies() {
         let plain = score("earnings growth");
         let boosted = score("extremely strong earnings growth");
-        assert!(boosted > plain, "boosted should exceed plain: {boosted} vs {plain}");
+        assert!(
+            boosted > plain,
+            "boosted should exceed plain: {boosted} vs {plain}"
+        );
     }
 
     #[test]
     fn caps_boost() {
         let lower = score("stock surges");
         let upper = score("stock SURGES");
-        assert!(upper >= lower, "ALL-CAPS should not reduce score: {upper} vs {lower}");
+        assert!(
+            upper >= lower,
+            "ALL-CAPS should not reduce score: {upper} vs {lower}"
+        );
     }
 
     #[test]
@@ -306,6 +335,9 @@ mod tests {
     #[test]
     fn financial_bear_case() {
         let s = score("Recession fears mount as markets plunge amid crisis and panic sell-off");
-        assert!(s < -0.5, "strong bear headline should be very negative, got {s}");
+        assert!(
+            s < -0.5,
+            "strong bear headline should be very negative, got {s}"
+        );
     }
 }

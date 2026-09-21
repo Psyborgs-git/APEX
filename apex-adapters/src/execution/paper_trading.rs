@@ -158,12 +158,7 @@ impl PaperTradingAdapter {
     }
 
     /// Update position after a fill
-    fn update_position(
-        &self,
-        state: &mut PaperState,
-        request: &NewOrderRequest,
-        fill_price: f64,
-    ) {
+    fn update_position(&self, state: &mut PaperState, request: &NewOrderRequest, fill_price: f64) {
         let symbol_key = request.symbol.0.clone();
 
         if let Some(pos) = state.positions.get_mut(&symbol_key) {
@@ -171,9 +166,8 @@ impl PaperTradingAdapter {
                 // Adding to position
                 (OrderSide::Buy, OrderSide::Buy) | (OrderSide::Sell, OrderSide::Sell) => {
                     let total_qty = pos.quantity + request.quantity;
-                    pos.avg_price = (pos.avg_price * pos.quantity
-                        + fill_price * request.quantity)
-                        / total_qty;
+                    pos.avg_price =
+                        (pos.avg_price * pos.quantity + fill_price * request.quantity) / total_qty;
                     pos.quantity = total_qty;
                 }
                 // Reducing or closing position

@@ -36,7 +36,11 @@ impl CoinbaseAdapter {
     }
 
     /// Create a new Coinbase Pro adapter with API credentials
-    pub fn with_config(api_key: Option<String>, api_secret: Option<String>, passphrase: Option<String>) -> Self {
+    pub fn with_config(
+        api_key: Option<String>,
+        api_secret: Option<String>,
+        passphrase: Option<String>,
+    ) -> Self {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(10))
             .user_agent("APEX-Terminal/0.1")
@@ -143,11 +147,7 @@ impl CoinbaseAdapter {
 
         let url = format!(
             "{}/products/{}/candles?granularity={}&start={}&end={}",
-            COINBASE_REST_BASE,
-            coinbase_symbol,
-            granularity,
-            start,
-            end
+            COINBASE_REST_BASE, coinbase_symbol, granularity, start, end
         );
 
         let response = self
@@ -230,9 +230,8 @@ impl MarketDataPort for CoinbaseAdapter {
             }
         }
 
-        let coinbase_symbols: Vec<String> = symbols.iter()
-            .map(|s| Self::format_symbol(s))
-            .collect();
+        let coinbase_symbols: Vec<String> =
+            symbols.iter().map(|s| Self::format_symbol(s)).collect();
 
         let subscribe_msg = serde_json::json!({
             "type": "subscribe",
@@ -252,7 +251,11 @@ impl MarketDataPort for CoinbaseAdapter {
                     let mut ws_stream = ws_stream;
 
                     // Send subscription message
-                    if ws_stream.send(Message::Text(subscribe_msg.to_string())).await.is_err() {
+                    if ws_stream
+                        .send(Message::Text(subscribe_msg.to_string()))
+                        .await
+                        .is_err()
+                    {
                         error!("Failed to send subscription message");
                         return;
                     }
@@ -308,7 +311,8 @@ impl MarketDataPort for CoinbaseAdapter {
                 }
                 Err(e) => {
                     error!("Failed to connect to Coinbase WebSocket: {}", e);
-                    *status.write().await = AdapterHealth::Unhealthy(format!("Connection failed: {}", e));
+                    *status.write().await =
+                        AdapterHealth::Unhealthy(format!("Connection failed: {}", e));
                 }
             }
         });
@@ -335,12 +339,16 @@ impl MarketDataPort for CoinbaseAdapter {
     ) -> Result<Vec<OHLCV>> {
         let granularity = Self::timeframe_to_granularity(&timeframe);
         let mut all_bars = Vec::new();
-        let current_bars = self.fetch_candles(symbol, granularity, timeframe.clone(), 300).await?;
+        let current_bars = self
+            .fetch_candles(symbol, granularity, timeframe.clone(), 300)
+            .await?;
 
         // Filter by date range
-        all_bars.extend(current_bars.into_iter().filter(|bar| {
-            bar.time >= from && bar.time <= to
-        }));
+        all_bars.extend(
+            current_bars
+                .into_iter()
+                .filter(|bar| bar.time >= from && bar.time <= to),
+        );
 
         Ok(all_bars)
     }
@@ -410,21 +418,42 @@ mod tests {
 
     #[test]
     fn test_format_symbol() {
-        assert_eq!(CoinbaseAdapter::format_symbol(&Symbol("BTC/USD".into())), "BTC-USD");
-        assert_eq!(CoinbaseAdapter::format_symbol(&Symbol("ETH/USDT".into())), "ETH-USDT");
+        assert_eq!(
+            CoinbaseAdapter::format_symbol(&Symbol("BTC/USD".into())),
+            "BTC-USD"
+        );
+        assert_eq!(
+            CoinbaseAdapter::format_symbol(&Symbol("ETH/USDT".into())),
+            "ETH-USDT"
+        );
     }
 
     #[test]
     fn test_parse_symbol() {
-        assert_eq!(CoinbaseAdapter::parse_symbol("BTC-USD"), Symbol("BTC/USD".into()));
-        assert_eq!(CoinbaseAdapter::parse_symbol("ETH-USDT"), Symbol("ETH/USDT".into()));
+        assert_eq!(
+            CoinbaseAdapter::parse_symbol("BTC-USD"),
+            Symbol("BTC/USD".into())
+        );
+        assert_eq!(
+            CoinbaseAdapter::parse_symbol("ETH-USDT"),
+            Symbol("ETH/USDT".into())
+        );
     }
 
     #[test]
     fn test_timeframe_to_granularity() {
-        assert_eq!(CoinbaseAdapter::timeframe_to_granularity(&Timeframe::M1), 60);
-        assert_eq!(CoinbaseAdapter::timeframe_to_granularity(&Timeframe::H1), 3600);
-        assert_eq!(CoinbaseAdapter::timeframe_to_granularity(&Timeframe::D1), 86400);
+        assert_eq!(
+            CoinbaseAdapter::timeframe_to_granularity(&Timeframe::M1),
+            60
+        );
+        assert_eq!(
+            CoinbaseAdapter::timeframe_to_granularity(&Timeframe::H1),
+            3600
+        );
+        assert_eq!(
+            CoinbaseAdapter::timeframe_to_granularity(&Timeframe::D1),
+            86400
+        );
     }
 
     #[test]

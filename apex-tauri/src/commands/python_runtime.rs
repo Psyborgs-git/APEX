@@ -222,7 +222,10 @@ fn venv_python_path(venv_root: &Path) -> PathBuf {
 }
 
 fn first_existing_path(candidates: &[PathBuf]) -> Option<PathBuf> {
-    candidates.iter().find(|candidate| candidate.exists()).cloned()
+    candidates
+        .iter()
+        .find(|candidate| candidate.exists())
+        .cloned()
 }
 
 fn resolve_command_path(repo_root: &Path, raw: &str) -> PathBuf {
@@ -280,8 +283,12 @@ fn resolve_python_root(resource_dir: Option<&Path>, repo_root: &Path) -> Result<
 }
 
 fn ensure_dir_exists(path: &Path) -> Result<PathBuf, String> {
-    std::fs::create_dir_all(path)
-        .map_err(|error| format!("Failed to create runtime directory {}: {error}", path.display()))?;
+    std::fs::create_dir_all(path).map_err(|error| {
+        format!(
+            "Failed to create runtime directory {}: {error}",
+            path.display()
+        )
+    })?;
     Ok(path.to_path_buf())
 }
 
@@ -305,9 +312,11 @@ mod tests {
     #[test]
     fn prefers_local_virtualenv_for_generic_python_placeholder() {
         let root = test_root("generic-placeholder");
-        let expected = root
-            .join("apex-python")
-            .join(if cfg!(windows) { ".venv/Scripts/python.exe" } else { ".venv/bin/python" });
+        let expected = root.join("apex-python").join(if cfg!(windows) {
+            ".venv/Scripts/python.exe"
+        } else {
+            ".venv/bin/python"
+        });
         fs::create_dir_all(expected.parent().expect("virtualenv parent"))
             .expect("create virtualenv directory");
         fs::write(&expected, "#!/usr/bin/env python\n").expect("write fake interpreter");
@@ -326,16 +335,21 @@ mod tests {
     #[test]
     fn normalizes_repo_relative_interpreter_paths() {
         let root = test_root("relative-path");
-        let expected = root
-            .join("apex-python")
-            .join(if cfg!(windows) { ".venv/Scripts/python.exe" } else { ".venv/bin/python" });
+        let expected = root.join("apex-python").join(if cfg!(windows) {
+            ".venv/Scripts/python.exe"
+        } else {
+            ".venv/bin/python"
+        });
         fs::create_dir_all(expected.parent().expect("interpreter parent"))
             .expect("create interpreter directory");
         fs::write(&expected, "#!/usr/bin/env python\n").expect("write fake interpreter");
 
         let resolved = resolve_python_executable_for_root(
             &root,
-            &[("APEX_TEST_PYTHON_PATH", Some("apex-python/.venv/bin/python"))],
+            &[(
+                "APEX_TEST_PYTHON_PATH",
+                Some("apex-python/.venv/bin/python"),
+            )],
         )
         .expect("resolve interpreter");
 
@@ -351,7 +365,10 @@ mod tests {
 
         let error = resolve_python_executable_for_root(
             &root,
-            &[("APEX_TEST_PYTHON_PATH", Some("apex-python/.venv/bin/python"))],
+            &[(
+                "APEX_TEST_PYTHON_PATH",
+                Some("apex-python/.venv/bin/python"),
+            )],
         )
         .expect_err("expected missing interpreter error");
 
@@ -366,8 +383,8 @@ mod tests {
         let root = test_root("default-python");
         fs::create_dir_all(&root).expect("create root directory");
 
-        let resolved = resolve_python_executable_for_root(&root, &[])
-            .expect("resolve fallback interpreter");
+        let resolved =
+            resolve_python_executable_for_root(&root, &[]).expect("resolve fallback interpreter");
 
         assert_eq!(resolved, PathBuf::from(default_python_command()));
 

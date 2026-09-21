@@ -1,11 +1,8 @@
+use anyhow::{Context, Result};
 use apex_core::{
     domain::models::*,
-    ports::{
-        execution::ExecutionPort,
-        market_data::AdapterHealth,
-    },
+    ports::{execution::ExecutionPort, market_data::AdapterHealth},
 };
-use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::Utc;
 use reqwest::Client;
@@ -210,7 +207,8 @@ impl ExecutionPort for GrowwExecutionAdapter {
 
         let auth_header = self.get_auth_header()?;
 
-        let response = self.client
+        let response = self
+            .client
             .post("https://api.groww.in/v1/orders/place")
             .header("Authorization", &auth_header)
             .header("X-Api-Key", &self.api_key)
@@ -223,11 +221,20 @@ impl ExecutionPort for GrowwExecutionAdapter {
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
-            self.set_health(AdapterHealth::Degraded(format!("Order placement failed: {}", status)));
-            return Err(anyhow::anyhow!("Groww order placement error {}: {}", status, error_text));
+            self.set_health(AdapterHealth::Degraded(format!(
+                "Order placement failed: {}",
+                status
+            )));
+            return Err(anyhow::anyhow!(
+                "Groww order placement error {}: {}",
+                status,
+                error_text
+            ));
         }
 
-        let order_response: GrowwOrderResponse = response.json().await
+        let order_response: GrowwOrderResponse = response
+            .json()
+            .await
             .context("Failed to parse order response")?;
 
         self.set_health(AdapterHealth::Healthy);
@@ -243,7 +250,8 @@ impl ExecutionPort for GrowwExecutionAdapter {
         let url = format!("https://api.groww.in/v1/orders/cancel/{}", order_id.0);
         let auth_header = self.get_auth_header()?;
 
-        let response = self.client
+        let response = self
+            .client
             .delete(&url)
             .header("Authorization", &auth_header)
             .header("X-Api-Key", &self.api_key)
@@ -252,7 +260,10 @@ impl ExecutionPort for GrowwExecutionAdapter {
             .context("Failed to cancel order with Groww")?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("Failed to cancel order: {}", response.status()));
+            return Err(anyhow::anyhow!(
+                "Failed to cancel order: {}",
+                response.status()
+            ));
         }
 
         info!("Cancelled order {} with Groww", order_id.0);
@@ -275,10 +286,14 @@ impl ExecutionPort for GrowwExecutionAdapter {
             body.insert("price".to_string(), serde_json::Value::from(price));
         }
         if let Some(trigger_price) = params.stop_price {
-            body.insert("triggerPrice".to_string(), serde_json::Value::from(trigger_price));
+            body.insert(
+                "triggerPrice".to_string(),
+                serde_json::Value::from(trigger_price),
+            );
         }
 
-        let response = self.client
+        let response = self
+            .client
             .put(&url)
             .header("Authorization", &auth_header)
             .header("X-Api-Key", &self.api_key)
@@ -289,7 +304,10 @@ impl ExecutionPort for GrowwExecutionAdapter {
             .context("Failed to modify order with Groww")?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("Failed to modify order: {}", response.status()));
+            return Err(anyhow::anyhow!(
+                "Failed to modify order: {}",
+                response.status()
+            ));
         }
 
         info!("Modified order {} with Groww", order_id.0);
@@ -303,7 +321,8 @@ impl ExecutionPort for GrowwExecutionAdapter {
 
         let auth_header = self.get_auth_header()?;
 
-        let response = self.client
+        let response = self
+            .client
             .get("https://api.groww.in/v1/orders")
             .header("Authorization", &auth_header)
             .header("X-Api-Key", &self.api_key)
@@ -312,7 +331,10 @@ impl ExecutionPort for GrowwExecutionAdapter {
             .context("Failed to fetch orders from Groww")?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("Failed to fetch order status: {}", response.status()));
+            return Err(anyhow::anyhow!(
+                "Failed to fetch order status: {}",
+                response.status()
+            ));
         }
 
         let data: serde_json::Value = response.json().await?;
@@ -348,8 +370,16 @@ impl ExecutionPort for GrowwExecutionAdapter {
                     side,
                     order_type,
                     quantity: groww_order.quantity as f64,
-                    price: if groww_order.price > 0.0 { Some(groww_order.price) } else { None },
-                    stop_price: if groww_order.trigger_price > 0.0 { Some(groww_order.trigger_price) } else { None },
+                    price: if groww_order.price > 0.0 {
+                        Some(groww_order.price)
+                    } else {
+                        None
+                    },
+                    stop_price: if groww_order.trigger_price > 0.0 {
+                        Some(groww_order.trigger_price)
+                    } else {
+                        None
+                    },
                     status,
                     filled_qty: groww_order.filled_quantity as f64,
                     avg_price: groww_order.average_price,
@@ -371,7 +401,8 @@ impl ExecutionPort for GrowwExecutionAdapter {
 
         let auth_header = self.get_auth_header()?;
 
-        let response = self.client
+        let response = self
+            .client
             .get("https://api.groww.in/v1/portfolio/positions")
             .header("Authorization", &auth_header)
             .header("X-Api-Key", &self.api_key)
@@ -380,7 +411,10 @@ impl ExecutionPort for GrowwExecutionAdapter {
             .context("Failed to fetch positions from Groww")?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("Failed to fetch positions: {}", response.status()));
+            return Err(anyhow::anyhow!(
+                "Failed to fetch positions: {}",
+                response.status()
+            ));
         }
 
         let data: serde_json::Value = response.json().await?;
@@ -395,7 +429,11 @@ impl ExecutionPort for GrowwExecutionAdapter {
             if groww_pos.net_quantity == 0 {
                 continue;
             }
-            let side = if groww_pos.net_quantity > 0 { OrderSide::Buy } else { OrderSide::Sell };
+            let side = if groww_pos.net_quantity > 0 {
+                OrderSide::Buy
+            } else {
+                OrderSide::Sell
+            };
             let quantity = groww_pos.net_quantity.unsigned_abs() as f64;
             let pnl_pct = if groww_pos.average_price > 0.0 {
                 (groww_pos.pnl / (groww_pos.average_price * quantity)) * 100.0
@@ -424,7 +462,8 @@ impl ExecutionPort for GrowwExecutionAdapter {
 
         let auth_header = self.get_auth_header()?;
 
-        let response = self.client
+        let response = self
+            .client
             .get("https://api.groww.in/v1/user/margins")
             .header("Authorization", &auth_header)
             .header("X-Api-Key", &self.api_key)
@@ -433,7 +472,10 @@ impl ExecutionPort for GrowwExecutionAdapter {
             .context("Failed to fetch account balance from Groww")?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("Failed to fetch balance: {}", response.status()));
+            return Err(anyhow::anyhow!(
+                "Failed to fetch balance: {}",
+                response.status()
+            ));
         }
 
         let data: serde_json::Value = response.json().await?;
@@ -512,11 +554,26 @@ mod tests {
     #[test]
     fn test_status_mapping() {
         let adapter = GrowwExecutionAdapter::new("test_key".to_string(), None).unwrap();
-        assert_eq!(adapter.groww_status_to_order_status("PENDING"), OrderStatus::Open);
-        assert_eq!(adapter.groww_status_to_order_status("EXECUTED"), OrderStatus::Filled);
-        assert_eq!(adapter.groww_status_to_order_status("CANCELLED"), OrderStatus::Cancelled);
-        assert_eq!(adapter.groww_status_to_order_status("REJECTED"), OrderStatus::Rejected);
-        assert_eq!(adapter.groww_status_to_order_status("PARTIALLY_FILLED"), OrderStatus::PartiallyFilled);
+        assert_eq!(
+            adapter.groww_status_to_order_status("PENDING"),
+            OrderStatus::Open
+        );
+        assert_eq!(
+            adapter.groww_status_to_order_status("EXECUTED"),
+            OrderStatus::Filled
+        );
+        assert_eq!(
+            adapter.groww_status_to_order_status("CANCELLED"),
+            OrderStatus::Cancelled
+        );
+        assert_eq!(
+            adapter.groww_status_to_order_status("REJECTED"),
+            OrderStatus::Rejected
+        );
+        assert_eq!(
+            adapter.groww_status_to_order_status("PARTIALLY_FILLED"),
+            OrderStatus::PartiallyFilled
+        );
     }
 
     #[test]

@@ -1,4 +1,4 @@
-pub mod market_data;
 pub mod execution;
-pub mod storage;
+pub mod market_data;
 pub mod news;
+pub mod storage;

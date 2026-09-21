@@ -1,11 +1,8 @@
+use anyhow::{Context, Result};
 use apex_core::{
     domain::models::*,
-    ports::{
-        execution::ExecutionPort,
-        market_data::AdapterHealth,
-    },
+    ports::{execution::ExecutionPort, market_data::AdapterHealth},
 };
-use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::Utc;
 use reqwest::Client;
@@ -212,7 +209,8 @@ impl ExecutionPort for ZerodhaExecutionAdapter {
 
         let auth_header = self.get_auth_header()?;
 
-        let response = self.client
+        let response = self
+            .client
             .post("https://api.kite.trade/orders/regular")
             .header("Authorization", auth_header)
             .header("X-Kite-Version", "3")
@@ -224,11 +222,20 @@ impl ExecutionPort for ZerodhaExecutionAdapter {
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
-            self.set_health(AdapterHealth::Degraded(format!("Order placement failed: {}", status)));
-            return Err(anyhow::anyhow!("Zerodha order placement error {}: {}", status, error_text));
+            self.set_health(AdapterHealth::Degraded(format!(
+                "Order placement failed: {}",
+                status
+            )));
+            return Err(anyhow::anyhow!(
+                "Zerodha order placement error {}: {}",
+                status,
+                error_text
+            ));
         }
 
-        let order_response: ZerodhaOrderResponse = response.json().await
+        let order_response: ZerodhaOrderResponse = response
+            .json()
+            .await
             .context("Failed to parse order response")?;
 
         self.set_health(AdapterHealth::Healthy);
@@ -245,7 +252,8 @@ impl ExecutionPort for ZerodhaExecutionAdapter {
         let url = format!("https://api.kite.trade/orders/regular/{}", order_id.0);
         let auth_header = self.get_auth_header()?;
 
-        let response = self.client
+        let response = self
+            .client
             .delete(&url)
             .header("Authorization", auth_header)
             .header("X-Kite-Version", "3")
@@ -254,7 +262,10 @@ impl ExecutionPort for ZerodhaExecutionAdapter {
             .context("Failed to cancel order with Zerodha")?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("Failed to cancel order: {}", response.status()));
+            return Err(anyhow::anyhow!(
+                "Failed to cancel order: {}",
+                response.status()
+            ));
         }
 
         info!("Cancelled order {} with Zerodha", order_id.0);
@@ -283,7 +294,8 @@ impl ExecutionPort for ZerodhaExecutionAdapter {
             form_data.push(("trigger_price", trigger_price.to_string()));
         }
 
-        let response = self.client
+        let response = self
+            .client
             .put(&url)
             .header("Authorization", auth_header)
             .header("X-Kite-Version", "3")
@@ -293,7 +305,10 @@ impl ExecutionPort for ZerodhaExecutionAdapter {
             .context("Failed to modify order with Zerodha")?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("Failed to modify order: {}", response.status()));
+            return Err(anyhow::anyhow!(
+                "Failed to modify order: {}",
+                response.status()
+            ));
         }
 
         info!("Modified order {} with Zerodha", order_id.0);
@@ -308,7 +323,8 @@ impl ExecutionPort for ZerodhaExecutionAdapter {
         let url = format!("https://api.kite.trade/orders");
         let auth_header = self.get_auth_header()?;
 
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .header("Authorization", auth_header)
             .header("X-Kite-Version", "3")
@@ -317,7 +333,10 @@ impl ExecutionPort for ZerodhaExecutionAdapter {
             .context("Failed to fetch orders from Zerodha")?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("Failed to fetch order status: {}", response.status()));
+            return Err(anyhow::anyhow!(
+                "Failed to fetch order status: {}",
+                response.status()
+            ));
         }
 
         let data: serde_json::Value = response.json().await?;
@@ -347,10 +366,11 @@ impl ExecutionPort for ZerodhaExecutionAdapter {
 
                 let status = self.zerodha_status_to_order_status(&zerodha_order.status);
 
-                let created_at = chrono::DateTime::parse_from_rfc3339(&zerodha_order.order_timestamp)
-                    .ok()
-                    .and_then(|dt| Some(dt.with_timezone(&Utc)))
-                    .unwrap_or_else(Utc::now);
+                let created_at =
+                    chrono::DateTime::parse_from_rfc3339(&zerodha_order.order_timestamp)
+                        .ok()
+                        .and_then(|dt| Some(dt.with_timezone(&Utc)))
+                        .unwrap_or_else(Utc::now);
 
                 return Ok(Order {
                     id: order_id.clone(),
@@ -389,7 +409,8 @@ impl ExecutionPort for ZerodhaExecutionAdapter {
 
         let auth_header = self.get_auth_header()?;
 
-        let response = self.client
+        let response = self
+            .client
             .get("https://api.kite.trade/portfolio/positions")
             .header("Authorization", auth_header)
             .header("X-Kite-Version", "3")
@@ -398,10 +419,15 @@ impl ExecutionPort for ZerodhaExecutionAdapter {
             .context("Failed to fetch positions from Zerodha")?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("Failed to fetch positions: {}", response.status()));
+            return Err(anyhow::anyhow!(
+                "Failed to fetch positions: {}",
+                response.status()
+            ));
         }
 
-        let pos_response: ZerodhaPositionResponse = response.json().await
+        let pos_response: ZerodhaPositionResponse = response
+            .json()
+            .await
             .context("Failed to parse positions response")?;
 
         let mut positions = Vec::new();
@@ -446,7 +472,8 @@ impl ExecutionPort for ZerodhaExecutionAdapter {
 
         let auth_header = self.get_auth_header()?;
 
-        let response = self.client
+        let response = self
+            .client
             .get("https://api.kite.trade/user/margins")
             .header("Authorization", auth_header)
             .header("X-Kite-Version", "3")
@@ -455,7 +482,10 @@ impl ExecutionPort for ZerodhaExecutionAdapter {
             .context("Failed to fetch account balance from Zerodha")?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("Failed to fetch balance: {}", response.status()));
+            return Err(anyhow::anyhow!(
+                "Failed to fetch balance: {}",
+                response.status()
+            ));
         }
 
         let data: serde_json::Value = response.json().await?;
@@ -466,8 +496,16 @@ impl ExecutionPort for ZerodhaExecutionAdapter {
             .and_then(|d| d.get("equity"))
             .ok_or_else(|| anyhow::anyhow!("No equity margin data"))?;
 
-        let available = equity.get("available").and_then(|v| v.get("cash")).and_then(|v| v.as_f64()).unwrap_or(0.0);
-        let used = equity.get("utilised").and_then(|v| v.get("debits")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let available = equity
+            .get("available")
+            .and_then(|v| v.get("cash"))
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
+        let used = equity
+            .get("utilised")
+            .and_then(|v| v.get("debits"))
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
 
         Ok(AccountBalance {
             total_value: available + used,

@@ -1,18 +1,14 @@
+use anyhow::{Context, Result};
 use apex_core::{
     domain::models::*,
-    ports::{
-        execution::ExecutionPort,
-        market_data::AdapterHealth,
-    },
+    ports::{execution::ExecutionPort, market_data::AdapterHealth},
 };
-use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::Utc;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, RwLock};
 use tracing::{debug, info};
-
 
 const BASE_URL: &str = "https://apiconnect.angelone.in";
 
@@ -251,8 +247,10 @@ impl ExecutionPort for AngelOneExecutionAdapter {
 
         let headers = self.get_auth_headers()?;
 
-        let mut request = self.client
-            .post(format!("{}/rest/secure/angelbroking/order/v1/placeOrder", BASE_URL));
+        let mut request = self.client.post(format!(
+            "{}/rest/secure/angelbroking/order/v1/placeOrder",
+            BASE_URL
+        ));
 
         for (key, value) in &headers {
             request = request.header(*key, value);
@@ -267,11 +265,20 @@ impl ExecutionPort for AngelOneExecutionAdapter {
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
-            self.set_health(AdapterHealth::Degraded(format!("Order placement failed: {}", status)));
-            return Err(anyhow::anyhow!("Angel One order placement error {}: {}", status, error_text));
+            self.set_health(AdapterHealth::Degraded(format!(
+                "Order placement failed: {}",
+                status
+            )));
+            return Err(anyhow::anyhow!(
+                "Angel One order placement error {}: {}",
+                status,
+                error_text
+            ));
         }
 
-        let order_response: AngelOneResponse<AngelOneOrderData> = response.json().await
+        let order_response: AngelOneResponse<AngelOneOrderData> = response
+            .json()
+            .await
             .context("Failed to parse order response")?;
 
         if !order_response.status {
@@ -282,8 +289,9 @@ impl ExecutionPort for AngelOneExecutionAdapter {
             ));
         }
 
-        let order_data = order_response.data
-            .ok_or_else(|| anyhow::anyhow!("No order data in response: {}", order_response.message))?;
+        let order_data = order_response.data.ok_or_else(|| {
+            anyhow::anyhow!("No order data in response: {}", order_response.message)
+        })?;
 
         self.set_health(AdapterHealth::Healthy);
 
@@ -303,8 +311,10 @@ impl ExecutionPort for AngelOneExecutionAdapter {
 
         let headers = self.get_auth_headers()?;
 
-        let mut request = self.client
-            .post(format!("{}/rest/secure/angelbroking/order/v1/cancelOrder", BASE_URL));
+        let mut request = self.client.post(format!(
+            "{}/rest/secure/angelbroking/order/v1/cancelOrder",
+            BASE_URL
+        ));
 
         for (key, value) in &headers {
             request = request.header(*key, value);
@@ -317,7 +327,10 @@ impl ExecutionPort for AngelOneExecutionAdapter {
             .context("Failed to cancel order with Angel One")?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("Failed to cancel order: {}", response.status()));
+            return Err(anyhow::anyhow!(
+                "Failed to cancel order: {}",
+                response.status()
+            ));
         }
 
         info!("Cancelled order {} with Angel One", order_id.0);
@@ -345,8 +358,10 @@ impl ExecutionPort for AngelOneExecutionAdapter {
 
         let headers = self.get_auth_headers()?;
 
-        let mut request = self.client
-            .post(format!("{}/rest/secure/angelbroking/order/v1/modifyOrder", BASE_URL));
+        let mut request = self.client.post(format!(
+            "{}/rest/secure/angelbroking/order/v1/modifyOrder",
+            BASE_URL
+        ));
 
         for (key, value) in &headers {
             request = request.header(*key, value);
@@ -359,7 +374,10 @@ impl ExecutionPort for AngelOneExecutionAdapter {
             .context("Failed to modify order with Angel One")?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("Failed to modify order: {}", response.status()));
+            return Err(anyhow::anyhow!(
+                "Failed to modify order: {}",
+                response.status()
+            ));
         }
 
         info!("Modified order {} with Angel One", order_id.0);
@@ -373,8 +391,10 @@ impl ExecutionPort for AngelOneExecutionAdapter {
 
         let headers = self.get_auth_headers()?;
 
-        let mut request = self.client
-            .get(format!("{}/rest/secure/angelbroking/order/v1/getOrderBook", BASE_URL));
+        let mut request = self.client.get(format!(
+            "{}/rest/secure/angelbroking/order/v1/getOrderBook",
+            BASE_URL
+        ));
 
         for (key, value) in &headers {
             request = request.header(*key, value);
@@ -386,7 +406,10 @@ impl ExecutionPort for AngelOneExecutionAdapter {
             .context("Failed to fetch orders from Angel One")?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("Failed to fetch order status: {}", response.status()));
+            return Err(anyhow::anyhow!(
+                "Failed to fetch order status: {}",
+                response.status()
+            ));
         }
 
         let data: serde_json::Value = response.json().await?;
@@ -457,8 +480,10 @@ impl ExecutionPort for AngelOneExecutionAdapter {
 
         let headers = self.get_auth_headers()?;
 
-        let mut request = self.client
-            .get(format!("{}/rest/secure/angelbroking/portfolio/v1/getPosition", BASE_URL));
+        let mut request = self.client.get(format!(
+            "{}/rest/secure/angelbroking/portfolio/v1/getPosition",
+            BASE_URL
+        ));
 
         for (key, value) in &headers {
             request = request.header(*key, value);
@@ -470,7 +495,10 @@ impl ExecutionPort for AngelOneExecutionAdapter {
             .context("Failed to fetch positions from Angel One")?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("Failed to fetch positions: {}", response.status()));
+            return Err(anyhow::anyhow!(
+                "Failed to fetch positions: {}",
+                response.status()
+            ));
         }
 
         let data: serde_json::Value = response.json().await?;
@@ -527,8 +555,10 @@ impl ExecutionPort for AngelOneExecutionAdapter {
 
         let headers = self.get_auth_headers()?;
 
-        let mut request = self.client
-            .get(format!("{}/rest/secure/angelbroking/user/v1/getRMS", BASE_URL));
+        let mut request = self.client.get(format!(
+            "{}/rest/secure/angelbroking/user/v1/getRMS",
+            BASE_URL
+        ));
 
         for (key, value) in &headers {
             request = request.header(*key, value);
@@ -540,7 +570,10 @@ impl ExecutionPort for AngelOneExecutionAdapter {
             .context("Failed to fetch account balance from Angel One")?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("Failed to fetch balance: {}", response.status()));
+            return Err(anyhow::anyhow!(
+                "Failed to fetch balance: {}",
+                response.status()
+            ));
         }
 
         let data: serde_json::Value = response.json().await?;
@@ -549,9 +582,21 @@ impl ExecutionPort for AngelOneExecutionAdapter {
             .get("data")
             .ok_or_else(|| anyhow::anyhow!("No RMS data in response"))?;
 
-        let available = rms.get("availablecash").and_then(|v| v.as_str()).and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0);
-        let used = rms.get("utiliseddebits").and_then(|v| v.as_str()).and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0);
-        let net = rms.get("net").and_then(|v| v.as_str()).and_then(|s| s.parse::<f64>().ok()).unwrap_or(available + used);
+        let available = rms
+            .get("availablecash")
+            .and_then(|v| v.as_str())
+            .and_then(|s| s.parse::<f64>().ok())
+            .unwrap_or(0.0);
+        let used = rms
+            .get("utiliseddebits")
+            .and_then(|v| v.as_str())
+            .and_then(|s| s.parse::<f64>().ok())
+            .unwrap_or(0.0);
+        let net = rms
+            .get("net")
+            .and_then(|v| v.as_str())
+            .and_then(|s| s.parse::<f64>().ok())
+            .unwrap_or(available + used);
 
         Ok(AccountBalance {
             total_value: net,
@@ -592,11 +637,9 @@ mod tests {
 
     #[test]
     fn test_symbol_to_angel() {
-        let adapter = AngelOneExecutionAdapter::new(
-            "test_key".to_string(),
-            "test_client".to_string(),
-            None,
-        ).unwrap();
+        let adapter =
+            AngelOneExecutionAdapter::new("test_key".to_string(), "test_client".to_string(), None)
+                .unwrap();
         let symbol = Symbol("RELIANCE".to_string());
         let (tradingsymbol, symboltoken) = adapter.symbol_to_angel(&symbol);
         assert_eq!(tradingsymbol, "RELIANCE");
@@ -605,25 +648,27 @@ mod tests {
 
     #[test]
     fn test_side_mapping() {
-        let adapter = AngelOneExecutionAdapter::new(
-            "test_key".to_string(),
-            "test_client".to_string(),
-            None,
-        ).unwrap();
+        let adapter =
+            AngelOneExecutionAdapter::new("test_key".to_string(), "test_client".to_string(), None)
+                .unwrap();
         assert_eq!(adapter.side_mapping(&OrderSide::Buy), "BUY");
         assert_eq!(adapter.side_mapping(&OrderSide::Sell), "SELL");
     }
 
     #[test]
     fn test_order_type_mapping() {
-        let adapter = AngelOneExecutionAdapter::new(
-            "test_key".to_string(),
-            "test_client".to_string(),
-            None,
-        ).unwrap();
+        let adapter =
+            AngelOneExecutionAdapter::new("test_key".to_string(), "test_client".to_string(), None)
+                .unwrap();
         assert_eq!(adapter.order_type_mapping(&OrderType::Market), "MARKET");
         assert_eq!(adapter.order_type_mapping(&OrderType::Limit), "LIMIT");
-        assert_eq!(adapter.order_type_mapping(&OrderType::Stop), "STOPLOSS_MARKET");
-        assert_eq!(adapter.order_type_mapping(&OrderType::StopLimit), "STOPLOSS");
+        assert_eq!(
+            adapter.order_type_mapping(&OrderType::Stop),
+            "STOPLOSS_MARKET"
+        );
+        assert_eq!(
+            adapter.order_type_mapping(&OrderType::StopLimit),
+            "STOPLOSS"
+        );
     }
 }

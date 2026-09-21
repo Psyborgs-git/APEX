@@ -23,7 +23,11 @@ fn binance_pair(symbol: &str) -> Option<String> {
     let cleaned = symbol.replace('/', "").replace('-', "").to_uppercase();
     let quotes = ["USDT", "USDC", "BTC", "ETH", "BNB"];
     let looks_crypto = quotes.iter().any(|q| cleaned.ends_with(q)) && cleaned.len() >= 5;
-    if looks_crypto { Some(cleaned) } else { None }
+    if looks_crypto {
+        Some(cleaned)
+    } else {
+        None
+    }
 }
 
 /// Get order book depth for a symbol. Real L2 data is available only for
@@ -95,7 +99,9 @@ pub async fn get_order_book(
 
     let mid = (bid + ask) / 2.0;
     let spread = (ask - bid).max(mid * 0.0005);
-    let seed: u32 = symbol.bytes().fold(5381u32, |h, b| h.wrapping_mul(33).wrapping_add(b as u32));
+    let seed: u32 = symbol
+        .bytes()
+        .fold(5381u32, |h, b| h.wrapping_mul(33).wrapping_add(b as u32));
     let mut bids = Vec::with_capacity(20);
     let mut asks = Vec::with_capacity(20);
     let base_qty = (volume as f64 / 400.0).max(1.0);

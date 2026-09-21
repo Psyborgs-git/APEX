@@ -152,7 +152,11 @@ impl YahooFinanceAdapter {
     }
 
     /// Parse historical OHLCV data from Yahoo response
-    fn parse_ohlcv_response(symbol: &Symbol, timeframe: &Timeframe, body: &str) -> Result<Vec<OHLCV>> {
+    fn parse_ohlcv_response(
+        symbol: &Symbol,
+        timeframe: &Timeframe,
+        body: &str,
+    ) -> Result<Vec<OHLCV>> {
         let response: YahooChartResponse = serde_json::from_str(body)
             .map_err(|e| anyhow!("Failed to parse Yahoo response: {}", e))?;
 
@@ -178,8 +182,14 @@ impl YahooFinanceAdapter {
             .and_then(|q| q.first())
             .ok_or_else(|| anyhow!("No quote data in response"))?;
 
-        let opens = quotes.open.as_ref().ok_or_else(|| anyhow!("No open data"))?;
-        let highs = quotes.high.as_ref().ok_or_else(|| anyhow!("No high data"))?;
+        let opens = quotes
+            .open
+            .as_ref()
+            .ok_or_else(|| anyhow!("No open data"))?;
+        let highs = quotes
+            .high
+            .as_ref()
+            .ok_or_else(|| anyhow!("No high data"))?;
         let lows = quotes.low.as_ref().ok_or_else(|| anyhow!("No low data"))?;
         let closes = quotes
             .close
@@ -203,8 +213,7 @@ impl YahooFinanceAdapter {
             let volume = volumes.get(i).copied().flatten();
 
             // Skip bars with missing data
-            if let (Some(o), Some(h), Some(l), Some(c), Some(v)) =
-                (open, high, low, close, volume)
+            if let (Some(o), Some(h), Some(l), Some(c), Some(v)) = (open, high, low, close, volume)
             {
                 bars.push(OHLCV {
                     time,
@@ -289,8 +298,7 @@ impl MarketDataPort for YahooFinanceAdapter {
                 let symbols: Vec<Symbol> = subscribed.read().await.clone();
                 for symbol in &symbols {
                     let yahoo_symbol = YahooFinanceAdapter::format_symbol(symbol);
-                    let url =
-                        format!("{}/{}?interval=1d&range=1d", YAHOO_API_BASE, yahoo_symbol);
+                    let url = format!("{}/{}?interval=1d&range=1d", YAHOO_API_BASE, yahoo_symbol);
 
                     match client.get(&url).send().await {
                         Ok(response) => {
@@ -506,10 +514,7 @@ mod tests {
     #[test]
     fn test_format_symbol_nse() {
         let symbol = Symbol("RELIANCE.NS".into());
-        assert_eq!(
-            YahooFinanceAdapter::format_symbol(&symbol),
-            "RELIANCE.NS"
-        );
+        assert_eq!(YahooFinanceAdapter::format_symbol(&symbol), "RELIANCE.NS");
     }
 
     #[test]
@@ -530,9 +535,12 @@ mod tests {
     #[test]
     fn test_parse_historical_response() {
         let symbol = Symbol("AAPL".into());
-        let bars =
-            YahooFinanceAdapter::parse_ohlcv_response(&symbol, &Timeframe::D1, SAMPLE_HISTORICAL_RESPONSE)
-                .unwrap();
+        let bars = YahooFinanceAdapter::parse_ohlcv_response(
+            &symbol,
+            &Timeframe::D1,
+            SAMPLE_HISTORICAL_RESPONSE,
+        )
+        .unwrap();
         assert_eq!(bars.len(), 3);
         assert!((bars[0].open - 170.00).abs() < 0.01);
         assert!((bars[0].close - 172.00).abs() < 0.01);
@@ -570,10 +578,8 @@ mod tests {
     #[test]
     fn test_parse_empty_results() {
         let symbol = Symbol("AAPL".into());
-        let result = YahooFinanceAdapter::parse_quote_response(
-            &symbol,
-            r#"{"chart": {"result": []}}"#,
-        );
+        let result =
+            YahooFinanceAdapter::parse_quote_response(&symbol, r#"{"chart": {"result": []}}"#);
         assert!(result.is_err());
     }
 }

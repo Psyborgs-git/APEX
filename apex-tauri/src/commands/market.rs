@@ -46,8 +46,8 @@ pub async fn get_ohlcv(
 
     let from_dt = DateTime::<Utc>::from_timestamp(from, 0)
         .ok_or_else(|| "Invalid from timestamp".to_string())?;
-    let to_dt = DateTime::<Utc>::from_timestamp(to, 0)
-        .ok_or_else(|| "Invalid to timestamp".to_string())?;
+    let to_dt =
+        DateTime::<Utc>::from_timestamp(to, 0).ok_or_else(|| "Invalid to timestamp".to_string())?;
 
     // Query from storage
     let params = apex_core::domain::models::OHLCVQuery {
@@ -59,12 +59,13 @@ pub async fn get_ohlcv(
     };
 
     match state.storage.query_ohlcv(params).await {
-        Ok(bars) if !bars.is_empty() => {
-            Ok(bars.iter().map(OHLCVDto::from).collect())
-        }
+        Ok(bars) if !bars.is_empty() => Ok(bars.iter().map(OHLCVDto::from).collect()),
         _ => {
             // Fall back to aggregator adapter for historical data
-            Err(format!("No historical data available for {} in timeframe {}", symbol, timeframe))
+            Err(format!(
+                "No historical data available for {} in timeframe {}",
+                symbol, timeframe
+            ))
         }
     }
 }

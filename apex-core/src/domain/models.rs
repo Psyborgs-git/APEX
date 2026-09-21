@@ -9,16 +9,16 @@ pub struct Symbol(pub String);
 /// A single price tick from a market data feed
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Tick {
-    pub time:     DateTime<Utc>,
-    pub symbol:   Symbol,
-    pub bid:      f64,
-    pub ask:      f64,
-    pub last:     f64,
-    pub volume:   u64,
-    pub source:   String,
+    pub time: DateTime<Utc>,
+    pub symbol: Symbol,
+    pub bid: f64,
+    pub ask: f64,
+    pub last: f64,
+    pub volume: u64,
+    pub source: String,
     /// Day open when the feed provides it (REST-poll adapters like Yahoo).
     #[serde(default)]
-    pub open:      Option<f64>,
+    pub open: Option<f64>,
     /// Percent change vs previous close when the feed provides it.
     #[serde(default)]
     pub change_pct: Option<f64>,
@@ -27,31 +27,31 @@ pub struct Tick {
 /// A full quote snapshot for a symbol
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Quote {
-    pub symbol:      Symbol,
-    pub bid:         f64,
-    pub ask:         f64,
-    pub last:        f64,
-    pub open:        f64,
-    pub high:        f64,
-    pub low:         f64,
-    pub volume:      u64,
-    pub change_pct:  f64,
-    pub vwap:        f64,
-    pub updated_at:  DateTime<Utc>,
+    pub symbol: Symbol,
+    pub bid: f64,
+    pub ask: f64,
+    pub last: f64,
+    pub open: f64,
+    pub high: f64,
+    pub low: f64,
+    pub volume: u64,
+    pub change_pct: f64,
+    pub vwap: f64,
+    pub updated_at: DateTime<Utc>,
 }
 
 /// OHLCV bar (candlestick)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OHLCV {
-    pub time:    DateTime<Utc>,
-    pub symbol:  Symbol,
+    pub time: DateTime<Utc>,
+    pub symbol: Symbol,
     #[serde(default = "default_ohlcv_timeframe")]
     pub timeframe: Timeframe,
-    pub open:    f64,
-    pub high:    f64,
-    pub low:     f64,
-    pub close:   f64,
-    pub volume:  u64,
+    pub open: f64,
+    pub high: f64,
+    pub low: f64,
+    pub close: f64,
+    pub volume: u64,
 }
 
 fn default_ohlcv_timeframe() -> Timeframe {
@@ -93,59 +93,59 @@ pub struct OrderId(pub String);
 /// A full order record
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Order {
-    pub id:          OrderId,
-    pub symbol:      Symbol,
-    pub side:        OrderSide,
-    pub order_type:  OrderType,
-    pub quantity:    f64,
-    pub price:       Option<f64>,
-    pub stop_price:  Option<f64>,
-    pub status:      OrderStatus,
-    pub filled_qty:  f64,
-    pub avg_price:   f64,
-    pub created_at:  DateTime<Utc>,
-    pub updated_at:  DateTime<Utc>,
-    pub broker_id:   String,
-    pub source:      String,
+    pub id: OrderId,
+    pub symbol: Symbol,
+    pub side: OrderSide,
+    pub order_type: OrderType,
+    pub quantity: f64,
+    pub price: Option<f64>,
+    pub stop_price: Option<f64>,
+    pub status: OrderStatus,
+    pub filled_qty: f64,
+    pub avg_price: f64,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub broker_id: String,
+    pub source: String,
 }
 
 /// A trading position
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Position {
-    pub symbol:     Symbol,
-    pub quantity:   f64,
-    pub avg_price:  f64,
-    pub side:       OrderSide,
-    pub pnl:        f64,
-    pub pnl_pct:    f64,
-    pub broker_id:  String,
+    pub symbol: Symbol,
+    pub quantity: f64,
+    pub avg_price: f64,
+    pub side: OrderSide,
+    pub pnl: f64,
+    pub pnl_pct: f64,
+    pub broker_id: String,
 }
 
 /// A news item from any feed
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NewsItem {
-    pub id:          Uuid,
-    pub headline:    String,
-    pub summary:     String,
-    pub source:      String,
-    pub url:         String,
-    pub published:   DateTime<Utc>,
-    pub symbols:     Vec<Symbol>,
-    pub sentiment:   Option<f32>,
+    pub id: Uuid,
+    pub headline: String,
+    pub summary: String,
+    pub source: String,
+    pub url: String,
+    pub published: DateTime<Utc>,
+    pub symbols: Vec<Symbol>,
+    pub sentiment: Option<f32>,
 }
 
 /// A trading signal emitted by a strategy
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TradingSignal {
-    pub id:          Uuid,
+    pub id: Uuid,
     pub strategy_id: String,
-    pub symbol:      Symbol,
-    pub action:      SignalAction,
-    pub quantity:    f64,
-    pub price:       Option<f64>,
-    pub confidence:  f32,
-    pub reason:      String,
-    pub created_at:  DateTime<Utc>,
+    pub symbol: Symbol,
+    pub action: SignalAction,
+    pub quantity: f64,
+    pub price: Option<f64>,
+    pub confidence: f32,
+    pub reason: String,
+    pub created_at: DateTime<Utc>,
 }
 
 /// Signal action type
@@ -159,63 +159,71 @@ pub enum SignalAction {
 /// Request to create a new order
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NewOrderRequest {
-    pub symbol:     Symbol,
-    pub side:       OrderSide,
+    pub symbol: Symbol,
+    pub side: OrderSide,
     pub order_type: OrderType,
-    pub quantity:   f64,
-    pub price:      Option<f64>,
+    pub quantity: f64,
+    pub price: Option<f64>,
     pub stop_price: Option<f64>,
-    pub tag:        Option<String>,
+    pub tag: Option<String>,
 }
 
 /// Parameters for modifying an existing order
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModifyParams {
-    pub quantity:   Option<f64>,
-    pub price:      Option<f64>,
+    pub quantity: Option<f64>,
+    pub price: Option<f64>,
     pub stop_price: Option<f64>,
 }
 
 /// Account balance information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccountBalance {
-    pub total_value:    f64,
-    pub cash:           f64,
-    pub margin_used:    f64,
+    pub total_value: f64,
+    pub cash: f64,
+    pub margin_used: f64,
     pub margin_available: f64,
     pub unrealized_pnl: f64,
-    pub realized_pnl:   f64,
-    pub currency:       String,
+    pub realized_pnl: f64,
+    pub currency: String,
 }
 
 /// Parameters for querying OHLCV data
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OHLCVQuery {
-    pub symbol:    Symbol,
+    pub symbol: Symbol,
     pub timeframe: Timeframe,
-    pub from:      DateTime<Utc>,
-    pub to:        DateTime<Utc>,
-    pub limit:     Option<usize>,
+    pub from: DateTime<Utc>,
+    pub to: DateTime<Utc>,
+    pub limit: Option<usize>,
 }
 
 /// Parameters for querying orders
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrderQuery {
-    pub symbol:    Option<Symbol>,
-    pub status:    Option<OrderStatus>,
+    pub symbol: Option<Symbol>,
+    pub status: Option<OrderStatus>,
     pub broker_id: Option<String>,
-    pub from:      Option<DateTime<Utc>>,
-    pub to:        Option<DateTime<Utc>>,
-    pub limit:     Option<usize>,
+    pub from: Option<DateTime<Utc>>,
+    pub to: Option<DateTime<Utc>>,
+    pub limit: Option<usize>,
 }
 
 /// Timeframe for OHLCV data
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Timeframe {
-    S1, S5, S15,
-    M1, M3, M5, M15, M30,
-    H1, H4,
-    D1, W1,
+    S1,
+    S5,
+    S15,
+    M1,
+    M3,
+    M5,
+    M15,
+    M30,
+    H1,
+    H4,
+    D1,
+    W1,
 }
 
 impl Timeframe {
@@ -257,22 +265,22 @@ impl Timeframe {
 /// News filter for subscribing to news feeds
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NewsFilter {
-    pub symbols:   Option<Vec<Symbol>>,
-    pub sources:   Option<Vec<String>>,
-    pub keywords:  Option<Vec<String>>,
+    pub symbols: Option<Vec<Symbol>>,
+    pub sources: Option<Vec<String>>,
+    pub keywords: Option<Vec<String>>,
 }
 
 /// Fill event from broker
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FillEvent {
-    pub order_id:   OrderId,
-    pub symbol:     Symbol,
-    pub side:       OrderSide,
-    pub quantity:   f64,
-    pub price:      f64,
+    pub order_id: OrderId,
+    pub symbol: Symbol,
+    pub side: OrderSide,
+    pub quantity: f64,
+    pub price: f64,
     pub commission: f64,
-    pub filled_at:  DateTime<Utc>,
-    pub broker_id:  String,
+    pub filled_at: DateTime<Utc>,
+    pub broker_id: String,
 }
 
 #[cfg(test)]

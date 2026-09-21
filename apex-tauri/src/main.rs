@@ -5,8 +5,11 @@ mod state;
 mod tracing_setup;
 mod validation;
 
-use commands::{alerts, brokers, copilot, data, graph, health, market, ml, news, notebook, orderbook, orders, quant, risk, scanner, settings};
 use commands::strategy;
+use commands::{
+    alerts, brokers, copilot, data, graph, health, market, ml, news, notebook, orderbook, orders,
+    quant, risk, scanner, settings,
+};
 use tauri::Manager;
 
 fn load_env_file() {
@@ -35,10 +38,12 @@ fn main() {
             let runtime_paths = commands::python_runtime::RuntimePaths::resolve(&app_handle)
                 .expect("Runtime path resolution failed");
             let app_state_paths = runtime_paths.clone();
-            
+
             tauri::async_runtime::block_on(async move {
-                let app_state = state::AppState::init(app_state_paths).await.expect("App state initialization failed");
-                
+                let app_state = state::AppState::init(app_state_paths)
+                    .await
+                    .expect("App state initialization failed");
+
                 tracing::info!("App state initialized successfully");
                 tracing::info!(
                     "Risk engine: max_daily_loss = {}, halted = {}",
@@ -48,7 +53,7 @@ fn main() {
 
                 // Start real-time event push from message bus → frontend
                 app_state.start_event_push(app_handle.clone());
-                
+
                 app_handle.manage(app_state);
             });
 

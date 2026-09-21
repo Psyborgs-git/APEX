@@ -22,13 +22,14 @@ const MAX_ALERT_JSON_LEN: usize = 4096;
 const MAX_SESSION_TOKEN_LEN: usize = 8192;
 
 /// Known broker IDs.
-const VALID_BROKERS: &[&str] = &[
-    "paper", "zerodha", "angel_one", "groww", "robinhood",
-];
+const VALID_BROKERS: &[&str] = &["paper", "zerodha", "angel_one", "groww", "robinhood"];
 
 /// Known ML algorithm identifiers.
 const VALID_ALGORITHMS: &[&str] = &[
-    "random_forest", "gradient_boosting", "logistic_regression", "xgboost",
+    "random_forest",
+    "gradient_boosting",
+    "logistic_regression",
+    "xgboost",
 ];
 
 /// Validate a ticker symbol.
@@ -117,8 +118,7 @@ pub fn validate_alert_json(json: &str) -> Result<(), String> {
         ));
     }
     // Ensure it parses as valid JSON
-    serde_json::from_str::<serde_json::Value>(json)
-        .map_err(|e| format!("Invalid JSON: {}", e))?;
+    serde_json::from_str::<serde_json::Value>(json).map_err(|e| format!("Invalid JSON: {}", e))?;
     Ok(())
 }
 

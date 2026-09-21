@@ -69,7 +69,10 @@ impl MarketDataAggregator {
 
     /// Resolve a symbol to its canonical form
     pub fn resolve_symbol(&self, symbol: &str) -> String {
-        self.symbol_map.get(symbol).cloned().unwrap_or_else(|| symbol.to_string())
+        self.symbol_map
+            .get(symbol)
+            .cloned()
+            .unwrap_or_else(|| symbol.to_string())
     }
 
     /// Subscribe to symbols across all adapters and start processing
@@ -85,7 +88,10 @@ impl MarketDataAggregator {
             // adapters extend their shared set, WS adapters get one stream per
             // distinct call; resubscribing the same universe would leak tasks.
             let new_symbols: Vec<Symbol> = {
-                let mut known = self.subscribed_symbols.entry(adapter_id.clone()).or_default();
+                let mut known = self
+                    .subscribed_symbols
+                    .entry(adapter_id.clone())
+                    .or_default();
                 symbols
                     .iter()
                     .filter(|s| known.insert(s.0.clone()))
@@ -101,7 +107,10 @@ impl MarketDataAggregator {
                 Err(err) => {
                     warn!(adapter = %adapter_id, error = %err, "Market data adapter subscription failed");
                     // Unmark so a later `start` can retry this adapter.
-                    let mut known = self.subscribed_symbols.entry(adapter_id.clone()).or_default();
+                    let mut known = self
+                        .subscribed_symbols
+                        .entry(adapter_id.clone())
+                        .or_default();
                     for s in &new_symbols {
                         known.remove(&s.0);
                     }
@@ -120,7 +129,8 @@ impl MarketDataAggregator {
             tokio::spawn(async move {
                 while let Some(tick) = tick_stream.recv().await {
                     let symbol_key = tick.symbol.0.clone();
-                    let span = info_span!("tick_pipeline", symbol = %symbol_key, source = %adapter_id);
+                    let span =
+                        info_span!("tick_pipeline", symbol = %symbol_key, source = %adapter_id);
 
                     // Validate tick with data quality checker
                     if data_quality_checker.validate_tick(&tick).is_err() {
@@ -165,10 +175,7 @@ impl MarketDataAggregator {
                             Topic::Tick(symbol_key.clone()),
                             BusMessage::TickData(tick.clone()),
                         );
-                        bus.publish(
-                            Topic::Quote(symbol_key),
-                            BusMessage::QuoteData(quote),
-                        );
+                        bus.publish(Topic::Quote(symbol_key), BusMessage::QuoteData(quote));
 
                         tick
                     });
@@ -268,19 +275,22 @@ mod tests {
         assert!(agg.get_cached_quote("AAPL").is_none());
 
         // Manually insert a quote
-        agg.quote_cache.insert("AAPL".into(), Quote {
-            symbol: Symbol("AAPL".into()),
-            bid: 150.0,
-            ask: 150.05,
-            last: 150.02,
-            open: 149.0,
-            high: 151.0,
-            low: 148.5,
-            volume: 10000,
-            change_pct: 0.5,
-            vwap: 149.8,
-            updated_at: Utc::now(),
-        });
+        agg.quote_cache.insert(
+            "AAPL".into(),
+            Quote {
+                symbol: Symbol("AAPL".into()),
+                bid: 150.0,
+                ask: 150.05,
+                last: 150.02,
+                open: 149.0,
+                high: 151.0,
+                low: 148.5,
+                volume: 10000,
+                change_pct: 0.5,
+                vwap: 149.8,
+                updated_at: Utc::now(),
+            },
+        );
 
         let quote = agg.get_cached_quote("AAPL").unwrap();
         assert_eq!(quote.symbol.0, "AAPL");

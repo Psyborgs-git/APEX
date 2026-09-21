@@ -80,7 +80,11 @@ pub async fn compute_indicator(
 ) -> Result<IndicatorResultDto, String> {
     let bars = load_bars(&state, &symbol, timeframe.as_deref(), MAX_BARS).await?;
     if bars.len() < 3 {
-        return Err(format!("Not enough bars for {} (got {})", symbol, bars.len()));
+        return Err(format!(
+            "Not enough bars for {} (got {})",
+            symbol,
+            bars.len()
+        ));
     }
     let ts = times(&bars);
     let close: Vec<f64> = bars.iter().map(|b| b.close).collect();
@@ -168,7 +172,11 @@ pub async fn get_quant_stats(
 ) -> Result<QuantStatsDto, String> {
     let bars = load_bars(&state, &symbol, timeframe.as_deref(), MAX_BARS).await?;
     if bars.len() < 5 {
-        return Err(format!("Not enough bars for {} (got {})", symbol, bars.len()));
+        return Err(format!(
+            "Not enough bars for {} (got {})",
+            symbol,
+            bars.len()
+        ));
     }
     let closes: Vec<f64> = bars.iter().map(|b| b.close).collect();
     let rets = quant::returns(&closes);
@@ -250,7 +258,11 @@ pub(crate) async fn regression_inner(
     let xclose: HashMap<String, f64> = xbars.iter().map(|b| (key_of(b), b.close)).collect();
     let mut aligned: Vec<(String, f64, f64)> = ybars
         .iter()
-        .filter_map(|b| xclose.get(&key_of(b)).map(|&x| (b.time.to_rfc3339(), x, b.close)))
+        .filter_map(|b| {
+            xclose
+                .get(&key_of(b))
+                .map(|&x| (b.time.to_rfc3339(), x, b.close))
+        })
         .collect();
     aligned.sort_by(|a, b| a.0.cmp(&b.0));
 

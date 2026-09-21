@@ -99,7 +99,10 @@ impl StrategyOrchestrator {
         let script_path = self.strategy_dir.join(script_name);
 
         if !script_path.exists() {
-            return Err(anyhow::anyhow!("Strategy script not found: {:?}", script_path));
+            return Err(anyhow::anyhow!(
+                "Strategy script not found: {:?}",
+                script_path
+            ));
         }
 
         let strategy_id = Uuid::new_v4().to_string();
@@ -121,7 +124,8 @@ impl StrategyOrchestrator {
 
     /// Start a loaded strategy
     pub async fn start_strategy(&self, strategy_id: &str, params: serde_json::Value) -> Result<()> {
-        let mut strategy = self.strategies
+        let mut strategy = self
+            .strategies
             .get_mut(strategy_id)
             .ok_or_else(|| anyhow::anyhow!("Strategy not found: {}", strategy_id))?;
 
@@ -153,7 +157,8 @@ impl StrategyOrchestrator {
 
     /// Stop a running strategy
     pub async fn stop_strategy(&self, strategy_id: &str) -> Result<()> {
-        let mut strategy = self.strategies
+        let mut strategy = self
+            .strategies
             .get_mut(strategy_id)
             .ok_or_else(|| anyhow::anyhow!("Strategy not found: {}", strategy_id))?;
 
@@ -184,7 +189,8 @@ impl StrategyOrchestrator {
 
     /// Pause a running strategy (stop without removing)
     pub async fn pause_strategy(&self, strategy_id: &str) -> Result<()> {
-        let mut strategy = self.strategies
+        let mut strategy = self
+            .strategies
             .get_mut(strategy_id)
             .ok_or_else(|| anyhow::anyhow!("Strategy not found: {}", strategy_id))?;
 
@@ -204,8 +210,13 @@ impl StrategyOrchestrator {
     }
 
     /// Resume a paused strategy
-    pub async fn resume_strategy(&self, strategy_id: &str, params: serde_json::Value) -> Result<()> {
-        let strategy = self.strategies
+    pub async fn resume_strategy(
+        &self,
+        strategy_id: &str,
+        params: serde_json::Value,
+    ) -> Result<()> {
+        let strategy = self
+            .strategies
             .get(strategy_id)
             .ok_or_else(|| anyhow::anyhow!("Strategy not found: {}", strategy_id))?;
 
@@ -220,12 +231,15 @@ impl StrategyOrchestrator {
 
     /// Unload a strategy (must be stopped)
     pub async fn unload_strategy(&self, strategy_id: &str) -> Result<()> {
-        let strategy = self.strategies
+        let strategy = self
+            .strategies
             .get(strategy_id)
             .ok_or_else(|| anyhow::anyhow!("Strategy not found: {}", strategy_id))?;
 
         if strategy.status == StrategyStatus::Running {
-            return Err(anyhow::anyhow!("Cannot unload running strategy. Stop it first."));
+            return Err(anyhow::anyhow!(
+                "Cannot unload running strategy. Stop it first."
+            ));
         }
 
         drop(strategy); // Release the lock
@@ -269,7 +283,8 @@ impl StrategyOrchestrator {
         }
 
         // Send signal to Order & Trade Manager
-        self.signal_tx.send(signal)
+        self.signal_tx
+            .send(signal)
             .context("Failed to send signal to OTM")?;
 
         debug!("Emitted signal from strategy {}", strategy_id);
@@ -323,7 +338,10 @@ impl StrategyOrchestrator {
                         Ok(Some(status)) => {
                             // Process has exited
                             let exit_msg = format!("Process exited with status: {}", status);
-                            error!("Strategy '{}' (ID: {}) {}", strategy.name, strategy.id, exit_msg);
+                            error!(
+                                "Strategy '{}' (ID: {}) {}",
+                                strategy.name, strategy.id, exit_msg
+                            );
                             strategy.status = StrategyStatus::Failed(exit_msg);
                         }
                         Ok(None) => {
@@ -332,7 +350,10 @@ impl StrategyOrchestrator {
                         }
                         Err(e) => {
                             // Error checking process status
-                            error!("Failed to check strategy '{}' process: {}", strategy.name, e);
+                            error!(
+                                "Failed to check strategy '{}' process: {}",
+                                strategy.name, e
+                            );
                             strategy.status = StrategyStatus::Failed(e.to_string());
                         }
                     }
@@ -359,11 +380,7 @@ mod tests {
     #[tokio::test]
     async fn test_strategy_lifecycle() {
         let (tx, _rx) = mpsc::unbounded_channel();
-        let orchestrator = StrategyOrchestrator::new(
-            "strategies/",
-            "python3",
-            tx,
-        );
+        let orchestrator = StrategyOrchestrator::new("strategies/", "python3", tx);
 
         // Test load
         let result = orchestrator.load_strategy("test_strategy.py").await;

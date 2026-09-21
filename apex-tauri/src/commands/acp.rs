@@ -57,7 +57,10 @@ impl AcpClient {
             if msg.get("method").and_then(|m| m.as_str()) == Some("session/update") {
                 let update = &msg["params"]["update"];
                 let kind = update.get("sessionUpdate").and_then(|v| v.as_str());
-                if matches!(kind, Some("agent_message_chunk") | Some("agent_thought_chunk")) {
+                if matches!(
+                    kind,
+                    Some("agent_message_chunk") | Some("agent_thought_chunk")
+                ) {
                     if let Some(t) = update["content"]["text"].as_str() {
                         if kind == Some("agent_message_chunk") {
                             chunks.push_str(t);

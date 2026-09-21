@@ -89,14 +89,22 @@ pub fn rsi(data: &[f64], period: usize) -> Result<Vec<f64>> {
 
     let mut result = Vec::with_capacity(data.len() - period);
 
-    let rs = if avg_loss == 0.0 { 100.0 } else { avg_gain / avg_loss };
+    let rs = if avg_loss == 0.0 {
+        100.0
+    } else {
+        avg_gain / avg_loss
+    };
     result.push(100.0 - (100.0 / (1.0 + rs)));
 
     // Smoothed moving average for subsequent values
     for i in period..gains.len() {
         avg_gain = (avg_gain * (period as f64 - 1.0) + gains[i]) / period as f64;
         avg_loss = (avg_loss * (period as f64 - 1.0) + losses[i]) / period as f64;
-        let rs = if avg_loss == 0.0 { 100.0 } else { avg_gain / avg_loss };
+        let rs = if avg_loss == 0.0 {
+            100.0
+        } else {
+            avg_gain / avg_loss
+        };
         result.push(100.0 - (100.0 / (1.0 + rs)));
     }
 
@@ -113,7 +121,12 @@ pub struct MACDResult {
     pub histogram: Vec<f64>,
 }
 
-pub fn macd(data: &[f64], fast_period: usize, slow_period: usize, signal_period: usize) -> Result<MACDResult> {
+pub fn macd(
+    data: &[f64],
+    fast_period: usize,
+    slow_period: usize,
+    signal_period: usize,
+) -> Result<MACDResult> {
     if fast_period >= slow_period {
         return Err(anyhow!("Fast period must be less than slow period"));
     }
@@ -199,7 +212,11 @@ pub fn bollinger_bands(data: &[f64], period: usize, num_std: f64) -> Result<Boll
         lower.push(mid - num_std * std_dev);
     }
 
-    Ok(BollingerBandsResult { upper, middle, lower })
+    Ok(BollingerBandsResult {
+        upper,
+        middle,
+        lower,
+    })
 }
 
 /// Average True Range (ATR)
@@ -277,7 +294,13 @@ pub struct StochasticResult {
     pub d: Vec<f64>,
 }
 
-pub fn stochastic(high: &[f64], low: &[f64], close: &[f64], k_period: usize, d_period: usize) -> Result<StochasticResult> {
+pub fn stochastic(
+    high: &[f64],
+    low: &[f64],
+    close: &[f64],
+    k_period: usize,
+    d_period: usize,
+) -> Result<StochasticResult> {
     if high.len() != low.len() || high.len() != close.len() {
         return Err(anyhow!("Input arrays must have same length"));
     }
@@ -285,14 +308,20 @@ pub fn stochastic(high: &[f64], low: &[f64], close: &[f64], k_period: usize, d_p
         return Err(anyhow!("Periods must be > 0"));
     }
     if high.len() < k_period {
-        return Ok(StochasticResult { k: vec![], d: vec![] });
+        return Ok(StochasticResult {
+            k: vec![],
+            d: vec![],
+        });
     }
 
     let mut k_values = Vec::with_capacity(high.len() - k_period + 1);
 
     for i in (k_period - 1)..high.len() {
         let start = i + 1 - k_period;
-        let highest = high[start..=i].iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let highest = high[start..=i]
+            .iter()
+            .cloned()
+            .fold(f64::NEG_INFINITY, f64::max);
         let lowest = low[start..=i].iter().cloned().fold(f64::INFINITY, f64::min);
 
         let k = if (highest - lowest).abs() < f64::EPSILON {
@@ -326,7 +355,11 @@ pub fn std_dev(data: &[f64], period: usize) -> Result<Vec<f64>> {
     for (i, &mean) in means.iter().enumerate() {
         let start = i;
         let end = i + period;
-        let variance: f64 = data[start..end].iter().map(|x| (x - mean).powi(2)).sum::<f64>() / period as f64;
+        let variance: f64 = data[start..end]
+            .iter()
+            .map(|x| (x - mean).powi(2))
+            .sum::<f64>()
+            / period as f64;
         result.push(variance.sqrt());
     }
 
@@ -359,15 +392,15 @@ mod tests {
     use super::*;
 
     const PRICES: [f64; 20] = [
-        44.0, 44.3, 44.1, 43.6, 44.3, 44.8, 45.1, 43.7, 44.1, 44.6,
-        45.0, 45.2, 44.8, 44.3, 44.0, 43.5, 43.9, 44.2, 44.5, 44.7,
+        44.0, 44.3, 44.1, 43.6, 44.3, 44.8, 45.1, 43.7, 44.1, 44.6, 45.0, 45.2, 44.8, 44.3, 44.0,
+        43.5, 43.9, 44.2, 44.5, 44.7,
     ];
 
     #[test]
     fn test_sma_basic() {
         let result = sma(&PRICES, 5).unwrap();
         assert_eq!(result.len(), 16); // 20 - 5 + 1
-        // First SMA(5) = (44.0 + 44.3 + 44.1 + 43.6 + 44.3) / 5 = 44.06
+                                      // First SMA(5) = (44.0 + 44.3 + 44.1 + 43.6 + 44.3) / 5 = 44.06
         assert!((result[0] - 44.06).abs() < 0.01);
     }
 
@@ -407,7 +440,9 @@ mod tests {
 
     #[test]
     fn test_macd_basic() {
-        let data: Vec<f64> = (0..50).map(|i| 100.0 + (i as f64 * 0.5).sin() * 10.0).collect();
+        let data: Vec<f64> = (0..50)
+            .map(|i| 100.0 + (i as f64 * 0.5).sin() * 10.0)
+            .collect();
         let result = macd(&data, 12, 26, 9).unwrap();
         assert!(!result.macd_line.is_empty());
         assert!(!result.signal_line.is_empty());

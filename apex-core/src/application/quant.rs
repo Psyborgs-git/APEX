@@ -117,7 +117,10 @@ pub fn sortino_ratio(xs: &[f64], risk_free_per_period: f64, periods_per_year: f6
         return 0.0;
     }
     let excess: Vec<f64> = xs.iter().map(|x| x - risk_free_per_period).collect();
-    let downside: Vec<f64> = xs.iter().map(|x| (x - risk_free_per_period).min(0.0)).collect();
+    let downside: Vec<f64> = xs
+        .iter()
+        .map(|x| (x - risk_free_per_period).min(0.0))
+        .collect();
     let dd = std_dev(&downside);
     if dd == 0.0 {
         return 0.0;
@@ -205,7 +208,11 @@ pub fn ols(y: &[f64], x: &[f64]) -> Option<OlsResult> {
     if sxx == 0.0 {
         return None;
     }
-    let sxy: f64 = x.iter().zip(y.iter()).map(|(a, b)| (a - mx) * (b - my)).sum();
+    let sxy: f64 = x
+        .iter()
+        .zip(y.iter())
+        .map(|(a, b)| (a - mx) * (b - my))
+        .sum();
     let beta = sxy / sxx;
     let alpha = my - beta * mx;
 
@@ -337,7 +344,9 @@ mod tests {
     #[test]
     fn acf() {
         // alternating series → lag-1 strongly negative
-        let xs: Vec<f64> = (0..200).map(|i| if i % 2 == 0 { 1.0 } else { -1.0 }).collect();
+        let xs: Vec<f64> = (0..200)
+            .map(|i| if i % 2 == 0 { 1.0 } else { -1.0 })
+            .collect();
         let acf = autocorrelation(&xs, 5);
         assert!(acf[0] < -0.9);
         assert!(acf[1] > 0.9);
@@ -347,7 +356,11 @@ mod tests {
     fn ols_recovers_params() {
         // y = 2 + 0.5x + noise
         let x: Vec<f64> = (0..200).map(|i| (i as f64) / 10.0).collect();
-        let y: Vec<f64> = x.iter().enumerate().map(|(i, xv)| 2.0 + 0.5 * xv + (i % 7) as f64 * 0.01).collect();
+        let y: Vec<f64> = x
+            .iter()
+            .enumerate()
+            .map(|(i, xv)| 2.0 + 0.5 * xv + (i % 7) as f64 * 0.01)
+            .collect();
         let fit = ols(&y, &x).unwrap();
         assert!((fit.beta - 0.5).abs() < 0.01);
         assert!((fit.alpha - 2.0).abs() < 0.1);

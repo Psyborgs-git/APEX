@@ -1,11 +1,8 @@
+use anyhow::{Context, Result};
 use apex_core::{
     domain::models::*,
-    ports::{
-        execution::ExecutionPort,
-        market_data::AdapterHealth,
-    },
+    ports::{execution::ExecutionPort, market_data::AdapterHealth},
 };
-use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::Utc;
 use reqwest::Client;
@@ -195,7 +192,8 @@ impl ExecutionPort for RobinhoodExecutionAdapter {
 
         let auth_header = self.get_auth_header()?;
 
-        let response = self.client
+        let response = self
+            .client
             .post(format!("{}/orders/", ROBINHOOD_API_BASE))
             .header("Authorization", &auth_header)
             .json(&rh_order)
@@ -206,11 +204,20 @@ impl ExecutionPort for RobinhoodExecutionAdapter {
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
-            self.set_health(AdapterHealth::Degraded(format!("Order placement failed: {}", status)));
-            return Err(anyhow::anyhow!("Robinhood order error {}: {}", status, error_text));
+            self.set_health(AdapterHealth::Degraded(format!(
+                "Order placement failed: {}",
+                status
+            )));
+            return Err(anyhow::anyhow!(
+                "Robinhood order error {}: {}",
+                status,
+                error_text
+            ));
         }
 
-        let order_response: RobinhoodOrderResponse = response.json().await
+        let order_response: RobinhoodOrderResponse = response
+            .json()
+            .await
             .context("Failed to parse order response")?;
 
         self.set_health(AdapterHealth::Healthy);
@@ -226,7 +233,8 @@ impl ExecutionPort for RobinhoodExecutionAdapter {
         let url = format!("{}/orders/{}/cancel/", ROBINHOOD_API_BASE, order_id.0);
         let auth_header = self.get_auth_header()?;
 
-        let response = self.client
+        let response = self
+            .client
             .post(&url)
             .header("Authorization", &auth_header)
             .send()
@@ -234,7 +242,10 @@ impl ExecutionPort for RobinhoodExecutionAdapter {
             .context("Failed to cancel order with Robinhood")?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("Failed to cancel order: {}", response.status()));
+            return Err(anyhow::anyhow!(
+                "Failed to cancel order: {}",
+                response.status()
+            ));
         }
 
         info!("Cancelled order {} with Robinhood", order_id.0);
@@ -259,7 +270,8 @@ impl ExecutionPort for RobinhoodExecutionAdapter {
         let url = format!("{}/orders/{}/", ROBINHOOD_API_BASE, order_id.0);
         let auth_header = self.get_auth_header()?;
 
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .header("Authorization", &auth_header)
             .send()
@@ -267,10 +279,15 @@ impl ExecutionPort for RobinhoodExecutionAdapter {
             .context("Failed to fetch order from Robinhood")?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("Failed to fetch order status: {}", response.status()));
+            return Err(anyhow::anyhow!(
+                "Failed to fetch order status: {}",
+                response.status()
+            ));
         }
 
-        let rh_order: RobinhoodOrder = response.json().await
+        let rh_order: RobinhoodOrder = response
+            .json()
+            .await
             .context("Failed to parse order response")?;
 
         let side = match rh_order.side.as_str() {
@@ -293,7 +310,12 @@ impl ExecutionPort for RobinhoodExecutionAdapter {
 
         let quantity: f64 = rh_order.quantity.parse().unwrap_or(0.0);
         let filled_qty: f64 = rh_order.cumulative_quantity.parse().unwrap_or(0.0);
-        let avg_price: f64 = rh_order.average_price.as_deref().unwrap_or("0").parse().unwrap_or(0.0);
+        let avg_price: f64 = rh_order
+            .average_price
+            .as_deref()
+            .unwrap_or("0")
+            .parse()
+            .unwrap_or(0.0);
 
         Ok(Order {
             id: order_id.clone(),
@@ -320,7 +342,8 @@ impl ExecutionPort for RobinhoodExecutionAdapter {
 
         let auth_header = self.get_auth_header()?;
 
-        let response = self.client
+        let response = self
+            .client
             .get(format!("{}/positions/?nonzero=true", ROBINHOOD_API_BASE))
             .header("Authorization", &auth_header)
             .send()
@@ -328,7 +351,10 @@ impl ExecutionPort for RobinhoodExecutionAdapter {
             .context("Failed to fetch positions from Robinhood")?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("Failed to fetch positions: {}", response.status()));
+            return Err(anyhow::anyhow!(
+                "Failed to fetch positions: {}",
+                response.status()
+            ));
         }
 
         let data: serde_json::Value = response.json().await?;
@@ -352,7 +378,7 @@ impl ExecutionPort for RobinhoodExecutionAdapter {
                 quantity,
                 avg_price,
                 side: OrderSide::Buy, // Robinhood positions are long-only for equities
-                pnl: 0.0,            // Would need current price to calculate
+                pnl: 0.0,             // Would need current price to calculate
                 pnl_pct: 0.0,
                 broker_id: "robinhood".to_string(),
             });
@@ -369,7 +395,8 @@ impl ExecutionPort for RobinhoodExecutionAdapter {
 
         let auth_header = self.get_auth_header()?;
 
-        let response = self.client
+        let response = self
+            .client
             .get(format!("{}/accounts/", ROBINHOOD_API_BASE))
             .header("Authorization", &auth_header)
             .send()
@@ -377,7 +404,10 @@ impl ExecutionPort for RobinhoodExecutionAdapter {
             .context("Failed to fetch account from Robinhood")?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("Failed to fetch account: {}", response.status()));
+            return Err(anyhow::anyhow!(
+                "Failed to fetch account: {}",
+                response.status()
+            ));
         }
 
         let data: serde_json::Value = response.json().await?;
@@ -391,11 +421,13 @@ impl ExecutionPort for RobinhoodExecutionAdapter {
         }
 
         let account = &accounts[0];
-        let cash: f64 = account.get("portfolio_cash")
+        let cash: f64 = account
+            .get("portfolio_cash")
             .and_then(|v| v.as_str())
             .and_then(|s| s.parse().ok())
             .unwrap_or(0.0);
-        let buying_power: f64 = account.get("buying_power")
+        let buying_power: f64 = account
+            .get("buying_power")
             .and_then(|v| v.as_str())
             .and_then(|s| s.parse().ok())
             .unwrap_or(0.0);
@@ -447,21 +479,51 @@ mod tests {
     #[test]
     fn test_order_type_mapping() {
         let adapter = RobinhoodExecutionAdapter::new("test_id".to_string(), None).unwrap();
-        assert_eq!(adapter.order_type_to_robinhood(&OrderType::Market), ("market", "immediate"));
-        assert_eq!(adapter.order_type_to_robinhood(&OrderType::Limit), ("limit", "immediate"));
-        assert_eq!(adapter.order_type_to_robinhood(&OrderType::Stop), ("market", "stop"));
-        assert_eq!(adapter.order_type_to_robinhood(&OrderType::StopLimit), ("limit", "stop"));
+        assert_eq!(
+            adapter.order_type_to_robinhood(&OrderType::Market),
+            ("market", "immediate")
+        );
+        assert_eq!(
+            adapter.order_type_to_robinhood(&OrderType::Limit),
+            ("limit", "immediate")
+        );
+        assert_eq!(
+            adapter.order_type_to_robinhood(&OrderType::Stop),
+            ("market", "stop")
+        );
+        assert_eq!(
+            adapter.order_type_to_robinhood(&OrderType::StopLimit),
+            ("limit", "stop")
+        );
     }
 
     #[test]
     fn test_status_mapping() {
         let adapter = RobinhoodExecutionAdapter::new("test_id".to_string(), None).unwrap();
-        assert_eq!(adapter.robinhood_state_to_status("queued"), OrderStatus::Open);
-        assert_eq!(adapter.robinhood_state_to_status("confirmed"), OrderStatus::Open);
-        assert_eq!(adapter.robinhood_state_to_status("partially_filled"), OrderStatus::PartiallyFilled);
-        assert_eq!(adapter.robinhood_state_to_status("filled"), OrderStatus::Filled);
-        assert_eq!(adapter.robinhood_state_to_status("cancelled"), OrderStatus::Cancelled);
-        assert_eq!(adapter.robinhood_state_to_status("rejected"), OrderStatus::Rejected);
+        assert_eq!(
+            adapter.robinhood_state_to_status("queued"),
+            OrderStatus::Open
+        );
+        assert_eq!(
+            adapter.robinhood_state_to_status("confirmed"),
+            OrderStatus::Open
+        );
+        assert_eq!(
+            adapter.robinhood_state_to_status("partially_filled"),
+            OrderStatus::PartiallyFilled
+        );
+        assert_eq!(
+            adapter.robinhood_state_to_status("filled"),
+            OrderStatus::Filled
+        );
+        assert_eq!(
+            adapter.robinhood_state_to_status("cancelled"),
+            OrderStatus::Cancelled
+        );
+        assert_eq!(
+            adapter.robinhood_state_to_status("rejected"),
+            OrderStatus::Rejected
+        );
     }
 
     #[test]

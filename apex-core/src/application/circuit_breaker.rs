@@ -74,7 +74,12 @@ pub struct CircuitBreaker<T> {
 
 impl<T> CircuitBreaker<T> {
     /// Create a new circuit breaker wrapping `inner`.
-    pub fn new(inner: T, failure_threshold: u32, success_threshold: u32, timeout: Duration) -> Self {
+    pub fn new(
+        inner: T,
+        failure_threshold: u32,
+        success_threshold: u32,
+        timeout: Duration,
+    ) -> Self {
         Self {
             inner,
             state: Arc::new(RwLock::new(CbState::Closed)),
@@ -286,10 +291,12 @@ mod tests {
         let cb = CircuitBreaker::new(DummyService::new(), 3, 2, Duration::from_secs(1));
 
         let result: Result<i32, CbError<String>> = cb
-            .call(|svc| Box::pin(async move {
-                svc.call_count.fetch_add(1, Ordering::SeqCst);
-                Ok(42)
-            }))
+            .call(|svc| {
+                Box::pin(async move {
+                    svc.call_count.fetch_add(1, Ordering::SeqCst);
+                    Ok(42)
+                })
+            })
             .await;
 
         assert_eq!(result.unwrap(), 42);
@@ -312,10 +319,12 @@ mod tests {
 
         // Next call should be rejected without executing.
         let result: Result<(), CbError<String>> = cb
-            .call(|svc| Box::pin(async move {
-                svc.call_count.fetch_add(1, Ordering::SeqCst);
-                Ok(())
-            }))
+            .call(|svc| {
+                Box::pin(async move {
+                    svc.call_count.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                })
+            })
             .await;
 
         assert!(matches!(result, Err(CbError::CircuitOpen)));
@@ -342,10 +351,12 @@ mod tests {
 
         // Next call should go through (HalfOpen) and succeed → Closed.
         let result: Result<i32, CbError<String>> = cb
-            .call(|svc| Box::pin(async move {
-                svc.call_count.fetch_add(1, Ordering::SeqCst);
-                Ok(7)
-            }))
+            .call(|svc| {
+                Box::pin(async move {
+                    svc.call_count.fetch_add(1, Ordering::SeqCst);
+                    Ok(7)
+                })
+            })
             .await;
 
         assert_eq!(result.unwrap(), 7);

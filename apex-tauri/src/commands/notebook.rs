@@ -18,22 +18,30 @@ use crate::dto::{
 const DEFAULT_NOTEBOOK_TITLE: &str = "Research Notebook";
 
 #[tauri::command]
-pub async fn list_notebooks(runtime_paths: State<'_, RuntimePaths>) -> Result<Vec<NotebookSummaryDto>, String> {
+pub async fn list_notebooks(
+    runtime_paths: State<'_, RuntimePaths>,
+) -> Result<Vec<NotebookSummaryDto>, String> {
     let root = notebooks_root(&runtime_paths)?;
     let mut entries = Vec::new();
 
-    for entry in fs::read_dir(&root)
-        .map_err(|error| format!("Failed to read notebooks directory {}: {error}", root.display()))?
-    {
+    for entry in fs::read_dir(&root).map_err(|error| {
+        format!(
+            "Failed to read notebooks directory {}: {error}",
+            root.display()
+        )
+    })? {
         let entry = entry.map_err(|error| format!("Failed to read notebook entry: {error}"))?;
         let path = entry.path();
         if !path.is_file() || !is_notebook_path(&path) {
             continue;
         }
 
-        let metadata = entry
-            .metadata()
-            .map_err(|error| format!("Failed to read notebook metadata for {}: {error}", path.display()))?;
+        let metadata = entry.metadata().map_err(|error| {
+            format!(
+                "Failed to read notebook metadata for {}: {error}",
+                path.display()
+            )
+        })?;
         let updated_at = metadata
             .modified()
             .ok()
@@ -43,7 +51,8 @@ pub async fn list_notebooks(runtime_paths: State<'_, RuntimePaths>) -> Result<Ve
 
         entries.push(NotebookSummaryDto {
             name: notebook_display_name(&path),
-            path: path.strip_prefix(runtime_paths.work_root())
+            path: path
+                .strip_prefix(runtime_paths.work_root())
                 .unwrap_or(&path)
                 .to_string_lossy()
                 .to_string(),
@@ -56,7 +65,10 @@ pub async fn list_notebooks(runtime_paths: State<'_, RuntimePaths>) -> Result<Ve
 }
 
 #[tauri::command]
-pub async fn load_notebook(path: String, runtime_paths: State<'_, RuntimePaths>) -> Result<NotebookDocumentDto, String> {
+pub async fn load_notebook(
+    path: String,
+    runtime_paths: State<'_, RuntimePaths>,
+) -> Result<NotebookDocumentDto, String> {
     let notebook_path = resolve_notebook_path(&runtime_paths, &path)?;
     read_notebook(&notebook_path, runtime_paths.work_root())
 }
@@ -84,7 +96,9 @@ pub async fn create_notebook(
             NotebookCellDto {
                 id: format!("cell-{}", Uuid::new_v4()),
                 kind: "markdown".into(),
-                content: "# Research notes\n\nCapture hypotheses, observations, and next steps here.".into(),
+                content:
+                    "# Research notes\n\nCapture hypotheses, observations, and next steps here."
+                        .into(),
                 output: None,
             },
             NotebookCellDto {
@@ -157,7 +171,12 @@ pub async fn run_notebook_cell(
         .stderr(Stdio::piped())
         .output()
         .await
-        .map_err(|error| format!("Failed to execute notebook cell with {}: {error}", python.display()))?;
+        .map_err(|error| {
+            format!(
+                "Failed to execute notebook cell with {}: {error}",
+                python.display()
+            )
+        })?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
@@ -165,7 +184,14 @@ pub async fn run_notebook_cell(
     let stderr = if success {
         stderr
     } else {
-        enrich_python_error(&stderr, &["APEX_NOTEBOOK_PYTHON", "APEX_STRATEGY_PYTHON", "APEX_PYTHON_PATH"])
+        enrich_python_error(
+            &stderr,
+            &[
+                "APEX_NOTEBOOK_PYTHON",
+                "APEX_STRATEGY_PYTHON",
+                "APEX_PYTHON_PATH",
+            ],
+        )
     };
 
     Ok(NotebookCellExecutionDto {
@@ -179,12 +205,19 @@ pub async fn run_notebook_cell(
 
 fn notebooks_root(runtime_paths: &RuntimePaths) -> Result<PathBuf, String> {
     let root = runtime_paths.resolve_user_relative_path("notebooks");
-    fs::create_dir_all(&root)
-        .map_err(|error| format!("Failed to create notebooks directory {}: {error}", root.display()))?;
+    fs::create_dir_all(&root).map_err(|error| {
+        format!(
+            "Failed to create notebooks directory {}: {error}",
+            root.display()
+        )
+    })?;
     Ok(root)
 }
 
-fn resolve_notebook_path(runtime_paths: &RuntimePaths, requested_path: &str) -> Result<PathBuf, String> {
+fn resolve_notebook_path(
+    runtime_paths: &RuntimePaths,
+    requested_path: &str,
+) -> Result<PathBuf, String> {
     let root = notebooks_root(runtime_paths)?;
     let raw = requested_path.trim();
     let relative = if raw.is_empty() {
@@ -193,8 +226,14 @@ fn resolve_notebook_path(runtime_paths: &RuntimePaths, requested_path: &str) -> 
         PathBuf::from(raw)
     };
 
-    if relative.is_absolute() || relative.components().any(|component| matches!(component, Component::ParentDir)) {
-        return Err("Notebook paths must stay within the notebooks workspace directory".to_string());
+    if relative.is_absolute()
+        || relative
+            .components()
+            .any(|component| matches!(component, Component::ParentDir))
+    {
+        return Err(
+            "Notebook paths must stay within the notebooks workspace directory".to_string(),
+        );
     }
 
     let with_extension = if is_notebook_path(&relative) {
@@ -207,8 +246,12 @@ fn resolve_notebook_path(runtime_paths: &RuntimePaths, requested_path: &str) -> 
 
     let resolved = root.join(with_extension);
     if let Some(parent) = resolved.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|error| format!("Failed to create notebook directory {}: {error}", parent.display()))?;
+        fs::create_dir_all(parent).map_err(|error| {
+            format!(
+                "Failed to create notebook directory {}: {error}",
+                parent.display()
+            )
+        })?;
     }
     Ok(resolved)
 }
@@ -218,7 +261,11 @@ fn read_notebook(path: &Path, work_root: &Path) -> Result<NotebookDocumentDto, S
         .map_err(|error| format!("Failed to read notebook {}: {error}", path.display()))?;
     let mut notebook: NotebookDocumentDto = serde_json::from_str(&raw)
         .map_err(|error| format!("Failed to parse notebook {}: {error}", path.display()))?;
-    notebook.path = path.strip_prefix(work_root).unwrap_or(path).to_string_lossy().to_string();
+    notebook.path = path
+        .strip_prefix(work_root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .to_string();
     Ok(notebook)
 }
 
@@ -233,7 +280,11 @@ fn save_notebook_to_path(
     } else {
         normalized.title.trim().to_string()
     };
-    normalized.path = path.strip_prefix(work_root).unwrap_or(path).to_string_lossy().to_string();
+    normalized.path = path
+        .strip_prefix(work_root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .to_string();
     normalized.updated_at = Utc::now().to_rfc3339();
 
     let json = serde_json::to_string_pretty(&normalized)

@@ -25,9 +25,7 @@ fn adapter_health_dto(
 
 /// Get overall system health status including adapter statuses.
 #[tauri::command]
-pub async fn get_system_health(
-    state: State<'_, AppState>,
-) -> Result<SystemHealthDto, String> {
+pub async fn get_system_health(state: State<'_, AppState>) -> Result<SystemHealthDto, String> {
     let mut adapters: Vec<AdapterHealthDto> = state
         .aggregator
         .adapter_health()
@@ -43,11 +41,7 @@ pub async fn get_system_health(
             .map(|(adapter_id, health)| adapter_health_dto(adapter_id, "execution", health)),
     );
 
-    let open_orders = state
-        .otm
-        .open_orders()
-        .iter()
-        .count();
+    let open_orders = state.otm.open_orders().iter().count();
 
     let active_subs = state.aggregator.active_subscription_count();
 

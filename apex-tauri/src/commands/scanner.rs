@@ -107,7 +107,13 @@ pub async fn run_scan(
         .map(to_criterion)
         .collect::<Result<Vec<_>, String>>()?;
 
-    let timeframe = match request.timeframe.as_deref().unwrap_or("d1").to_lowercase().as_str() {
+    let timeframe = match request
+        .timeframe
+        .as_deref()
+        .unwrap_or("d1")
+        .to_lowercase()
+        .as_str()
+    {
         "1m" | "m1" => Timeframe::M1,
         "5m" | "m5" => Timeframe::M5,
         "15m" | "m15" => Timeframe::M15,
@@ -119,9 +125,7 @@ pub async fn run_scan(
     };
 
     let config = ScanConfig {
-        name: request
-            .name
-            .unwrap_or_else(|| "Ad-hoc scan".to_string()),
+        name: request.name.unwrap_or_else(|| "Ad-hoc scan".to_string()),
         universe,
         criteria,
         timeframe,

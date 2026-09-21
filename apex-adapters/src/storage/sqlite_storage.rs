@@ -125,10 +125,7 @@ impl SqliteStorage {
 
         // Bars are keyed by (symbol, timeframe, time); drop historical duplicates
         // before adding the unique index, then upsert on write.
-        conn.execute(
-            "DROP INDEX IF EXISTS idx_ohlcv_symbol_time_unique",
-            [],
-        )?;
+        conn.execute("DROP INDEX IF EXISTS idx_ohlcv_symbol_time_unique", [])?;
         conn.execute(
             "DELETE FROM ohlcv WHERE rowid NOT IN (
                  SELECT MIN(rowid) FROM ohlcv GROUP BY symbol, timeframe, time
@@ -463,8 +460,8 @@ mod tests {
                 last: 150.02,
                 volume: 100,
                 source: "test".into(),
-            open: None,
-            change_pct: None,
+                open: None,
+                change_pct: None,
             },
             Tick {
                 time: Utc::now(),
@@ -474,8 +471,8 @@ mod tests {
                 last: 150.12,
                 volume: 200,
                 source: "test".into(),
-            open: None,
-            change_pct: None,
+                open: None,
+                change_pct: None,
             },
         ];
         storage.write_ticks(&ticks).await.unwrap();

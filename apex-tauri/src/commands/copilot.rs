@@ -1,8 +1,8 @@
-use crate::commands::{data, ml, quant, scanner, strategy};
 use crate::commands::ml::ModelRegistry;
 use crate::commands::python_runtime;
 use crate::commands::scanner::ScanCriterionDto;
 use crate::commands::strategy::StrategyBacktestRequestDto;
+use crate::commands::{data, ml, quant, scanner, strategy};
 use crate::dto::MLTrainingRequestDto;
 use crate::state::AppState;
 use crate::validation;
@@ -87,20 +87,23 @@ fn resolve_provider(state: &AppState) -> Result<ResolvedProvider, String> {
     // Legacy fallback: [copilot] section + OPEN_ROUTER env var.
     if !state.copilot.enabled {
         return Err(
-            "Copilot is disabled — enable it in settings or configure an LLM provider"
-                .to_string(),
+            "Copilot is disabled — enable it in settings or configure an LLM provider".to_string(),
         );
     }
     let api_key = ["OPEN_ROUTER", "OPENROUTER_API_KEY"]
         .iter()
         .find_map(|n| env_key(n))
         .ok_or_else(|| {
-            "No LLM provider configured — set OPEN_ROUTER or add a provider in Settings"
-                .to_string()
+            "No LLM provider configured — set OPEN_ROUTER or add a provider in Settings".to_string()
         })?;
     Ok(ResolvedProvider {
         id: "copilot".to_string(),
-        base_url: state.copilot.base_url.trim().trim_end_matches('/').to_string(),
+        base_url: state
+            .copilot
+            .base_url
+            .trim()
+            .trim_end_matches('/')
+            .to_string(),
         model: state.copilot.model.clone(),
         api_kind: "chat".to_string(),
         api_key,
@@ -235,7 +238,9 @@ async fn exec_tool(
                     "symbol": sym, "last": q.last, "change_pct": q.change_pct,
                     "volume": q.volume, "high": q.high, "low": q.low,
                 })),
-                None => Err(format!("no cached quote for {sym} — add it to the watchlist")),
+                None => Err(format!(
+                    "no cached quote for {sym} — add it to the watchlist"
+                )),
             }
         }
         "get_ohlcv" => {
@@ -278,8 +283,12 @@ async fn exec_tool(
                 .unwrap_or_default();
             let criteria: Vec<_> = criteria_raw
                 .iter()
-                .map(|c| scanner::to_criterion(&serde_json::from_value::<ScanCriterionDto>(c.clone())
-                    .map_err(|e| format!("bad criterion: {e}"))?))
+                .map(|c| {
+                    scanner::to_criterion(
+                        &serde_json::from_value::<ScanCriterionDto>(c.clone())
+                            .map_err(|e| format!("bad criterion: {e}"))?,
+                    )
+                })
                 .collect::<Result<_, String>>()?;
             if criteria.is_empty() {
                 return Err("criteria must be a non-empty array".into());
@@ -300,7 +309,9 @@ async fn exec_tool(
                 return Err("no symbols in universe — add symbols to the watchlist".into());
             }
             let tf = parse_timeframe(
-                args.get("timeframe").and_then(|v| v.as_str()).unwrap_or("d1"),
+                args.get("timeframe")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("d1"),
             );
             let out = state
                 .scanner
@@ -325,12 +336,16 @@ async fn exec_tool(
         "get_news" => {
             let limit = clamp_limit(args.get("limit"), 8, 25);
             let items = match args.get("symbol").and_then(|v| v.as_str()) {
-                Some(sym) => state.news.get_news_for_symbol(&Symbol(sym.to_uppercase()), limit),
+                Some(sym) => state
+                    .news
+                    .get_news_for_symbol(&Symbol(sym.to_uppercase()), limit),
                 None => state.news.latest_news(limit),
             };
-            Ok(json!({"count": items.len(), "items": items.iter().map(|i| json!({
+            Ok(
+                json!({"count": items.len(), "items": items.iter().map(|i| json!({
                 "headline": i.headline, "source": i.source,
-            })).collect::<Vec<_>>()}))
+            })).collect::<Vec<_>>()}),
+            )
         }
         "list_strategies" => {
             let files = strategy::list_strategy_files_inner(runtime_paths)?;
@@ -339,8 +354,8 @@ async fn exec_tool(
         "read_strategy" => {
             let path = arg_str(args, "path")?;
             let full = strategy::normalize_strategy_path(path, runtime_paths)?;
-            let content = std::fs::read_to_string(&full)
-                .map_err(|e| format!("cannot read {path}: {e}"))?;
+            let content =
+                std::fs::read_to_string(&full).map_err(|e| format!("cannot read {path}: {e}"))?;
             Ok(json!({"path": path, "content": content.chars().take(12000).collect::<String>()}))
         }
         "save_strategy" => {
@@ -393,7 +408,10 @@ async fn exec_tool(
         }
         "export_bars_csv" => {
             let sym = arg_str(args, "symbol")?;
-            let tf = args.get("timeframe").and_then(|v| v.as_str()).unwrap_or("d1");
+            let tf = args
+                .get("timeframe")
+                .and_then(|v| v.as_str())
+                .unwrap_or("d1");
             let limit = clamp_limit(args.get("limit"), 500, 2000);
             let bars = data::load_bars(state, sym, Some(tf), limit).await?;
             if bars.is_empty() {
@@ -408,7 +426,11 @@ async fn exec_tool(
                 out.push_str(&format!(
                     "{},{},{},{},{},{}\n",
                     b.time.format("%Y-%m-%dT%H:%M:%SZ"),
-                    b.open, b.high, b.low, b.close, b.volume
+                    b.open,
+                    b.high,
+                    b.low,
+                    b.close,
+                    b.volume
                 ));
             }
             std::fs::write(&path, &out).map_err(|e| e.to_string())?;
@@ -422,10 +444,12 @@ async fn exec_tool(
         }
         "list_ml_models" => {
             let models = ml::load_registered_models(&models.models_dir)?;
-            Ok(json!({"count": models.len(), "models": models.iter().map(|m| json!({
+            Ok(
+                json!({"count": models.len(), "models": models.iter().map(|m| json!({
                 "id": m.model_id, "algorithm": m.algorithm,
                 "metrics": m.metrics, "target": m.target_column,
-            })).collect::<Vec<_>>()}))
+            })).collect::<Vec<_>>()}),
+            )
         }
         "train_ml_model" => {
             let req = MLTrainingRequestDto {
@@ -435,7 +459,11 @@ async fn exec_tool(
                 feature_columns: args
                     .get("feature_columns")
                     .and_then(|v| v.as_array())
-                    .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect()
+                    })
                     .unwrap_or_default(),
                 hyperparams: args
                     .get("hyperparams")
@@ -460,7 +488,16 @@ async fn exec_tool(
 fn trace_detail(name: &str, args: &Value) -> String {
     let pick = |keys: &[&str]| -> String {
         keys.iter()
-            .filter_map(|k| args.get(*k).map(|v| format!("{k}={}", v.as_str().map(String::from).unwrap_or_else(|| v.to_string()))))
+            .filter_map(|k| {
+                args.get(*k).map(|v| {
+                    format!(
+                        "{k}={}",
+                        v.as_str()
+                            .map(String::from)
+                            .unwrap_or_else(|| v.to_string())
+                    )
+                })
+            })
             .collect::<Vec<_>>()
             .join(" ")
     };
@@ -614,8 +651,12 @@ pub async fn copilot_chat(
     let pos_text: Vec<String> = positions
         .iter()
         .take(20)
-        .map(|p| format!("{} qty={:.0} avg={:.2} pnl={:+.2}",
-                         p.symbol.0, p.quantity, p.avg_price, p.pnl))
+        .map(|p| {
+            format!(
+                "{} qty={:.0} avg={:.2} pnl={:+.2}",
+                p.symbol.0, p.quantity, p.avg_price, p.pnl
+            )
+        })
         .collect();
 
     let system_prompt = format!(
@@ -627,8 +668,16 @@ pub async fn copilot_chat(
          Answer tersely, never invent prices — use tools or the live context below. \
          This is decision support, not financial advice.\n\n\
          LIVE WATCHLIST QUOTES:\n{}\n\nOPEN POSITIONS:\n{}\n\nSESSION P&L: {:.2}",
-        if quotes.is_empty() { "(no quotes loaded)".into() } else { quotes.join("\n") },
-        if pos_text.is_empty() { "(no open positions)".into() } else { pos_text.join("\n") },
+        if quotes.is_empty() {
+            "(no quotes loaded)".into()
+        } else {
+            quotes.join("\n")
+        },
+        if pos_text.is_empty() {
+            "(no open positions)".into()
+        } else {
+            pos_text.join("\n")
+        },
         state.risk.session_pnl(),
     );
 
@@ -646,8 +695,16 @@ pub async fn copilot_chat(
             })];
             if let Some(history) = &history {
                 for m in history.iter().rev().take(16).rev() {
-                    let role = if m.role == "assistant" { "assistant" } else { "user" };
-                    let kind = if role == "assistant" { "output_text" } else { "input_text" };
+                    let role = if m.role == "assistant" {
+                        "assistant"
+                    } else {
+                        "user"
+                    };
+                    let kind = if role == "assistant" {
+                        "output_text"
+                    } else {
+                        "input_text"
+                    };
                     input.push(json!({"role": role,
                         "content": [{"type": kind, "text": m.content}]}));
                 }
@@ -662,7 +719,11 @@ pub async fn copilot_chat(
                 if let Some(m) = resp.get("model").and_then(|v| v.as_str()) {
                     model_name = m.to_string();
                 }
-                let output = resp.get("output").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+                let output = resp
+                    .get("output")
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default();
                 let calls: Vec<&Value> = output
                     .iter()
                     .filter(|o| o.get("type").and_then(|t| t.as_str()) == Some("function_call"))
@@ -690,7 +751,11 @@ pub async fn copilot_chat(
                         .and_then(|v| v.as_str())
                         .and_then(|s| serde_json::from_str(s).ok())
                         .unwrap_or(json!({}));
-                    let call_id = call.get("call_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let call_id = call
+                        .get("call_id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
                     let result = exec_tool(name, &args, state_ref, models_ref, paths_ref).await;
                     let (payload, ok) = match result {
                         Ok(v) => (v, true),
@@ -709,7 +774,11 @@ pub async fn copilot_chat(
                 }
             }
             Ok(CopilotReply {
-                reply: if reply_text.is_empty() { "(empty response)".into() } else { reply_text },
+                reply: if reply_text.is_empty() {
+                    "(empty response)".into()
+                } else {
+                    reply_text
+                },
                 model: model_name,
                 provider: provider.id,
                 tool_calls: trace,
@@ -721,7 +790,11 @@ pub async fn copilot_chat(
             let mut messages = vec![json!({"role": "system", "content": system_prompt})];
             if let Some(history) = &history {
                 for m in history.iter().rev().take(16).rev() {
-                    let role = if m.role == "assistant" { "assistant" } else { "user" };
+                    let role = if m.role == "assistant" {
+                        "assistant"
+                    } else {
+                        "user"
+                    };
                     messages.push(json!({"role": role, "content": m.content}));
                 }
             }
@@ -765,7 +838,11 @@ pub async fn copilot_chat(
                         .and_then(|v| v.as_str())
                         .and_then(|s| serde_json::from_str(s).ok())
                         .unwrap_or(json!({}));
-                    let id = call.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let id = call
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
                     let result = exec_tool(fname, &args, state_ref, models_ref, paths_ref).await;
                     let (payload, ok) = match result {
                         Ok(v) => (v, true),
@@ -783,7 +860,11 @@ pub async fn copilot_chat(
                 }
             }
             Ok(CopilotReply {
-                reply: if reply_text.is_empty() { "(empty response)".into() } else { reply_text },
+                reply: if reply_text.is_empty() {
+                    "(empty response)".into()
+                } else {
+                    reply_text
+                },
                 model: model_name,
                 provider: provider.id,
                 tool_calls: trace,

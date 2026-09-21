@@ -1,8 +1,8 @@
+use anyhow::{Context, Result};
 use apex_core::{
     domain::models::*,
     ports::market_data::{AdapterHealth, MarketDataPort, TickStream},
 };
-use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use reqwest::Client;
@@ -156,14 +156,12 @@ impl MarketDataPort for GrowwMarketDataAdapter {
         }
 
         let groww_symbol = self.symbol_to_groww(symbol);
-        let url = format!(
-            "https://api.groww.in/v1/stocks/quote/{}",
-            groww_symbol
-        );
+        let url = format!("https://api.groww.in/v1/stocks/quote/{}", groww_symbol);
 
         let auth_header = self.get_auth_header()?;
 
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .header("Authorization", &auth_header)
             .header("X-Api-Key", &self.api_key)
@@ -175,22 +173,46 @@ impl MarketDataPort for GrowwMarketDataAdapter {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
             self.set_health(AdapterHealth::Degraded(format!("HTTP {}", status)));
-            return Err(anyhow::anyhow!("Groww API error {}: {}", status, error_text));
+            return Err(anyhow::anyhow!(
+                "Groww API error {}: {}",
+                status,
+                error_text
+            ));
         }
 
-        let data: serde_json::Value = response.json().await
+        let data: serde_json::Value = response
+            .json()
+            .await
             .context("Failed to parse Groww response")?;
 
         let quote_data = data
             .get("data")
             .ok_or_else(|| anyhow::anyhow!("Quote data not found"))?;
 
-        let last = quote_data.get("lastPrice").and_then(|v| v.as_f64()).unwrap_or(0.0);
-        let open = quote_data.get("open").and_then(|v| v.as_f64()).unwrap_or(0.0);
-        let high = quote_data.get("high").and_then(|v| v.as_f64()).unwrap_or(0.0);
-        let low = quote_data.get("low").and_then(|v| v.as_f64()).unwrap_or(0.0);
-        let volume = quote_data.get("volume").and_then(|v| v.as_u64()).unwrap_or(0);
-        let change_pct = quote_data.get("changePct").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let last = quote_data
+            .get("lastPrice")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
+        let open = quote_data
+            .get("open")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
+        let high = quote_data
+            .get("high")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
+        let low = quote_data
+            .get("low")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
+        let volume = quote_data
+            .get("volume")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let change_pct = quote_data
+            .get("changePct")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
 
         // Approximate bid/ask from last price
         let spread = last * 0.0005;
@@ -238,7 +260,8 @@ impl MarketDataPort for GrowwMarketDataAdapter {
 
         let auth_header = self.get_auth_header()?;
 
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .header("Authorization", &auth_header)
             .header("X-Api-Key", &self.api_key)
@@ -250,7 +273,9 @@ impl MarketDataPort for GrowwMarketDataAdapter {
             return Err(anyhow::anyhow!("Groww API error: {}", response.status()));
         }
 
-        let data: serde_json::Value = response.json().await
+        let data: serde_json::Value = response
+            .json()
+            .await
             .context("Failed to parse historical data")?;
 
         let candles = data
@@ -286,7 +311,11 @@ impl MarketDataPort for GrowwMarketDataAdapter {
             }
         }
 
-        debug!("Fetched {} historical bars for {} from Groww", bars.len(), symbol.0);
+        debug!(
+            "Fetched {} historical bars for {} from Groww",
+            bars.len(),
+            symbol.0
+        );
         Ok(bars)
     }
 

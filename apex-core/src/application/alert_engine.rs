@@ -9,12 +9,29 @@ use crate::domain::models::*;
 /// Alert rule definition
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AlertRule {
-    PriceAbove { symbol: String, threshold: f64 },
-    PriceBelow { symbol: String, threshold: f64 },
-    PctChange { symbol: String, pct: f64, window_secs: u64 },
-    VwapCross { symbol: String },
-    DailyPnl { threshold: f64 },
-    NewsKeyword { pattern: String, symbols: Vec<String> },
+    PriceAbove {
+        symbol: String,
+        threshold: f64,
+    },
+    PriceBelow {
+        symbol: String,
+        threshold: f64,
+    },
+    PctChange {
+        symbol: String,
+        pct: f64,
+        window_secs: u64,
+    },
+    VwapCross {
+        symbol: String,
+    },
+    DailyPnl {
+        threshold: f64,
+    },
+    NewsKeyword {
+        pattern: String,
+        symbols: Vec<String>,
+    },
 }
 
 /// Alert delivery method
@@ -134,7 +151,11 @@ impl AlertEngine {
                 _ => false,
             };
 
-            let was_triggered = self.triggered.get(&stored_alert.id).map(|v| *v).unwrap_or(false);
+            let was_triggered = self
+                .triggered
+                .get(&stored_alert.id)
+                .map(|v| *v)
+                .unwrap_or(false);
             if fired != was_triggered {
                 self.triggered.insert(stored_alert.id.clone(), fired);
                 if fired {
@@ -154,8 +175,11 @@ impl AlertEngine {
 
             if let AlertRule::DailyPnl { threshold } = &stored_alert.rule {
                 let fired = pnl < *threshold;
-                let was_triggered =
-                    self.triggered.get(&stored_alert.id).map(|v| *v).unwrap_or(false);
+                let was_triggered = self
+                    .triggered
+                    .get(&stored_alert.id)
+                    .map(|v| *v)
+                    .unwrap_or(false);
                 if fired != was_triggered {
                     self.triggered.insert(stored_alert.id.clone(), fired);
                     if fired {
@@ -234,7 +258,10 @@ mod tests {
 
         let alert = StoredAlert {
             id: "test-1".into(),
-            rule: AlertRule::PriceAbove { symbol: "AAPL".into(), threshold: 200.0 },
+            rule: AlertRule::PriceAbove {
+                symbol: "AAPL".into(),
+                threshold: 200.0,
+            },
             delivery: vec![AlertDelivery::InApp],
             enabled: true,
         };
@@ -251,12 +278,17 @@ mod tests {
         let bus = Arc::new(MessageBus::new());
         let engine = AlertEngine::new(bus);
 
-        engine.add_rule(StoredAlert {
-            id: "test-1".into(),
-            rule: AlertRule::PriceAbove { symbol: "AAPL".into(), threshold: 200.0 },
-            delivery: vec![AlertDelivery::InApp],
-            enabled: true,
-        }).await;
+        engine
+            .add_rule(StoredAlert {
+                id: "test-1".into(),
+                rule: AlertRule::PriceAbove {
+                    symbol: "AAPL".into(),
+                    threshold: 200.0,
+                },
+                delivery: vec![AlertDelivery::InApp],
+                enabled: true,
+            })
+            .await;
 
         assert!(engine.remove_rule("test-1").await);
         assert_eq!(engine.rule_count().await, 0);
@@ -269,21 +301,23 @@ mod tests {
         let mut rx = bus.subscribe(Topic::Alert);
         let engine = AlertEngine::new(bus);
 
-        engine.add_rule(StoredAlert {
-            id: "price-above-1".into(),
-            rule: AlertRule::PriceAbove { symbol: "AAPL".into(), threshold: 150.0 },
-            delivery: vec![AlertDelivery::InApp],
-            enabled: true,
-        }).await;
+        engine
+            .add_rule(StoredAlert {
+                id: "price-above-1".into(),
+                rule: AlertRule::PriceAbove {
+                    symbol: "AAPL".into(),
+                    threshold: 150.0,
+                },
+                delivery: vec![AlertDelivery::InApp],
+                enabled: true,
+            })
+            .await;
 
         // Quote above threshold — should fire
         let quote = test_quote("AAPL", 155.0);
         engine.evaluate_quote(&quote).await;
 
-        let msg = tokio::time::timeout(
-            std::time::Duration::from_millis(100),
-            rx.recv(),
-        ).await;
+        let msg = tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv()).await;
         assert!(msg.is_ok());
     }
 
@@ -293,21 +327,23 @@ mod tests {
         let mut rx = bus.subscribe(Topic::Alert);
         let engine = AlertEngine::new(bus);
 
-        engine.add_rule(StoredAlert {
-            id: "price-above-1".into(),
-            rule: AlertRule::PriceAbove { symbol: "AAPL".into(), threshold: 200.0 },
-            delivery: vec![AlertDelivery::InApp],
-            enabled: true,
-        }).await;
+        engine
+            .add_rule(StoredAlert {
+                id: "price-above-1".into(),
+                rule: AlertRule::PriceAbove {
+                    symbol: "AAPL".into(),
+                    threshold: 200.0,
+                },
+                delivery: vec![AlertDelivery::InApp],
+                enabled: true,
+            })
+            .await;
 
         // Quote below threshold — should NOT fire
         let quote = test_quote("AAPL", 150.0);
         engine.evaluate_quote(&quote).await;
 
-        let msg = tokio::time::timeout(
-            std::time::Duration::from_millis(100),
-            rx.recv(),
-        ).await;
+        let msg = tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv()).await;
         assert!(msg.is_err()); // Timeout — no message
     }
 
@@ -317,20 +353,22 @@ mod tests {
         let mut rx = bus.subscribe(Topic::Alert);
         let engine = AlertEngine::new(bus);
 
-        engine.add_rule(StoredAlert {
-            id: "disabled-1".into(),
-            rule: AlertRule::PriceAbove { symbol: "AAPL".into(), threshold: 100.0 },
-            delivery: vec![AlertDelivery::InApp],
-            enabled: false, // Disabled
-        }).await;
+        engine
+            .add_rule(StoredAlert {
+                id: "disabled-1".into(),
+                rule: AlertRule::PriceAbove {
+                    symbol: "AAPL".into(),
+                    threshold: 100.0,
+                },
+                delivery: vec![AlertDelivery::InApp],
+                enabled: false, // Disabled
+            })
+            .await;
 
         let quote = test_quote("AAPL", 155.0);
         engine.evaluate_quote(&quote).await;
 
-        let msg = tokio::time::timeout(
-            std::time::Duration::from_millis(100),
-            rx.recv(),
-        ).await;
+        let msg = tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv()).await;
         assert!(msg.is_err()); // No alert for disabled rule
     }
 
@@ -340,19 +378,18 @@ mod tests {
         let mut rx = bus.subscribe(Topic::Alert);
         let engine = AlertEngine::new(bus);
 
-        engine.add_rule(StoredAlert {
-            id: "pnl-1".into(),
-            rule: AlertRule::DailyPnl { threshold: -5000.0 },
-            delivery: vec![AlertDelivery::InApp],
-            enabled: true,
-        }).await;
+        engine
+            .add_rule(StoredAlert {
+                id: "pnl-1".into(),
+                rule: AlertRule::DailyPnl { threshold: -5000.0 },
+                delivery: vec![AlertDelivery::InApp],
+                enabled: true,
+            })
+            .await;
 
         engine.evaluate_pnl(-6000.0).await;
 
-        let msg = tokio::time::timeout(
-            std::time::Duration::from_millis(100),
-            rx.recv(),
-        ).await;
+        let msg = tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv()).await;
         assert!(msg.is_ok());
     }
 }

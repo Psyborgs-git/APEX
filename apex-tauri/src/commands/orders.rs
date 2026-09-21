@@ -113,12 +113,7 @@ pub async fn get_positions(state: State<'_, AppState>) -> Result<Vec<PositionDto
 /// Get all open orders.
 #[tauri::command]
 pub async fn get_open_orders(state: State<'_, AppState>) -> Result<Vec<OrderDto>, String> {
-    Ok(state
-        .otm
-        .open_orders()
-        .iter()
-        .map(OrderDto::from)
-        .collect())
+    Ok(state.otm.open_orders().iter().map(OrderDto::from).collect())
 }
 
 /// Get order history (all statuses, newest first) — backs the order blotter.

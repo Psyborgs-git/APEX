@@ -17,9 +17,7 @@ impl ModelRegistry {
     pub fn new(runtime_paths: &python_runtime::RuntimePaths) -> Self {
         let models_dir = runtime_paths.models_dir().to_path_buf();
         let _ = fs::create_dir_all(&models_dir);
-        Self {
-            models_dir,
-        }
+        Self { models_dir }
     }
 }
 
@@ -90,7 +88,11 @@ fn ensure_training_dataset(
         let bb_lower = sma_20 - 2.4;
         let atr_14 = 1.1 + (i / 9.0).cos().abs();
         let volume_lag_1 = 450_000.0 + i * 3_500.0 + ((index % 9) as f64 * 1_250.0);
-        let signal = if ema_12 > ema_26 && rsi_14 > 50.0 { 1 } else { 0 };
+        let signal = if ema_12 > ema_26 && rsi_14 > 50.0 {
+            1
+        } else {
+            0
+        };
 
         csv.push_str(&format!(
             "{sma_20:.4},{sma_50:.4},{ema_12:.4},{ema_26:.4},{rsi_14:.4},{macd_signal:.4},{bb_upper:.4},{bb_lower:.4},{atr_14:.4},{volume_lag_1:.2},{signal}\n"
@@ -136,7 +138,11 @@ pub(crate) fn load_registered_models(models_dir: &Path) -> Result<Vec<MLModelDto
         });
 
         let model_path = models_dir.join(&metadata.model_file);
-        let status = if model_path.exists() { "completed" } else { "missing_artifact" };
+        let status = if model_path.exists() {
+            "completed"
+        } else {
+            "missing_artifact"
+        };
 
         models.push(MLModelDto {
             model_id,
@@ -156,9 +162,7 @@ pub(crate) fn load_registered_models(models_dir: &Path) -> Result<Vec<MLModelDto
 
 /// List all trained ML models.
 #[tauri::command]
-pub async fn list_ml_models(
-    state: State<'_, ModelRegistry>,
-) -> Result<Vec<MLModelDto>, String> {
+pub async fn list_ml_models(state: State<'_, ModelRegistry>) -> Result<Vec<MLModelDto>, String> {
     load_registered_models(&state.models_dir)
 }
 
@@ -212,7 +216,10 @@ pub(crate) async fn train_ml_model_inner(
 
     let output = Command::new(&python)
         .current_dir(runtime_paths.work_root())
-        .env("PYTHONPATH", python_runtime::build_python_path(runtime_paths)?)
+        .env(
+            "PYTHONPATH",
+            python_runtime::build_python_path(runtime_paths)?,
+        )
         .env("PYTHONIOENCODING", "utf-8")
         .arg("-m")
         .arg("ml.trainer")
@@ -223,7 +230,12 @@ pub(crate) async fn train_ml_model_inner(
         )
         .output()
         .await
-        .map_err(|e| format!("Failed to start Python trainer with {}: {e}", python.display()))?;
+        .map_err(|e| {
+            format!(
+                "Failed to start Python trainer with {}: {e}",
+                python.display()
+            )
+        })?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -297,8 +309,12 @@ pub async fn delete_ml_model(
     }
 
     if resolved_model_path.exists() {
-        fs::remove_file(&resolved_model_path)
-            .map_err(|e| format!("Failed to delete model artifact {:?}: {e}", resolved_model_path))?;
+        fs::remove_file(&resolved_model_path).map_err(|e| {
+            format!(
+                "Failed to delete model artifact {:?}: {e}",
+                resolved_model_path
+            )
+        })?;
         removed_any = true;
     }
 

@@ -126,7 +126,9 @@ pub async fn compute_correlations(
                 continue;
             }
             let n = common.len() as f64;
-            let (sx, sy) = common.iter().fold((0.0, 0.0), |(ax, ay), (x, y)| (ax + x, ay + y));
+            let (sx, sy) = common
+                .iter()
+                .fold((0.0, 0.0), |(ax, ay), (x, y)| (ax + x, ay + y));
             let (sxx, syy, sxy) = common.iter().fold((0.0, 0.0, 0.0), |(ax, ay, az), (x, y)| {
                 (ax + x * x, ay + y * y, az + x * y)
             });

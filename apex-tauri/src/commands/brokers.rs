@@ -100,7 +100,8 @@ pub async fn zerodha_login(
         .ok_or_else(|| {
             format!(
                 "Kite login failed: {}",
-                body.message.unwrap_or_else(|| "no access_token returned".into())
+                body.message
+                    .unwrap_or_else(|| "no access_token returned".into())
             )
         })?;
 

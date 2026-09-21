@@ -142,7 +142,7 @@ impl RiskEngine {
         // 1. FIRST CHECK: Is trading halted? This is UNBYPASSABLE.
         if self.trading_halted.load(Ordering::SeqCst) {
             return RiskVerdict::Reject(
-                "Max daily loss reached. Trading halted. Reset required via UI.".into()
+                "Max daily loss reached. Trading halted. Reset required via UI.".into(),
             );
         }
 
@@ -175,7 +175,7 @@ impl RiskEngine {
             // Set the halt flag — this is permanent until manual reset
             self.trading_halted.store(true, Ordering::SeqCst);
             return RiskVerdict::Reject(
-                "Max daily loss reached. Trading halted. Reset required via UI.".into()
+                "Max daily loss reached. Trading halted. Reset required via UI.".into(),
             );
         }
 
@@ -198,7 +198,10 @@ impl RiskEngine {
         // Check if we've breached max daily loss
         let current_pnl = new_pnl as f64 / 100.0;
         if current_pnl < -self.config.max_daily_loss {
-            warn!("MAX DAILY LOSS BREACHED: {:.2}. Halting all trading.", current_pnl);
+            warn!(
+                "MAX DAILY LOSS BREACHED: {:.2}. Halting all trading.",
+                current_pnl
+            );
             self.trading_halted.store(true, Ordering::SeqCst);
         }
     }
@@ -219,8 +222,7 @@ impl RiskEngine {
         self.trading_halted.store(false, Ordering::SeqCst);
         // Reset session P&L
         self.session_pnl.store(0, Ordering::SeqCst);
-        self
-            .recent_orders
+        self.recent_orders
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clear();
@@ -313,7 +315,7 @@ mod tests {
             ..RiskConfig::default()
         });
         let account = default_account(); // total_value = 1,000,000
-        // Order value = 500 * 250 = 125,000 = 12.5% > 10%
+                                         // Order value = 500 * 250 = 125,000 = 12.5% > 10%
         let order = limit_buy("RELIANCE", 500.0, 250.0);
         match engine.check(&order, &account) {
             RiskVerdict::Reject(msg) => assert!(msg.contains("portfolio")),
@@ -356,7 +358,10 @@ mod tests {
         // Even a tiny order should be rejected
         let account = default_account();
         let order = limit_buy("AAPL", 0.001, 1.0);
-        assert!(matches!(engine.check(&order, &account), RiskVerdict::Reject(_)));
+        assert!(matches!(
+            engine.check(&order, &account),
+            RiskVerdict::Reject(_)
+        ));
     }
 
     #[test]

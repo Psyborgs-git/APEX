@@ -93,7 +93,8 @@ impl NewsEngine {
 
     /// Fetch and parse an RSS feed
     async fn fetch_rss_feed(&self, feed: &NewsFeed) -> Result<Vec<NewsItem>> {
-        let response = self.client
+        let response = self
+            .client
             .get(&feed.url)
             .send()
             .await
@@ -158,9 +159,7 @@ impl NewsEngine {
 
         let url = self.extract_link(block)?;
         let summary = self.extract_first_tag_content(block, &["description", "summary", "content"]);
-        let published = self
-            .extract_published_at(block)
-            .unwrap_or_else(Utc::now);
+        let published = self.extract_published_at(block).unwrap_or_else(Utc::now);
 
         Some(NewsItem {
             id: Uuid::new_v4(),
@@ -249,7 +248,8 @@ impl NewsEngine {
     }
 
     fn extract_published_at(&self, block: &str) -> Option<DateTime<Utc>> {
-        let raw = self.extract_first_tag_content(block, &["pubDate", "published", "updated", "dc:date"]);
+        let raw =
+            self.extract_first_tag_content(block, &["pubDate", "published", "updated", "dc:date"]);
         if raw.is_empty() {
             return None;
         }
@@ -313,8 +313,8 @@ impl NewsEngine {
                 Some(h) => (h, true),
                 None => (tail, false),
             };
-            let end = digits
-                .find(|c: char| !(c.is_ascii_digit() || (is_hex && c.is_ascii_hexdigit())));
+            let end =
+                digits.find(|c: char| !(c.is_ascii_digit() || (is_hex && c.is_ascii_hexdigit())));
             let (digits, after) = match end {
                 Some(e) => (&digits[..e], &digits[e..]),
                 None => (digits, ""),
@@ -396,7 +396,8 @@ impl NewsEngine {
         // Limit cache size to 10,000 items
         if self.news_cache.len() > 10_000 {
             // Remove oldest entries (simplified - just clear some)
-            let keys_to_remove: Vec<String> = self.news_cache
+            let keys_to_remove: Vec<String> = self
+                .news_cache
                 .iter()
                 .take(1000)
                 .map(|e| e.key().clone())
@@ -410,7 +411,8 @@ impl NewsEngine {
 
     /// Fetch all enabled feeds and publish news items
     pub async fn fetch_all_feeds(&self) {
-        let feeds: Vec<NewsFeed> = self.feeds
+        let feeds: Vec<NewsFeed> = self
+            .feeds
             .iter()
             .filter(|e| e.value().enabled)
             .map(|e| e.value().clone())
@@ -459,7 +461,10 @@ impl NewsEngine {
             }
         });
 
-        info!("News engine polling loop started (interval: {}s)", poll_interval_secs);
+        info!(
+            "News engine polling loop started (interval: {}s)",
+            poll_interval_secs
+        );
     }
 
     /// Search cached news items
@@ -471,7 +476,8 @@ impl NewsEngine {
     ) -> Vec<NewsItem> {
         let query_lower = query.to_lowercase();
 
-        let mut results: Vec<NewsItem> = self.news_cache
+        let mut results: Vec<NewsItem> = self
+            .news_cache
             .iter()
             .map(|e| e.value().clone())
             .filter(|item| {
@@ -480,9 +486,7 @@ impl NewsEngine {
                     || item.summary.to_lowercase().contains(&query_lower);
 
                 // Symbol filter
-                let matches_symbol = symbol_filter.map_or(true, |sym| {
-                    item.symbols.contains(sym)
-                });
+                let matches_symbol = symbol_filter.map_or(true, |sym| item.symbols.contains(sym));
 
                 matches_query && matches_symbol
             })
@@ -496,18 +500,16 @@ impl NewsEngine {
 
     /// Get the most recent news items across all feeds, newest first.
     pub fn latest_news(&self, limit: usize) -> Vec<NewsItem> {
-        let mut results: Vec<NewsItem> = self
-            .news_cache
-            .iter()
-            .map(|e| e.value().clone())
-            .collect();
+        let mut results: Vec<NewsItem> =
+            self.news_cache.iter().map(|e| e.value().clone()).collect();
         results.sort_by(|a, b| b.published.cmp(&a.published));
         results.into_iter().take(limit).collect()
     }
 
     /// Get news items for a specific symbol
     pub fn get_news_for_symbol(&self, symbol: &Symbol, limit: usize) -> Vec<NewsItem> {
-        let mut results: Vec<NewsItem> = self.news_cache
+        let mut results: Vec<NewsItem> = self
+            .news_cache
             .iter()
             .filter(|e| e.value().symbols.contains(symbol))
             .map(|e| e.value().clone())
@@ -545,8 +547,14 @@ mod tests {
         let pos_score = engine.calculate_sentiment(positive_text);
         let neg_score = engine.calculate_sentiment(negative_text);
 
-        assert!(pos_score > 0.0, "Positive text should have positive sentiment");
-        assert!(neg_score < 0.0, "Negative text should have negative sentiment");
+        assert!(
+            pos_score > 0.0,
+            "Positive text should have positive sentiment"
+        );
+        assert!(
+            neg_score < 0.0,
+            "Negative text should have negative sentiment"
+        );
     }
 
     #[test]
@@ -572,11 +580,11 @@ mod tests {
         assert_eq!(engine.list_feeds().len(), 0);
     }
 
-        #[test]
-        fn test_parse_rss_content_extracts_real_fields() {
-                let (tx, _rx) = mpsc::unbounded_channel();
-                let engine = NewsEngine::new(tx);
-                let content = r#"
+    #[test]
+    fn test_parse_rss_content_extracts_real_fields() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let engine = NewsEngine::new(tx);
+        let content = r#"
                         <rss>
                             <channel>
                                 <item>
@@ -589,18 +597,18 @@ mod tests {
                         </rss>
                 "#;
 
-                let items = engine.parse_rss_content(content, "Example Feed").unwrap();
-                assert_eq!(items.len(), 1);
-                assert_eq!(items[0].headline, "Apple & Microsoft rally");
-                assert_eq!(items[0].url, "https://example.com/apple-microsoft");
-                assert!(items[0].summary.contains("AAPL"));
-        }
+        let items = engine.parse_rss_content(content, "Example Feed").unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].headline, "Apple & Microsoft rally");
+        assert_eq!(items[0].url, "https://example.com/apple-microsoft");
+        assert!(items[0].summary.contains("AAPL"));
+    }
 
-        #[test]
-        fn test_parse_atom_content_extracts_href_link() {
-                let (tx, _rx) = mpsc::unbounded_channel();
-                let engine = NewsEngine::new(tx);
-                let content = r#"
+    #[test]
+    fn test_parse_atom_content_extracts_href_link() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let engine = NewsEngine::new(tx);
+        let content = r#"
                         <feed>
                             <entry>
                                 <title>TSLA expands factory output</title>
@@ -611,10 +619,10 @@ mod tests {
                         </feed>
                 "#;
 
-                let items = engine.parse_rss_content(content, "Atom Feed").unwrap();
-                assert_eq!(items.len(), 1);
-                assert_eq!(items[0].url, "https://example.com/tsla-output");
-                assert_eq!(items[0].headline, "TSLA expands factory output");
-                assert!(items[0].summary.contains("production milestones"));
-        }
+        let items = engine.parse_rss_content(content, "Atom Feed").unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].url, "https://example.com/tsla-output");
+        assert_eq!(items[0].headline, "TSLA expands factory output");
+        assert!(items[0].summary.contains("production milestones"));
+    }
 }

@@ -1,6 +1,6 @@
 use crate::dto::OHLCVDto;
 use crate::state::AppState;
-use apex_core::domain::models::{OHLCV, OHLCVQuery, Symbol, Timeframe};
+use apex_core::domain::models::{OHLCVQuery, Symbol, Timeframe, OHLCV};
 use chrono::Utc;
 use tauri::State;
 
@@ -110,9 +110,7 @@ pub async fn get_historical_data(
 
 /// Get watchlist symbols from storage.
 #[tauri::command]
-pub async fn get_watchlist_symbols(
-    state: State<'_, AppState>,
-) -> Result<Vec<String>, String> {
+pub async fn get_watchlist_symbols(state: State<'_, AppState>) -> Result<Vec<String>, String> {
     // Return symbols from the aggregator's quote cache
     let symbols: Vec<String> = state
         .aggregator
