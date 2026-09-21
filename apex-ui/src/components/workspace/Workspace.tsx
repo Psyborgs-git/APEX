@@ -973,6 +973,9 @@ export const Workspace: React.FC = () => {
                       <p className="mt-0.5 text-[11px] text-text-muted">
                         OpenAI-compatible endpoints for the Copilot. API keys are read from env vars — store only the variable name.
                       </p>
+                      <p className="mt-0.5 text-[11px] text-warning">
+                        Copilot prompts and tool results (quotes, positions, orders) are sent to the active provider's endpoint. Only configure providers you trust with your trading data.
+                      </p>
                     </div>
                     <button
                       type="button"

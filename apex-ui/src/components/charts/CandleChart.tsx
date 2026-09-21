@@ -446,6 +446,14 @@ const CandleChartInner: React.FC<CandleChartProps> = ({ symbol, ohlcvData, heigh
     setIndError(null);
   }, [symbol, timeframe, activeOverlays, activeOscillator]);
 
+  // Symbol/timeframe change → drop the live bucket so the next quote can't
+  // inherit the previous instrument's h/l/v state.
+  useEffect(() => {
+    bucketRef.current = null;
+    prevVolumeRef.current = null;
+    lastBarTimeRef.current = 0;
+  }, [symbol, timeframe]);
+
   // Listen for real-time quote updates — bucket ticks into the active timeframe
   useEffect(() => {
     if (!symbol) return;

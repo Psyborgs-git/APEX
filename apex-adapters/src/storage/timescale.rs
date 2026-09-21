@@ -339,12 +339,16 @@ impl StoragePort for TimescaleAdapter {
 
         let timeframe_str = Self::timeframe_to_string(&params.timeframe);
 
+        // A limit must keep the NEWEST rows — take DESC...LIMIT first, then
+        // re-sort ascending so callers always see `bars.last()` as newest.
         let query = format!(
-            "SELECT time, symbol, open, high, low, close, volume, timeframe
-             FROM ohlcv
-             WHERE symbol = $1 AND timeframe = $2 AND time >= $3 AND time <= $4
-             ORDER BY time ASC
-             {}",
+            "SELECT * FROM (
+                 SELECT time, symbol, open, high, low, close, volume, timeframe
+                 FROM ohlcv
+                 WHERE symbol = $1 AND timeframe = $2 AND time >= $3 AND time <= $4
+                 ORDER BY time DESC
+                 {}
+             ) t ORDER BY time ASC",
             if let Some(limit) = params.limit {
                 format!("LIMIT {}", limit)
             } else {
@@ -418,7 +422,19 @@ impl StoragePort for TimescaleAdapter {
                 "INSERT INTO orders
              (id, symbol, side, order_type, quantity, price, stop_price, status,
               filled_qty, avg_price, created_at, updated_at, broker_id, source)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)",
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+             ON CONFLICT (id) DO UPDATE SET
+              side = EXCLUDED.side,
+              order_type = EXCLUDED.order_type,
+              quantity = EXCLUDED.quantity,
+              price = EXCLUDED.price,
+              stop_price = EXCLUDED.stop_price,
+              status = EXCLUDED.status,
+              filled_qty = EXCLUDED.filled_qty,
+              avg_price = EXCLUDED.avg_price,
+              updated_at = EXCLUDED.updated_at,
+              broker_id = EXCLUDED.broker_id,
+              source = EXCLUDED.source",
                 &[
                     &order.id.0,
                     &order.symbol.0,

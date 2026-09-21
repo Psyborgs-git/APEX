@@ -450,8 +450,10 @@ impl NewsEngine {
         }
     }
 
-    /// Start continuous feed polling loop
+    /// Start continuous feed polling loop. `poll_interval_secs` is clamped to
+    /// a documented minimum — `tokio::time::interval` panics on zero.
     pub async fn start_polling_loop(self: Arc<Self>, poll_interval_secs: u64) {
+        let poll_interval_secs = poll_interval_secs.max(30);
         let mut ticker = interval(Duration::from_secs(poll_interval_secs));
 
         tokio::spawn(async move {
