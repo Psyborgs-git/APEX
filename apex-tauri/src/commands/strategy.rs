@@ -236,13 +236,13 @@ impl StrategyBacktestContext {
     }
 }
 
-fn strategy_root(runtime_paths: &python_runtime::RuntimePaths) -> Result<PathBuf, String> {
+pub(crate) fn strategy_root(runtime_paths: &python_runtime::RuntimePaths) -> Result<PathBuf, String> {
     let root = runtime_paths.strategies_dir().to_path_buf();
     fs::create_dir_all(&root).map_err(|e| format!("Failed to create strategies directory: {e}"))?;
     Ok(root)
 }
 
-fn make_strategy_path(root: &Path, full_path: &Path) -> String {
+pub(crate) fn make_strategy_path(root: &Path, full_path: &Path) -> String {
     let relative = full_path
         .strip_prefix(root)
         .unwrap_or(full_path)
@@ -251,7 +251,7 @@ fn make_strategy_path(root: &Path, full_path: &Path) -> String {
     format!("strategies/{relative}")
 }
 
-fn strategy_name(full_path: &Path) -> Result<String, String> {
+pub(crate) fn strategy_name(full_path: &Path) -> Result<String, String> {
     full_path
         .file_name()
         .and_then(|name| name.to_str())
@@ -303,7 +303,7 @@ fn ensure_default_strategy(root: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn normalize_strategy_path(
+pub(crate) fn normalize_strategy_path(
     path: &str,
     runtime_paths: &python_runtime::RuntimePaths,
 ) -> Result<PathBuf, String> {
@@ -484,7 +484,13 @@ async fn load_backtest_bars(
 pub async fn list_strategy_files(
     runtime_paths: State<'_, python_runtime::RuntimePaths>,
 ) -> Result<Vec<StrategyFileDto>, String> {
-    let root = strategy_root(runtime_paths.inner())?;
+    list_strategy_files_inner(runtime_paths.inner())
+}
+
+pub(crate) fn list_strategy_files_inner(
+    runtime_paths: &python_runtime::RuntimePaths,
+) -> Result<Vec<StrategyFileDto>, String> {
+    let root = strategy_root(runtime_paths)?;
     ensure_default_strategy(&root)?;
 
     let mut files = Vec::new();
@@ -671,10 +677,19 @@ pub async fn run_strategy_backtest(
     state: State<'_, AppState>,
     runtime_paths: State<'_, python_runtime::RuntimePaths>,
 ) -> Result<StrategyBacktestResultDto, String> {
+    run_backtest_inner(request, state.inner(), runtime_paths.inner()).await
+}
+
+/// Shared backtest implementation — also used by the copilot agent loop.
+pub(crate) async fn run_backtest_inner(
+    request: StrategyBacktestRequestDto,
+    state: &AppState,
+    runtime_paths: &python_runtime::RuntimePaths,
+) -> Result<StrategyBacktestResultDto, String> {
     validation::validate_symbol(&request.symbol)?;
     validation::validate_path(&request.path)?;
 
-    let full_path = normalize_strategy_path(&request.path, runtime_paths.inner())?;
+    let full_path = normalize_strategy_path(&request.path, runtime_paths)?;
     if !full_path.exists() {
         return Err(format!("Strategy file not found: {}", request.path));
     }
@@ -710,7 +725,7 @@ pub async fn run_strategy_backtest(
         .map_err(|e| format!("Failed to read strategy file {:?}: {e}", full_path))?;
     let (strategy, mut notes) = infer_backtest_strategy(&content);
 
-    let (bars, data_source_note) = load_backtest_bars(&state, &symbol, timeframe.clone(), from, to).await?;
+    let (bars, data_source_note) = load_backtest_bars(state, &symbol, timeframe.clone(), from, to).await?;
     let bars_analyzed = bars.len();
     if bars_analyzed < 2 {
         return Err("Backtest requires at least two historical bars".into());

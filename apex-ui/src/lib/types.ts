@@ -90,6 +90,47 @@ export interface StorageSettingsDto {
   available_backends: string[];
 }
 
+export interface AppearanceSettingsDto {
+  theme: string;
+  density: string;
+}
+
+export interface LlmProviderDto {
+  id: string;
+  name: string;
+  base_url: string;
+  model: string;
+  api_kind: string;
+  api_key_env: string;
+  max_tokens: number;
+  key_configured: boolean;
+}
+
+export interface LlmProviderWriteDto {
+  id: string;
+  name: string;
+  base_url: string;
+  model: string;
+  api_kind: string;
+  api_key_env: string;
+  max_tokens: number;
+}
+
+export interface LlmSettingsDto {
+  active: string;
+  providers: LlmProviderDto[];
+}
+
+export interface LlmSettingsWriteDto {
+  active: string;
+  providers: LlmProviderWriteDto[];
+}
+
+export interface AcpSettingsDto {
+  command: string;
+  cwd: string;
+}
+
 export interface AppSettingsDto {
   config_path: string;
   runtime_storage_backend: string;
@@ -99,6 +140,9 @@ export interface AppSettingsDto {
   execution: AdapterPreferenceDto;
   risk: RiskSettingsDto;
   storage: StorageSettingsDto;
+  appearance: AppearanceSettingsDto;
+  llm: LlmSettingsDto;
+  acp: AcpSettingsDto;
 }
 
 export interface AppSettingsUpdateDto {
@@ -107,6 +151,9 @@ export interface AppSettingsUpdateDto {
   execution: Pick<AdapterPreferenceDto, 'adapter'>;
   risk: RiskSettingsDto;
   storage: Omit<StorageSettingsDto, 'available_backends'>;
+  appearance: AppearanceSettingsDto;
+  llm: LlmSettingsWriteDto;
+  acp: AcpSettingsDto;
 }
 
 export interface NewOrderRequestDto {
@@ -395,9 +442,17 @@ export interface CopilotMessageDto {
   content: string;
 }
 
+export interface ToolCallTraceDto {
+  name: string;
+  detail: string;
+  ok: boolean;
+}
+
 export interface CopilotReplyDto {
   reply: string;
   model: string;
+  provider: string;
+  tool_calls: ToolCallTraceDto[];
 }
 
 // Quant / indicators (OpenBB-style analytics)

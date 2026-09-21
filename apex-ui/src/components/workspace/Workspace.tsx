@@ -16,9 +16,11 @@ import { ScannerPanel } from '../scanner/ScannerPanel';
 import { CopilotPanel } from '../copilot/CopilotPanel';
 import { MarketOverview } from '../market/MarketOverview';
 import { AnalyticsPanel } from '../quant/AnalyticsPanel';
+import { BacktestPanel } from '../strategy/BacktestPanel';
 import { ErrorBoundary } from '../common/ErrorBoundary';
-import { addAlert, clearBrokerSession, getAlertRules, getAppSettings, listBrokerConnections, removeAlert, saveAppSettings, setBrokerSession, subscribeSymbols } from '../../lib/tauri';
-import type { AlertRuleDto, AppSettingsDto, AppSettingsUpdateDto, BrokerConnectionDto } from '../../lib/types';
+import { addAlert, clearBrokerSession, getAlertRules, getAppSettings, listBrokerConnections, removeAlert, saveAppSettings, setBrokerSession, subscribeSymbols, zerodhaLogin } from '../../lib/tauri';
+import { applyAppearance } from '../../lib/appearance';
+import type { AlertRuleDto, AppSettingsDto, AppSettingsUpdateDto, BrokerConnectionDto, LlmProviderWriteDto } from '../../lib/types';
 import { useMarketStore } from '../../stores/marketStore';
 import { useBrokerStore } from '../../stores/brokerStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
@@ -35,6 +37,7 @@ const CENTER_TABS: { id: CenterTab; label: string }[] = [
   { id: 'scanner', label: 'Scanner' },
   { id: 'graph', label: 'Graph' },
   { id: 'analytics', label: 'Analytics' },
+  { id: 'backtest', label: 'Backtest' },
   { id: 'strategy', label: 'Strategy IDE' },
   { id: 'ml', label: 'ML Workbench' },
   { id: 'data', label: 'Stored Data' },
@@ -121,8 +124,38 @@ function toSettingsDraft(settings: AppSettingsDto): AppSettingsUpdateDto {
       wal_mode: settings.storage.wal_mode,
       pool_size: settings.storage.pool_size,
     },
+    appearance: {
+      theme: settings.appearance.theme,
+      density: settings.appearance.density,
+    },
+    llm: {
+      active: settings.llm.active,
+      providers: settings.llm.providers.map((p) => ({
+        id: p.id,
+        name: p.name,
+        base_url: p.base_url,
+        model: p.model,
+        api_kind: p.api_kind,
+        api_key_env: p.api_key_env,
+        max_tokens: p.max_tokens,
+      })),
+    },
+    acp: {
+      command: settings.acp.command,
+      cwd: settings.acp.cwd,
+    },
   };
 }
+
+const EMPTY_PROVIDER: LlmProviderWriteDto = {
+  id: '',
+  name: '',
+  base_url: 'https://',
+  model: '',
+  api_kind: 'chat',
+  api_key_env: '',
+  max_tokens: 1024,
+};
 
 function formatSettingsLabel(value: string) {
   return SETTINGS_LABELS[value] ?? value.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
@@ -141,6 +174,7 @@ export const Workspace: React.FC = () => {
   const [brokerTokens, setBrokerTokens] = useState<Record<string, string>>({});
   const [brokerActionError, setBrokerActionError] = useState<string | null>(null);
   const [brokerBusyId, setBrokerBusyId] = useState<string | null>(null);
+  const [kiteToken, setKiteToken] = useState('');
   const [appSettings, setAppSettings] = useState<AppSettingsDto | null>(null);
   const [settingsDraft, setSettingsDraft] = useState<AppSettingsUpdateDto | null>(null);
   const [settingsBusy, setSettingsBusy] = useState(false);
@@ -256,8 +290,9 @@ export const Workspace: React.FC = () => {
       const nextSettings = await saveAppSettings(settingsDraft);
       setAppSettings(nextSettings);
       setSettingsDraft(toSettingsDraft(nextSettings));
+      applyAppearance(nextSettings.appearance.theme, nextSettings.appearance.density);
       setSettingsError(null);
-      setSettingsSuccess('Settings saved. Restart the desktop app to apply storage and adapter changes.');
+      setSettingsSuccess('Settings saved. Appearance applies now; storage and adapter changes apply on restart.');
     } catch (err) {
       setSettingsError(err instanceof Error ? err.message : 'Unable to save application settings');
       setSettingsSuccess(null);
@@ -267,6 +302,67 @@ export const Workspace: React.FC = () => {
   }, [settingsDraft]);
 
   const executionBrokers = brokerConnections.filter((broker) => broker.mode === 'paper' || broker.execution_available);
+
+  const handleKiteLogin = useCallback(async () => {
+    const token = kiteToken.trim();
+    if (!token) {
+      setBrokerActionError('Paste the request_token from the Kite login redirect URL.');
+      return;
+    }
+    setBrokerBusyId('zerodha');
+    try {
+      await zerodhaLogin(token);
+      await refreshBrokerConnections();
+      await subscribeSymbols(watchlist);
+      setKiteToken('');
+      setBrokerActionError(null);
+    } catch (err) {
+      setBrokerActionError(err instanceof Error ? err.message : 'Kite login failed');
+    } finally {
+      setBrokerBusyId(null);
+    }
+  }, [kiteToken, refreshBrokerConnections, watchlist]);
+
+  const updateLlmProvider = useCallback((id: string, patch: Partial<LlmProviderWriteDto>) => {
+    setSettingsDraft((current) => current ? {
+      ...current,
+      llm: {
+        ...current.llm,
+        providers: current.llm.providers.map((p) => (p.id === id ? { ...p, ...patch } : p)),
+      },
+    } : current);
+    setSettingsSuccess(null);
+  }, []);
+
+  const addLlmProvider = useCallback(() => {
+    setSettingsDraft((current) => {
+      if (!current) return current;
+      const id = `provider-${current.llm.providers.length + 1}`;
+      return {
+        ...current,
+        llm: {
+          ...current.llm,
+          providers: [...current.llm.providers, { ...EMPTY_PROVIDER, id, name: id }],
+        },
+      };
+    });
+    setSettingsSuccess(null);
+  }, []);
+
+  const removeLlmProvider = useCallback((id: string) => {
+    setSettingsDraft((current) => {
+      if (!current) return current;
+      const providers = current.llm.providers.filter((p) => p.id !== id);
+      return {
+        ...current,
+        llm: {
+          active: current.llm.active === id ? '' : current.llm.active,
+          providers,
+        },
+      };
+    });
+    setSettingsSuccess(null);
+  }, []);
 
   const handleSaveLayout = () => {
     if (layoutName.trim()) {
@@ -400,6 +496,55 @@ export const Workspace: React.FC = () => {
           <div className="bg-surface-1 border border-[var(--border-color)] rounded-lg p-4 w-[820px] max-h-[85vh] overflow-y-auto" data-testid="settings-panel">
             <h3 className="text-sm font-medium mb-4">Settings</h3>
             <div className="space-y-4">
+              {settingsDraft && (
+                <div data-testid="appearance-settings-section">
+                  <h4 className="text-xs font-medium text-text-secondary mb-2">Appearance</h4>
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="flex flex-col gap-1 text-sm">
+                      <span>Theme</span>
+                      <select
+                        value={settingsDraft.appearance.theme}
+                        onChange={(e) => {
+                          const theme = e.target.value;
+                          setSettingsDraft((current) => current ? {
+                            ...current,
+                            appearance: { ...current.appearance, theme },
+                          } : current);
+                          applyAppearance(theme, settingsDraft.appearance.density);
+                          setSettingsSuccess(null);
+                        }}
+                        className="px-2 py-1.5 text-sm bg-surface-0 border border-[var(--border-color)] rounded"
+                        data-testid="settings-theme"
+                      >
+                        <option value="dark">Dark</option>
+                        <option value="light">Light</option>
+                      </select>
+                    </label>
+                    <label className="flex flex-col gap-1 text-sm">
+                      <span>Density</span>
+                      <select
+                        value={settingsDraft.appearance.density}
+                        onChange={(e) => {
+                          const density = e.target.value;
+                          setSettingsDraft((current) => current ? {
+                            ...current,
+                            appearance: { ...current.appearance, density },
+                          } : current);
+                          applyAppearance(settingsDraft.appearance.theme, density);
+                          setSettingsSuccess(null);
+                        }}
+                        className="px-2 py-1.5 text-sm bg-surface-0 border border-[var(--border-color)] rounded"
+                        data-testid="settings-density"
+                      >
+                        <option value="comfortable">Comfortable</option>
+                        <option value="compact">Compact</option>
+                      </select>
+                    </label>
+                  </div>
+                  <p className="mt-1 text-[11px] text-text-muted">Appearance applies immediately and is saved with the rest of your settings.</p>
+                </div>
+              )}
+
               <div data-testid="trading-settings-section">
                 <h4 className="text-xs font-medium text-text-secondary mb-2">Trading Settings</h4>
                 <div className="space-y-2">
@@ -522,6 +667,35 @@ export const Workspace: React.FC = () => {
                           <p className="mt-3 text-xs text-text-muted">
                             Fill the required `.env` values and restart the desktop app to enable this broker.
                           </p>
+                        ) : null}
+
+                        {broker.broker_id === 'zerodha' && broker.configured ? (
+                          <div className="mt-2 rounded border border-[var(--border-color)] bg-surface-1 px-3 py-2">
+                            <p className="text-[11px] text-text-muted">
+                              Kite Connect login: open
+                              {' '}<code>https://kite.trade/connect/login?api_key=YOUR_KEY</code>{' '}
+                              in a browser, sign in, then paste the <code>request_token</code> from the redirect URL here.
+                            </p>
+                            <div className="mt-2 flex items-center gap-2">
+                              <input
+                                type="text"
+                                value={kiteToken}
+                                onChange={(e) => setKiteToken(e.target.value)}
+                                placeholder="request_token"
+                                className="min-w-0 flex-1 px-3 py-2 text-xs bg-surface-0 border border-[var(--border-color)] rounded font-mono"
+                                data-testid="kite-request-token"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => void handleKiteLogin()}
+                                disabled={brokerBusyId === 'zerodha' || !kiteToken.trim()}
+                                className="px-3 py-2 text-xs bg-primary-500 hover:bg-primary-600 text-white rounded disabled:opacity-50"
+                                data-testid="kite-login"
+                              >
+                                {brokerBusyId === 'zerodha' ? 'Working…' : 'Kite Login'}
+                              </button>
+                            </div>
+                          </div>
                         ) : null}
                       </div>
                     );
@@ -785,6 +959,167 @@ export const Workspace: React.FC = () => {
                   )}
                 </div>
               </div>
+
+              {settingsDraft && (
+                <div data-testid="llm-settings-section">
+                  <div className="mb-2 flex items-center justify-between">
+                    <div>
+                      <h4 className="text-xs font-medium text-text-secondary">AI Providers</h4>
+                      <p className="mt-0.5 text-[11px] text-text-muted">
+                        OpenAI-compatible endpoints for the Copilot. API keys are read from env vars — store only the variable name.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={addLlmProvider}
+                      className="px-2 py-1 text-[11px] bg-surface-2 hover:bg-surface-3 border border-[var(--border-color)] rounded"
+                      data-testid="llm-add-provider"
+                    >
+                      Add Provider
+                    </button>
+                  </div>
+
+                  <label className="flex items-center justify-between gap-4 text-sm mb-2">
+                    <span>Active Provider</span>
+                    <select
+                      value={settingsDraft.llm.active}
+                      onChange={(e) => {
+                        setSettingsDraft((current) => current ? {
+                          ...current,
+                          llm: { ...current.llm, active: e.target.value },
+                        } : current);
+                        setSettingsSuccess(null);
+                      }}
+                      className="min-w-[220px] px-2 py-1 text-sm bg-surface-0 border border-[var(--border-color)] rounded"
+                      data-testid="llm-active-provider"
+                    >
+                      <option value="">Legacy [copilot] config</option>
+                      {settingsDraft.llm.providers.map((p) => (
+                        <option key={p.id} value={p.id}>{p.name || p.id}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <div className="space-y-2">
+                    {settingsDraft.llm.providers.map((p) => {
+                      const persisted = appSettings?.llm.providers.find((x) => x.id === p.id);
+                      return (
+                        <div
+                          key={p.id}
+                          className="rounded border border-[var(--border-color)] bg-surface-0 p-3 space-y-2"
+                          data-testid={`llm-provider-${p.id}`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <input
+                              value={p.name}
+                              onChange={(e) => updateLlmProvider(p.id, { name: e.target.value })}
+                              placeholder="Display name"
+                              className="flex-1 min-w-0 px-2 py-1 text-xs bg-surface-1 border border-[var(--border-color)] rounded"
+                              data-testid={`llm-name-${p.id}`}
+                            />
+                            <select
+                              value={p.api_kind}
+                              onChange={(e) => updateLlmProvider(p.id, { api_kind: e.target.value })}
+                              className="px-2 py-1 text-xs bg-surface-1 border border-[var(--border-color)] rounded"
+                              data-testid={`llm-kind-${p.id}`}
+                            >
+                              <option value="chat">chat/completions</option>
+                              <option value="responses">/responses API</option>
+                              <option value="acp">ACP agent</option>
+                            </select>
+                            {persisted && (
+                              <span className={`rounded border px-2 py-0.5 text-[10px] uppercase tracking-wide ${persisted.key_configured ? 'border-bull/30 text-bull' : 'border-warning/30 text-warning'}`}>
+                                {persisted.key_configured ? 'key set' : 'key missing'}
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => removeLlmProvider(p.id)}
+                              className="px-2 py-1 text-[11px] text-bear bg-surface-2 hover:bg-surface-3 border border-[var(--border-color)] rounded"
+                              data-testid={`llm-remove-${p.id}`}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <input
+                              value={p.base_url}
+                              onChange={(e) => updateLlmProvider(p.id, { base_url: e.target.value })}
+                              placeholder="https://openrouter.ai/api/v1"
+                              className="px-2 py-1 text-xs bg-surface-1 border border-[var(--border-color)] rounded font-mono"
+                              data-testid={`llm-base-url-${p.id}`}
+                            />
+                            <input
+                              value={p.model}
+                              onChange={(e) => updateLlmProvider(p.id, { model: e.target.value })}
+                              placeholder="model slug"
+                              className="px-2 py-1 text-xs bg-surface-1 border border-[var(--border-color)] rounded font-mono"
+                              data-testid={`llm-model-${p.id}`}
+                            />
+                            <input
+                              value={p.api_key_env}
+                              onChange={(e) => updateLlmProvider(p.id, { api_key_env: e.target.value })}
+                              placeholder="API key env var (e.g. OPEN_ROUTER)"
+                              className="px-2 py-1 text-xs bg-surface-1 border border-[var(--border-color)] rounded font-mono"
+                              data-testid={`llm-key-env-${p.id}`}
+                            />
+                            <input
+                              type="number"
+                              value={p.max_tokens}
+                              min={1}
+                              onChange={(e) => updateLlmProvider(p.id, { max_tokens: Math.max(1, Number(e.target.value) || 1024) })}
+                              placeholder="max tokens"
+                              className="px-2 py-1 text-xs bg-surface-1 border border-[var(--border-color)] rounded"
+                              data-testid={`llm-max-tokens-${p.id}`}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {settingsDraft.llm.providers.length === 0 && (
+                      <p className="text-xs text-text-muted" data-testid="llm-no-providers">
+                        No providers configured — the copilot falls back to the legacy [copilot] section + OPEN_ROUTER env var.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="mt-3 rounded border border-[var(--border-color)] bg-surface-0 p-3" data-testid="acp-settings">
+                    <h5 className="text-[11px] font-medium text-text-secondary mb-1">ACP Connector</h5>
+                    <p className="text-[11px] text-text-muted mb-2">
+                      Route an <code>api_kind: acp</code> provider to an external agent/IDE over stdio JSON-RPC
+                      (e.g. <code>npx @zed-industries/claude-code-acp</code> or <code>gemini --acp</code>).
+                    </p>
+                    <div className="grid grid-cols-[2fr_1fr] gap-2">
+                      <input
+                        value={settingsDraft.acp.command}
+                        onChange={(e) => {
+                          setSettingsDraft((current) => current ? {
+                            ...current,
+                            acp: { ...current.acp, command: e.target.value },
+                          } : current);
+                          setSettingsSuccess(null);
+                        }}
+                        placeholder="agent command (empty = disabled)"
+                        className="px-2 py-1 text-xs bg-surface-1 border border-[var(--border-color)] rounded font-mono"
+                        data-testid="acp-command"
+                      />
+                      <input
+                        value={settingsDraft.acp.cwd}
+                        onChange={(e) => {
+                          setSettingsDraft((current) => current ? {
+                            ...current,
+                            acp: { ...current.acp, cwd: e.target.value },
+                          } : current);
+                          setSettingsSuccess(null);
+                        }}
+                        placeholder="working dir (optional)"
+                        className="px-2 py-1 text-xs bg-surface-1 border border-[var(--border-color)] rounded font-mono"
+                        data-testid="acp-cwd"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
             <div className="flex items-center justify-between gap-3 mt-4">
               <span className="text-xs text-text-muted">
@@ -880,6 +1215,10 @@ export const Workspace: React.FC = () => {
           ) : centerTab === 'analytics' ? (
             <div className="flex-1 bg-surface-1 rounded-lg border border-[var(--border-color)] overflow-hidden">
               <AnalyticsPanel defaultSymbol={selectedSymbol} />
+            </div>
+          ) : centerTab === 'backtest' ? (
+            <div className="flex-1 bg-surface-1 rounded-lg border border-[var(--border-color)] overflow-hidden">
+              <BacktestPanel defaultSymbol={selectedSymbol} />
             </div>
           ) : centerTab === 'market' ? (
             <div className="flex-1 bg-surface-1 rounded-lg border border-[var(--border-color)] overflow-hidden">

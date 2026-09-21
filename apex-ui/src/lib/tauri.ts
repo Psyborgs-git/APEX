@@ -141,6 +141,23 @@ let mockAppSettings: AppSettingsDto = {
     pool_size: 4,
     available_backends: ['sqlite', 'timescale'],
   },
+  appearance: { theme: 'dark', density: 'comfortable' },
+  llm: {
+    active: 'openrouter',
+    providers: [
+      {
+        id: 'openrouter',
+        name: 'OpenRouter',
+        base_url: 'https://openrouter.ai/api/v1',
+        model: 'openrouter/free',
+        api_kind: 'chat',
+        api_key_env: 'OPEN_ROUTER',
+        max_tokens: 1024,
+        key_configured: false,
+      },
+    ],
+  },
+  acp: { command: '', cwd: '' },
 };
 
 function cloneMockSettings(): AppSettingsDto {
@@ -631,6 +648,8 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
     return {
       reply: '[web-only mode] Copilot needs the desktop app + OPEN_ROUTER key. In-browser responses are stubbed.',
       model: 'mock',
+      provider: 'mock',
+      tool_calls: [],
     } as CopilotReplyDto as any;
   }
 
@@ -741,6 +760,7 @@ export async function deleteMLModel(id: string): Promise<boolean> { return invok
 export async function listBrokerConnections(): Promise<BrokerConnectionDto[]> { return invoke<BrokerConnectionDto[]>('list_broker_connections'); }
 export async function setBrokerSession(brokerId: string, sessionToken: string): Promise<BrokerConnectionDto> { return invoke<BrokerConnectionDto>('set_broker_session', { brokerId, sessionToken }); }
 export async function clearBrokerSession(brokerId: string): Promise<BrokerConnectionDto> { return invoke<BrokerConnectionDto>('clear_broker_session', { brokerId }); }
+export async function zerodhaLogin(requestToken: string): Promise<BrokerConnectionDto> { return invoke<BrokerConnectionDto>('zerodha_login', { requestToken }); }
 
 // Health Monitor
 export async function getSystemHealth(): Promise<SystemHealthDto> { return invoke<SystemHealthDto>('get_system_health'); }

@@ -100,6 +100,7 @@ fn main() {
             brokers::list_broker_connections,
             brokers::set_broker_session,
             brokers::clear_broker_session,
+            brokers::zerodha_login,
             health::get_system_health,
             settings::get_app_settings,
             settings::save_app_settings,

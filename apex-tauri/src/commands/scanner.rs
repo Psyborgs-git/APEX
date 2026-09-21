@@ -27,7 +27,7 @@ pub struct ScanRequestDto {
     pub lookback_bars: Option<usize>,
 }
 
-fn to_criterion(dto: &ScanCriterionDto) -> Result<ScanCriterion, String> {
+pub(crate) fn to_criterion(dto: &ScanCriterionDto) -> Result<ScanCriterion, String> {
     let v = dto.value;
     match dto.kind.to_ascii_lowercase().as_str() {
         "price_above" => Ok(ScanCriterion::PriceAbove(

@@ -24,6 +24,12 @@ pub struct AppConfig {
     pub news: NewsConfig,
     #[serde(default)]
     pub copilot: CopilotConfig,
+    #[serde(default)]
+    pub appearance: AppearanceConfig,
+    #[serde(default)]
+    pub llm: LlmConfig,
+    #[serde(default)]
+    pub acp: AcpConfig,
 }
 
 impl AppConfig {
@@ -119,6 +125,83 @@ fn resolve_runtime_dir(
         .with_context(|| format!("Failed to create runtime directory {}", path.display()))?;
 
     Ok(path)
+}
+
+/// UI appearance: theme + density.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppearanceConfig {
+    /// "dark" or "light".
+    #[serde(default = "default_theme")]
+    pub theme: String,
+    /// "comfortable" or "compact".
+    #[serde(default = "default_density")]
+    pub density: String,
+}
+
+impl Default for AppearanceConfig {
+    fn default() -> Self {
+        Self {
+            theme: default_theme(),
+            density: default_density(),
+        }
+    }
+}
+
+/// One OpenAI-compatible inference provider (chat completions or responses API).
+/// API keys are never stored in config — `api_key_env` names the env var / OS
+/// keychain entry to read at call time.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LlmProviderConfig {
+    /// Stable identifier, e.g. "openrouter", "ollama", "acp:claude".
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    /// Base URL (e.g. https://api.openai.com/v1) — empty for ACP providers.
+    #[serde(default)]
+    pub base_url: String,
+    #[serde(default)]
+    pub model: String,
+    /// "chat" (OpenAI /chat/completions), "responses" (/responses), or "acp"
+    /// (spawn an ACP agent process — see [acp]).
+    #[serde(default = "default_api_kind")]
+    pub api_kind: String,
+    /// Env var holding the API key (no secrets in config).
+    #[serde(default)]
+    pub api_key_env: String,
+    /// Optional per-provider token cap; 0 = use copilot.max_tokens.
+    #[serde(default)]
+    pub max_tokens: u32,
+}
+
+/// Inference provider registry + selection.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct LlmConfig {
+    /// id of the active provider; empty = legacy [copilot] config.
+    #[serde(default)]
+    pub active: String,
+    #[serde(default)]
+    pub providers: Vec<LlmProviderConfig>,
+}
+
+/// Agent Client Protocol connector — spawn an external agent (IDE/CLI) and
+/// talk to it over stdio JSON-RPC.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcpConfig {
+    /// Command to spawn, e.g. "npx @zed-industries/claude-code-acp".
+    #[serde(default)]
+    pub command: String,
+    /// Working directory for the agent; empty = repo root at runtime.
+    #[serde(default)]
+    pub cwd: String,
+}
+
+impl Default for AcpConfig {
+    fn default() -> Self {
+        Self {
+            command: String::new(),
+            cwd: String::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -347,6 +430,18 @@ fn default_copilot_max_tokens() -> u32 {
 
 fn default_max_daily_loss() -> f64 {
     50_000.0
+}
+
+fn default_theme() -> String {
+    "dark".to_string()
+}
+
+fn default_density() -> String {
+    "comfortable".to_string()
+}
+
+fn default_api_kind() -> String {
+    "chat".to_string()
 }
 
 fn default_market_data_adapter() -> String {

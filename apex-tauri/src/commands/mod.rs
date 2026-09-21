@@ -1,3 +1,4 @@
+pub mod acp;
 pub mod alerts;
 pub mod brokers;
 pub mod copilot;

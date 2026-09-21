@@ -230,7 +230,7 @@ pub fn ols(y: &[f64], x: &[f64]) -> Option<OlsResult> {
 }
 
 /// Summary DTO matching OpenBB `quantitative.summary` fields.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct QuantSummary {
     pub n: usize,
     pub mean: f64,

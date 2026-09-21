@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Workspace } from './components/workspace/Workspace';
 import { CommandBar } from './components/workspace/CommandBar';
 import { StatusBar } from './components/workspace/StatusBar';
@@ -7,10 +7,15 @@ import { KeyboardHud } from './components/workspace/KeyboardHud';
 import { useDataSync } from './lib/useDataSync';
 import { useTauriEventBridge } from './hooks/useTauriEvents';
 import { useWorkspaceStore } from './stores/workspaceStore';
+import { syncAppearance } from './lib/appearance';
 
 export default function App() {
   useDataSync();
   useTauriEventBridge();
+
+  useEffect(() => {
+    void syncAppearance();
+  }, []);
 
   const setCommandSymbol = useWorkspaceStore((s) => s.setCommandSymbol);
   const setCommandTab = useWorkspaceStore((s) => s.setCommandTab);

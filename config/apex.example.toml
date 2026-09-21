@@ -251,3 +251,60 @@ base_url = "https://openrouter.ai/api/v1"
 
 # Max tokens per completion.
 max_tokens = 1024
+
+# ── Appearance ───────────────────────────────────────────────────────
+
+[appearance]
+# "dark" | "light"
+theme = "dark"
+# "comfortable" | "compact"
+density = "comfortable"
+
+# ── LLM providers ────────────────────────────────────────────────────
+# OpenAI-compatible inference providers the Copilot/agentic loop can use.
+# api_kind: "chat" = /chat/completions, "responses" = /responses,
+#           "acp" = external agent via the [acp] connector.
+# API keys are never stored here — api_key_env names the env var.
+
+[llm]
+# Active provider id. Empty = legacy [copilot] config above.
+# active = "openrouter"
+
+# Example providers (uncomment to use):
+# [[llm.providers]]
+# id = "openrouter"
+# name = "OpenRouter"
+# base_url = "https://openrouter.ai/api/v1"
+# model = "openrouter/free"
+# api_kind = "chat"
+# api_key_env = "OPEN_ROUTER"
+
+# [[llm.providers]]
+# id = "openai"
+# name = "OpenAI"
+# base_url = "https://api.openai.com/v1"
+# model = "gpt-4o-mini"
+# api_kind = "responses"
+# api_key_env = "OPENAI_API_KEY"
+
+# [[llm.providers]]
+# id = "local"
+# name = "Ollama"
+# base_url = "http://localhost:11434/v1"
+# model = "llama3.2"
+# api_kind = "chat"
+# api_key_env = ""
+
+# ── ACP connector ────────────────────────────────────────────────────
+# Agent Client Protocol bridge — spawn an external agent (IDE/CLI) and
+# talk to it over stdio JSON-RPC (initialize → session/new → prompt).
+
+[acp]
+# Command to spawn. Examples:
+#   "npx @zed-industries/claude-code-acp"   — Claude Code via ACP
+#   "gemini --acp"                          — Gemini CLI ACP mode
+# Empty disables the connector.
+command = ""
+
+# Working directory for the spawned agent; empty = app data dir.
+cwd = ""

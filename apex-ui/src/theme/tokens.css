@@ -48,3 +48,66 @@
     --transition-fast: 100ms ease;
     --transition-normal: 200ms ease;
 }
+
+/* Light theme */
+[data-theme='light'] {
+    --surface-0: #f4f5f8;
+    --surface-1: #ffffff;
+    --surface-2: #eceef3;
+    --surface-3: #e0e3ec;
+
+    --color-bull: #00883a;
+    --color-bear: #d50000;
+    --color-accent: #1a5fd0;
+    --color-muted: #8a90a6;
+    --color-warning: #b26a00;
+    --color-error: #d50000;
+    --color-success: #00883a;
+
+    --text-primary: #17181f;
+    --text-secondary: #4a4f63;
+    --text-muted: #8a90a6;
+
+    --border-color: #d5d9e4;
+
+    --shadow-sm: 0 1px 2px rgba(20, 25, 45, 0.08);
+    --shadow-md: 0 4px 8px rgba(20, 25, 45, 0.12);
+    --shadow-lg: 0 8px 24px rgba(20, 25, 45, 0.16);
+}
+
+/* Compact density — tighter spacing + smaller type for data-dense screens */
+[data-density='compact'] {
+    --space-xs: 2px;
+    --space-sm: 4px;
+    --space-md: 8px;
+    --space-lg: 14px;
+    --space-xl: 20px;
+
+    --radius-sm: 3px;
+    --radius-md: 5px;
+    --radius-lg: 8px;
+}
+
+[data-density='compact'] body,
+[data-density='compact'] .text-sm {
+    font-size: 12px;
+}
+
+[data-density='compact'] .text-xs {
+    font-size: 10.5px;
+}
+
+[data-density='compact'] .text-lg {
+    font-size: 14px;
+}
+
+/* Compact utility overrides — shrink the standard paddings the panels use */
+[data-density='compact'] .px-3 { padding-left: 0.5rem; padding-right: 0.5rem; }
+[data-density='compact'] .py-1\.5 { padding-top: 0.2rem; padding-bottom: 0.2rem; }
+[data-density='compact'] .py-2 { padding-top: 0.3rem; padding-bottom: 0.3rem; }
+[data-density='compact'] .p-3 { padding: 0.5rem; }
+[data-density='compact'] .p-4 { padding: 0.75rem; }
+[data-density='compact'] .gap-2 { gap: 0.3rem; }
+[data-density='compact'] .gap-3 { gap: 0.5rem; }
+[data-density='compact'] .h-10 { height: 1.75rem; }
+[data-density='compact'] .h-12 { height: 2rem; }

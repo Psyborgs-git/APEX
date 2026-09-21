@@ -11,7 +11,7 @@ use tauri::State;
 
 const MAX_BARS: usize = 1500;
 
-fn periods_per_year(bars: &[OHLCV]) -> f64 {
+pub(crate) fn periods_per_year(bars: &[OHLCV]) -> f64 {
     // Infer bar cadence from median spacing
     if bars.len() < 3 {
         return 252.0;
@@ -219,8 +219,18 @@ pub async fn get_regression(
     timeframe: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<RegressionDto, String> {
-    let xbars = load_bars(&state, &x_symbol, timeframe.as_deref(), MAX_BARS).await?;
-    let ybars = load_bars(&state, &y_symbol, timeframe.as_deref(), MAX_BARS).await?;
+    regression_inner(x_symbol, y_symbol, timeframe.as_deref(), &state).await
+}
+
+/// Shared OLS implementation — also used by the copilot agent loop.
+pub(crate) async fn regression_inner(
+    x_symbol: String,
+    y_symbol: String,
+    timeframe: Option<&str>,
+    state: &AppState,
+) -> Result<RegressionDto, String> {
+    let xbars = load_bars(state, &x_symbol, timeframe, MAX_BARS).await?;
+    let ybars = load_bars(state, &y_symbol, timeframe, MAX_BARS).await?;
     if xbars.len() < 10 || ybars.len() < 10 {
         return Err("Not enough overlapping bars for regression".to_string());
     }
@@ -228,7 +238,7 @@ pub async fn get_regression(
     // Align on shared bar timestamps. For daily/weekly bars align on the
     // calendar date — exchanges in different timezones stamp the same trading
     // day at different instants (US 13:30Z vs NSE 03:45Z).
-    let tf_str = timeframe.as_deref().unwrap_or("d1").to_lowercase();
+    let tf_str = timeframe.unwrap_or("d1").to_lowercase();
     let daily = matches!(tf_str.as_str(), "d1" | "1d" | "w1" | "1w");
     let key_of = |b: &OHLCV| {
         if daily {

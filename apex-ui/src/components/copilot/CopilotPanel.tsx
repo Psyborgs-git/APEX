@@ -1,18 +1,54 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { copilotChat } from '../../lib/tauri';
-import type { CopilotMessageDto } from '../../lib/types';
+import type { CopilotMessageDto, ToolCallTraceDto } from '../../lib/types';
 
 interface ChatEntry extends CopilotMessageDto {
   id: number;
   model?: string;
+  provider?: string;
+  toolCalls?: ToolCallTraceDto[];
   error?: boolean;
 }
 
 const SUGGESTIONS = [
   'Summarize my open positions and session P&L',
   'Which watchlist symbols are moving most today?',
-  'Explain what the correlation graph edges mean',
+  'Backtest the default strategy on RELIANCE.NS and report the metrics',
+  'Export RELIANCE.NS bars and train a model to predict next-day direction',
 ];
+
+const TOOL_LABELS: Record<string, string> = {
+  get_quote: 'Quote',
+  get_ohlcv: 'OHLCV',
+  get_quant_stats: 'Quant stats',
+  get_regression: 'Regression',
+  run_scan: 'Scan',
+  get_news: 'News',
+  list_strategies: 'Strategies',
+  read_strategy: 'Read file',
+  save_strategy: 'Write file',
+  run_backtest: 'Backtest',
+  export_bars_csv: 'CSV export',
+  list_ml_models: 'Models',
+  train_ml_model: 'Train model',
+};
+
+const ToolTrace: React.FC<{ calls: ToolCallTraceDto[] }> = ({ calls }) => (
+  <div className="mt-1.5 space-y-0.5" data-testid="copilot-tool-trace">
+    {calls.map((c, i) => (
+      <div
+        key={i}
+        className={`flex items-center gap-1.5 rounded border px-1.5 py-0.5 text-[10px] font-mono ${
+          c.ok ? 'border-[var(--border-color)] text-text-muted' : 'border-bear/40 text-bear'
+        }`}
+      >
+        <span className={c.ok ? 'text-accent' : 'text-bear'}>{c.ok ? '▸' : '✕'}</span>
+        <span className="font-medium">{TOOL_LABELS[c.name] ?? c.name}</span>
+        {c.detail && <span className="truncate opacity-80">{c.detail}</span>}
+      </div>
+    ))}
+  </div>
+);
 
 export const CopilotPanel: React.FC = () => {
   const [entries, setEntries] = useState<ChatEntry[]>([]);
@@ -41,7 +77,14 @@ export const CopilotPanel: React.FC = () => {
       const reply = await copilotChat(message, history);
       setEntries((current) => [
         ...current,
-        { id: nextId.current++, role: 'assistant', content: reply.reply, model: reply.model },
+        {
+          id: nextId.current++,
+          role: 'assistant',
+          content: reply.reply,
+          model: reply.model,
+          provider: reply.provider,
+          toolCalls: reply.tool_calls,
+        },
       ]);
     } catch (err) {
       setEntries((current) => [
@@ -62,15 +105,15 @@ export const CopilotPanel: React.FC = () => {
     <div className="flex flex-col h-full" data-testid="copilot-panel">
       <div className="px-3 py-2 border-b border-[var(--border-color)] flex items-center justify-between">
         <span className="text-sm font-medium text-text-secondary">Copilot</span>
-        <span className="text-[10px] text-text-muted font-mono">OpenRouter · live terminal context</span>
+        <span className="text-[10px] text-text-muted font-mono">agentic · live data · tools</span>
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-auto px-3 py-2 space-y-3">
         {entries.length === 0 ? (
           <div className="space-y-2" data-testid="copilot-empty">
             <p className="text-xs text-text-muted">
-              Ask about positions, quotes, scans, or anything market-related. The copilot sees
-              your live watchlist, positions, and session P&amp;L.
+              Ask about positions, quotes, scans — or have it build and iterate on a strategy:
+              it can read live data, write strategy files, run backtests, and train models.
             </p>
             {SUGGESTIONS.map((s) => (
               <button
@@ -99,9 +142,15 @@ export const CopilotPanel: React.FC = () => {
                       : 'bg-surface-2 text-text-primary'
                 }`}
               >
+                {entry.toolCalls && entry.toolCalls.length > 0 && (
+                  <ToolTrace calls={entry.toolCalls} />
+                )}
                 {entry.content}
-                {entry.model && entry.model !== 'mock' && (
-                  <div className="mt-1 text-[10px] text-text-muted font-mono">{entry.model}</div>
+                {(entry.model || entry.provider) && entry.model !== 'mock' && (
+                  <div className="mt-1 text-[10px] text-text-muted font-mono">
+                    {entry.provider && entry.provider !== 'copilot' ? `${entry.provider} · ` : ''}
+                    {entry.model}
+                  </div>
                 )}
               </div>
             </div>
@@ -109,7 +158,9 @@ export const CopilotPanel: React.FC = () => {
         )}
         {busy && (
           <div className="flex justify-start">
-            <div className="bg-surface-2 rounded px-3 py-2 text-sm text-text-muted">Thinking…</div>
+            <div className="bg-surface-2 rounded px-3 py-2 text-sm text-text-muted" data-testid="copilot-thinking">
+              Working… (may call tools)
+            </div>
           </div>
         )}
       </div>
@@ -125,7 +176,7 @@ export const CopilotPanel: React.FC = () => {
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Ask the copilot…"
+          placeholder="Ask — or ask it to build & test a strategy…"
           className="flex-1 min-w-0 px-3 py-2 text-sm bg-surface-0 border border-[var(--border-color)] rounded focus:border-accent focus:outline-none"
           data-testid="copilot-input"
         />

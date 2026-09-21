@@ -102,7 +102,7 @@ fn ensure_training_dataset(
     Ok(())
 }
 
-fn load_registered_models(models_dir: &Path) -> Result<Vec<MLModelDto>, String> {
+pub(crate) fn load_registered_models(models_dir: &Path) -> Result<Vec<MLModelDto>, String> {
     if !models_dir.exists() {
         return Ok(Vec::new());
     }
@@ -169,7 +169,16 @@ pub async fn train_ml_model(
     state: State<'_, ModelRegistry>,
     runtime_paths: State<'_, python_runtime::RuntimePaths>,
 ) -> Result<MLTrainingResultDto, String> {
-    let runtime_paths = runtime_paths.inner();
+    train_ml_model_inner(request, &state.models_dir, runtime_paths.inner()).await
+}
+
+/// Shared training implementation — also used by the copilot agent loop.
+pub(crate) async fn train_ml_model_inner(
+    request: MLTrainingRequestDto,
+    models_dir: &Path,
+    runtime_paths: &python_runtime::RuntimePaths,
+) -> Result<MLTrainingResultDto, String> {
+    let runtime_paths = runtime_paths;
 
     // Validate inputs
     validation::validate_algorithm(&request.algorithm)?;
@@ -199,7 +208,7 @@ pub async fn train_ml_model(
 
     let mut payload = serde_json::to_value(&request)
         .map_err(|e| format!("Failed to serialize training request: {e}"))?;
-    payload["output_dir"] = serde_json::json!(state.models_dir.to_string_lossy().to_string());
+    payload["output_dir"] = serde_json::json!(models_dir.to_string_lossy().to_string());
 
     let output = Command::new(&python)
         .current_dir(runtime_paths.work_root())

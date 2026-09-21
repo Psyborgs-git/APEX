@@ -7,7 +7,8 @@ use toml_edit::{value, DocumentMut, Item, Table};
 use crate::commands::python_runtime::RuntimePaths;
 use crate::config::{AppConfig, StorageConfig};
 use crate::dto::{
-    AdapterPreferenceDto, AppSettingsDto, AppSettingsUpdateDto, GeneralSettingsDto,
+    AdapterPreferenceDto, AcpSettingsDto, AppearanceSettingsDto, AppSettingsDto,
+    AppSettingsUpdateDto, GeneralSettingsDto, LlmProviderDto, LlmSettingsDto,
     RiskSettingsDto, StorageSettingsDto,
 };
 use crate::state::AppState;
@@ -21,6 +22,17 @@ const MARKET_DATA_ADAPTERS: &[&str] = &[
     "robinhood",
 ];
 const STORAGE_BACKENDS: &[&str] = &["sqlite", "timescale"];
+const THEMES: &[&str] = &["dark", "light"];
+const DENSITIES: &[&str] = &["comfortable", "compact"];
+const LLM_API_KINDS: &[&str] = &["chat", "responses", "acp"];
+
+/// Whether the named env var resolves to a non-empty value (never exposes it).
+fn env_key_present(name: &str) -> bool {
+    if name.trim().is_empty() {
+        return false;
+    }
+    std::env::var(name).map(|v| !v.trim().is_empty()).unwrap_or(false)
+}
 
 #[tauri::command]
 pub async fn get_app_settings(
@@ -75,6 +87,32 @@ fn build_settings_dto(
             pool_size: config.storage.pool_size,
             available_backends: STORAGE_BACKENDS.iter().map(|backend| (*backend).to_string()).collect(),
         },
+        appearance: AppearanceSettingsDto {
+            theme: config.appearance.theme.clone(),
+            density: config.appearance.density.clone(),
+        },
+        llm: LlmSettingsDto {
+            active: config.llm.active.clone(),
+            providers: config
+                .llm
+                .providers
+                .iter()
+                .map(|p| LlmProviderDto {
+                    id: p.id.clone(),
+                    name: if p.name.is_empty() { p.id.clone() } else { p.name.clone() },
+                    base_url: p.base_url.clone(),
+                    model: p.model.clone(),
+                    api_kind: p.api_kind.clone(),
+                    api_key_env: p.api_key_env.clone(),
+                    max_tokens: p.max_tokens,
+                    key_configured: env_key_present(&p.api_key_env),
+                })
+                .collect(),
+        },
+        acp: AcpSettingsDto {
+            command: config.acp.command.clone(),
+            cwd: config.acp.cwd.clone(),
+        },
     }
 }
 
@@ -119,6 +157,42 @@ fn validate_settings_request(request: &AppSettingsUpdateDto) -> anyhow::Result<(
         return Err(anyhow!("Storage pool size must be at least 1"));
     }
 
+    ensure_allowed_adapter(request.appearance.theme.trim(), THEMES, "appearance.theme")?;
+    ensure_allowed_adapter(
+        request.appearance.density.trim(),
+        DENSITIES,
+        "appearance.density",
+    )?;
+
+    let mut seen_ids = std::collections::HashSet::new();
+    for p in &request.llm.providers {
+        if p.id.trim().is_empty() {
+            return Err(anyhow!("LLM provider id must not be empty"));
+        }
+        if !seen_ids.insert(p.id.trim().to_string()) {
+            return Err(anyhow!("Duplicate LLM provider id `{}`", p.id));
+        }
+        ensure_allowed_adapter(p.api_kind.trim(), LLM_API_KINDS, "llm.providers.api_kind")?;
+        if p.api_kind != "acp" && p.base_url.trim().is_empty() {
+            return Err(anyhow!(
+                "LLM provider `{}` needs a base_url (OpenAI-compatible endpoint)",
+                p.id
+            ));
+        }
+    }
+    if !request.llm.active.trim().is_empty()
+        && !request
+            .llm
+            .providers
+            .iter()
+            .any(|p| p.id == request.llm.active)
+    {
+        return Err(anyhow!(
+            "Active LLM provider `{}` is not in the provider list",
+            request.llm.active
+        ));
+    }
+
     Ok(())
 }
 
@@ -159,6 +233,30 @@ fn write_settings_to_file(
     doc["storage"]["postgres_url"] = value(request.storage.postgres_url.trim());
     doc["storage"]["wal_mode"] = value(request.storage.wal_mode);
     doc["storage"]["pool_size"] = value(request.storage.pool_size as i64);
+
+    ensure_table(&mut doc, "appearance");
+    doc["appearance"]["theme"] = value(request.appearance.theme.trim());
+    doc["appearance"]["density"] = value(request.appearance.density.trim());
+
+    ensure_table(&mut doc, "acp");
+    doc["acp"]["command"] = value(request.acp.command.trim());
+    doc["acp"]["cwd"] = value(request.acp.cwd.trim());
+
+    ensure_table(&mut doc, "llm");
+    doc["llm"]["active"] = value(request.llm.active.trim());
+    let mut providers_table = toml_edit::ArrayOfTables::new();
+    for p in &request.llm.providers {
+        let mut t = Table::new();
+        t["id"] = value(p.id.trim());
+        t["name"] = value(p.name.trim());
+        t["base_url"] = value(p.base_url.trim());
+        t["model"] = value(p.model.trim());
+        t["api_kind"] = value(p.api_kind.trim());
+        t["api_key_env"] = value(p.api_key_env.trim());
+        t["max_tokens"] = value(p.max_tokens as i64);
+        providers_table.push(t);
+    }
+    doc["llm"]["providers"] = Item::ArrayOfTables(providers_table);
 
     fs::write(config_path, doc.to_string())
         .with_context(|| format!("Failed to write config file {}", config_path.display()))?;

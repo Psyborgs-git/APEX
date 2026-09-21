@@ -318,6 +318,8 @@ pub struct AppState {
     pub scanner: Arc<MarketScanner>,
     pub history_source: Arc<dyn MarketDataPort>,
     pub copilot: CopilotConfig,
+    pub llm: crate::config::LlmConfig,
+    pub acp: crate::config::AcpConfig,
     pub http: reqwest::Client,
     pub paper: Arc<PaperTradingAdapter>,
     brokers: HashMap<String, BrokerRuntimeEntry>,
@@ -763,6 +765,8 @@ impl AppState {
             scanner,
             history_source: scanner_source,
             copilot: config.copilot.clone(),
+            llm: config.llm.clone(),
+            acp: config.acp.clone(),
             http: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(30))
                 .build()

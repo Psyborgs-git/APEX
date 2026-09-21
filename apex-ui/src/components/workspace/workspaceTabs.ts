@@ -12,6 +12,7 @@ export const VALID_TABS = [
   'graph',
   'scanner',
   'analytics',
+  'backtest',
   'copilot',
 ] as const
 

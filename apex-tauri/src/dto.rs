@@ -254,6 +254,46 @@ pub struct StorageSettingsDto {
     pub available_backends: Vec<String>,
 }
 
+/// Appearance settings DTO (theme + density).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppearanceSettingsDto {
+    /// "dark" | "light"
+    pub theme: String,
+    /// "comfortable" | "compact"
+    pub density: String,
+}
+
+/// One configured OpenAI-compatible / ACP inference provider.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LlmProviderDto {
+    pub id: String,
+    pub name: String,
+    pub base_url: String,
+    pub model: String,
+    /// "chat" | "responses" | "acp"
+    pub api_kind: String,
+    /// Env var name holding the API key (never the key itself).
+    pub api_key_env: String,
+    pub max_tokens: u32,
+    /// True when the referenced env var currently resolves to a non-empty value.
+    pub key_configured: bool,
+}
+
+/// LLM provider registry settings DTO.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LlmSettingsDto {
+    /// Active provider id; empty = legacy [copilot] config.
+    pub active: String,
+    pub providers: Vec<LlmProviderDto>,
+}
+
+/// ACP connector settings DTO.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcpSettingsDto {
+    pub command: String,
+    pub cwd: String,
+}
+
 /// App settings DTO for frontend settings panel.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettingsDto {
@@ -265,6 +305,9 @@ pub struct AppSettingsDto {
     pub execution: AdapterPreferenceDto,
     pub risk: RiskSettingsDto,
     pub storage: StorageSettingsDto,
+    pub appearance: AppearanceSettingsDto,
+    pub llm: LlmSettingsDto,
+    pub acp: AcpSettingsDto,
 }
 
 /// App settings update request DTO from frontend.
@@ -275,6 +318,59 @@ pub struct AppSettingsUpdateDto {
     pub execution: AdapterPreferenceDto,
     pub risk: RiskSettingsDto,
     pub storage: StorageSettingsDto,
+    #[serde(default)]
+    pub appearance: AppearanceSettingsDto,
+    #[serde(default)]
+    pub llm: LlmSettingsUpdateDto,
+    #[serde(default)]
+    pub acp: AcpSettingsDto,
+}
+
+/// LLM update payload — providers written without key_configured.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct LlmSettingsUpdateDto {
+    pub active: String,
+    #[serde(default)]
+    pub providers: Vec<LlmProviderWriteDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LlmProviderWriteDto {
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub base_url: String,
+    #[serde(default)]
+    pub model: String,
+    #[serde(default = "default_write_api_kind")]
+    pub api_kind: String,
+    #[serde(default)]
+    pub api_key_env: String,
+    #[serde(default)]
+    pub max_tokens: u32,
+}
+
+fn default_write_api_kind() -> String {
+    "chat".to_string()
+}
+
+impl Default for AppearanceSettingsDto {
+    fn default() -> Self {
+        Self {
+            theme: "dark".to_string(),
+            density: "comfortable".to_string(),
+        }
+    }
+}
+
+impl Default for AcpSettingsDto {
+    fn default() -> Self {
+        Self {
+            command: String::new(),
+            cwd: String::new(),
+        }
+    }
 }
 
 /// Research notebook cell DTO for frontend.
