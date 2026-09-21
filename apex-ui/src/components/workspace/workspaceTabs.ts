@@ -13,7 +13,6 @@ export const VALID_TABS = [
   'scanner',
   'analytics',
   'backtest',
-  'copilot',
 ] as const
 
 export type CenterTab = (typeof VALID_TABS)[number]

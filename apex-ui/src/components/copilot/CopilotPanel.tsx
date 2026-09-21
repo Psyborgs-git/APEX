@@ -103,11 +103,6 @@ export const CopilotPanel: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full" data-testid="copilot-panel">
-      <div className="px-3 py-2 border-b border-[var(--border-color)] flex items-center justify-between">
-        <span className="text-sm font-medium text-text-secondary">Copilot</span>
-        <span className="text-[10px] text-text-muted font-mono">agentic · live data · tools</span>
-      </div>
-
       <div ref={scrollRef} className="flex-1 overflow-auto px-3 py-2 space-y-3">
         {entries.length === 0 ? (
           <div className="space-y-2" data-testid="copilot-empty">

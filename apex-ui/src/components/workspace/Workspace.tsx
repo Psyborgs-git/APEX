@@ -13,7 +13,6 @@ import { OrderBlotter } from '../trading/OrderBlotter';
 import { OrderBookPanel } from '../charts/OrderBookPanel';
 import { GraphPanel } from '../graph/GraphPanel';
 import { ScannerPanel } from '../scanner/ScannerPanel';
-import { CopilotPanel } from '../copilot/CopilotPanel';
 import { MarketOverview } from '../market/MarketOverview';
 import { AnalyticsPanel } from '../quant/AnalyticsPanel';
 import { BacktestPanel } from '../strategy/BacktestPanel';
@@ -42,7 +41,6 @@ const CENTER_TABS: { id: CenterTab; label: string }[] = [
   { id: 'ml', label: 'ML Workbench' },
   { id: 'data', label: 'Stored Data' },
   { id: 'notebook', label: 'Notebook' },
-  { id: 'copilot', label: 'Copilot' },
   { id: 'health', label: 'Health' },
 ];
 
@@ -202,12 +200,17 @@ export const Workspace: React.FC = () => {
     }
   }, [commandSymbol, setCommandSymbol]);
 
+  const setCopilotOpen = useWorkspaceStore((s) => s.setCopilotOpen);
+
   useEffect(() => {
-    if (commandTab && (VALID_TABS as readonly string[]).includes(commandTab)) {
+    if (!commandTab) return;
+    if (commandTab === 'copilot') {
+      setCopilotOpen(true);
+    } else if ((VALID_TABS as readonly string[]).includes(commandTab)) {
       setCenterTab(commandTab as CenterTab);
-      setCommandTab(null);
     }
-  }, [commandTab, setCommandTab]);
+    setCommandTab(null);
+  }, [commandTab, setCommandTab, setCopilotOpen]);
 
   const refreshBrokerConnections = useCallback(async () => {
     try {
@@ -1223,10 +1226,6 @@ export const Workspace: React.FC = () => {
           ) : centerTab === 'market' ? (
             <div className="flex-1 bg-surface-1 rounded-lg border border-[var(--border-color)] overflow-hidden">
               <MarketOverview />
-            </div>
-          ) : centerTab === 'copilot' ? (
-            <div className="flex-1 bg-surface-1 rounded-lg border border-[var(--border-color)] overflow-hidden">
-              <CopilotPanel />
             </div>
           ) : centerTab === 'data' ? (
             <div className="flex-1 bg-surface-1 rounded-lg border border-[var(--border-color)] overflow-hidden">

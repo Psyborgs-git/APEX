@@ -7,8 +7,8 @@ import type { CenterTab } from './workspaceTabs';
 /** Delay in ms before deactivating command bar on blur, to allow click events */
 const BLUR_DELAY_MS = 200;
 
-/** Map from command keywords to tab identifiers */
-const PANEL_MAP: Record<string, CenterTab> = {
+/** Map from command keywords to tab identifiers ('copilot' opens the dock, not a tab) */
+const PANEL_MAP: Record<string, CenterTab | 'copilot'> = {
   CHART: 'chart',
   STRATEGY: 'strategy',
   ML: 'ml',
