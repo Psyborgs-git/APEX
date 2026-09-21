@@ -396,6 +396,11 @@ pub struct CopilotConfig {
     /// Max tokens per response.
     #[serde(default = "default_copilot_max_tokens")]
     pub max_tokens: u32,
+    /// When true (default), write-class copilot tool calls (orders,
+    /// automations, strategy writes, training) pause for explicit user
+    /// approval in the chat UI before executing.
+    #[serde(default = "default_true")]
+    pub require_approval: bool,
 }
 
 impl Default for CopilotConfig {
@@ -405,6 +410,7 @@ impl Default for CopilotConfig {
             model: default_copilot_model(),
             base_url: default_copilot_base_url(),
             max_tokens: default_copilot_max_tokens(),
+            require_approval: true,
         }
     }
 }

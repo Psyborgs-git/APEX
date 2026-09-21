@@ -195,6 +195,10 @@ fn validate_settings_request(request: &AppSettingsUpdateDto) -> anyhow::Result<(
                 p.id
             ));
         }
+        if p.api_kind != "acp" {
+            crate::validation::validate_provider_url(&p.base_url)
+                .map_err(|e| anyhow!("LLM provider `{}`: {}", p.id, e))?;
+        }
     }
     if !request.llm.active.trim().is_empty()
         && !request

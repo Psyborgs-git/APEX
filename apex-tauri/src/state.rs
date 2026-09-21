@@ -326,6 +326,13 @@ pub struct AppState {
     pub acp: crate::config::AcpConfig,
     pub automations_cfg: crate::config::AutomationsConfig,
     pub automations: Arc<AutomationEngine>,
+    /// Copilot tool approvals: keys of `name:{canonical args}` the user has
+    /// approved this session. Guarded by [copilot] require_approval.
+    pub copilot_approvals: std::sync::Mutex<std::collections::HashSet<String>>,
+    /// Results of approved write-tool executions, keyed like approvals —
+    /// replays return the cached result so an approved call can't double-fire
+    /// when the UI re-sends the turn after an approval.
+    pub copilot_tool_cache: std::sync::Mutex<HashMap<String, String>>,
     pub http: reqwest::Client,
     pub paper: Arc<PaperTradingAdapter>,
     brokers: HashMap<String, BrokerRuntimeEntry>,
@@ -808,6 +815,8 @@ impl AppState {
             acp: config.acp.clone(),
             automations_cfg: config.automations.clone(),
             automations: crate::commands::automation::new_engine(&resolved_data_dir),
+            copilot_approvals: std::sync::Mutex::new(std::collections::HashSet::new()),
+            copilot_tool_cache: std::sync::Mutex::new(HashMap::new()),
             http: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(30))
                 .build()

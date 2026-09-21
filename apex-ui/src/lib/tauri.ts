@@ -650,6 +650,7 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
       model: 'mock',
       provider: 'mock',
       tool_calls: [],
+      pending_approvals: [],
     } as CopilotReplyDto as any;
   }
 
@@ -805,6 +806,10 @@ export async function runScan(request: ScanRequestDto): Promise<ScanOutputDto> {
 // AI Copilot (OpenRouter — desktop only)
 export async function copilotChat(message: string, history?: CopilotMessageDto[]): Promise<CopilotReplyDto> {
   return invoke<CopilotReplyDto>('copilot_chat', { message, history });
+}
+
+export async function approveCopilotTools(keys: string[]): Promise<number> {
+  return invoke<number>('approve_copilot_tools', { keys });
 }
 
 // Quant analytics (OpenBB-style)

@@ -29,12 +29,142 @@ pub struct ToolCallTrace {
     pub ok: bool,
 }
 
+/// A write-class tool call paused for user approval ([copilot]
+/// require_approval). Approve with `approve_copilot_tools` + resend the turn.
+#[derive(Debug, Clone, Serialize)]
+pub struct PendingApprovalDto {
+    /// Deterministic key: `name:{canonical args}`.
+    pub key: String,
+    pub name: String,
+    pub detail: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct CopilotReply {
     pub reply: String,
     pub model: String,
     pub provider: String,
     pub tool_calls: Vec<ToolCallTrace>,
+    pub pending_approvals: Vec<PendingApprovalDto>,
+}
+
+/// Write-class tools — mutate state or touch the filesystem. When
+/// `[copilot] require_approval` is set they pause until the user approves
+/// the exact call (name + canonical args).
+const WRITE_TOOLS: &[&str] = &[
+    "place_order",
+    "cancel_order",
+    "create_automation",
+    "set_automation_enabled",
+    "delete_automation",
+    "save_strategy",
+    "export_bars_csv",
+    "train_ml_model",
+    "create_alert",
+    "remove_alert",
+];
+
+/// Canonical form of `args` (object keys sorted recursively) so the same
+/// logical call always maps to one approval/cache key.
+fn canon_args(v: &Value) -> String {
+    match v {
+        Value::Object(map) => {
+            let mut entries: Vec<_> = map.iter().collect();
+            entries.sort_by(|a, b| a.0.cmp(b.0));
+            let inner = entries
+                .iter()
+                .map(|(k, v)| format!("{}:{}", k, canon_args(v)))
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("{{{inner}}}")
+        }
+        Value::Array(items) => {
+            let inner = items.iter().map(canon_args).collect::<Vec<_>>().join(",");
+            format!("[{inner}]")
+        }
+        other => other.to_string(),
+    }
+}
+
+fn tool_approval_key(name: &str, args: &Value) -> String {
+    format!("{name}:{}", canon_args(args))
+}
+
+/// Dispatch one model-requested tool call under the approval gate.
+/// `Some(payload)` = executed (feed back to the model); `None` = the call
+/// is pending approval and the loop must stop.
+async fn dispatch_tool(
+    name: &str,
+    args: &Value,
+    state: &AppState,
+    models: &ModelRegistry,
+    runtime_paths: &python_runtime::RuntimePaths,
+    trace: &mut Vec<ToolCallTrace>,
+    pending: &mut Vec<PendingApprovalDto>,
+) -> Option<Value> {
+    let detail = trace_detail(name, args);
+    let gated = state.copilot.require_approval && WRITE_TOOLS.contains(&name);
+
+    let result = if gated {
+        let key = tool_approval_key(name, args);
+        let cached = state.copilot_tool_cache.lock().unwrap().get(&key).cloned();
+        if let Some(cached) = cached {
+            // Approved + executed on the first pass — replay returns the
+            // recorded result instead of double-firing (e.g. duplicate order).
+            Ok(serde_json::from_str(&cached).unwrap_or_else(|_| json!(cached)))
+        } else if !state.copilot_approvals.lock().unwrap().contains(&key) {
+            pending.push(PendingApprovalDto {
+                key,
+                name: name.to_string(),
+                detail: detail.clone(),
+            });
+            trace.push(ToolCallTrace {
+                name: name.to_string(),
+                detail: format!("{detail} — awaiting approval"),
+                ok: false,
+            });
+            return None;
+        } else {
+            let r = exec_tool(name, args, state, models, runtime_paths).await;
+            if let Ok(v) = &r {
+                state
+                    .copilot_tool_cache
+                    .lock()
+                    .unwrap()
+                    .insert(key, v.to_string());
+            }
+            r
+        }
+    } else {
+        exec_tool(name, args, state, models, runtime_paths).await
+    };
+
+    let (payload, ok) = match result {
+        Ok(v) => (v, true),
+        Err(e) => (json!({ "error": e }), false),
+    };
+    trace.push(ToolCallTrace {
+        name: name.to_string(),
+        detail,
+        ok,
+    });
+    Some(payload)
+}
+
+/// Approve pending write-class tool calls — the UI passes the `key`s it
+/// showed the user, then re-sends the turn; approved calls execute once
+/// and are cached so the replay is idempotent.
+#[tauri::command]
+pub async fn approve_copilot_tools(
+    keys: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<usize, String> {
+    let mut approvals = state.copilot_approvals.lock().unwrap();
+    let count = keys.len();
+    for k in keys {
+        approvals.insert(k);
+    }
+    Ok(count)
 }
 
 // ── Provider resolution ─────────────────────────────────────────────
@@ -71,9 +201,15 @@ fn resolve_provider(state: &AppState) -> Result<ResolvedProvider, String> {
                     state.llm.active
                 )
             })?;
+        let base_url = provider.base_url.trim().trim_end_matches('/').to_string();
+        // Enforce at request time too — a hand-edited config file must not
+        // bypass settings validation.
+        if provider.api_kind != "acp" {
+            validation::validate_provider_url(&base_url)?;
+        }
         return Ok(ResolvedProvider {
             id: provider.id.clone(),
-            base_url: provider.base_url.trim().trim_end_matches('/').to_string(),
+            base_url,
             model: provider.model.clone(),
             api_kind: provider.api_kind.clone(),
             api_key: env_key(&provider.api_key_env).unwrap_or_default(),
@@ -98,14 +234,16 @@ fn resolve_provider(state: &AppState) -> Result<ResolvedProvider, String> {
         .ok_or_else(|| {
             "No LLM provider configured — set OPEN_ROUTER or add a provider in Settings".to_string()
         })?;
+    let base_url = state
+        .copilot
+        .base_url
+        .trim()
+        .trim_end_matches('/')
+        .to_string();
+    validation::validate_provider_url(&base_url)?;
     Ok(ResolvedProvider {
         id: "copilot".to_string(),
-        base_url: state
-            .copilot
-            .base_url
-            .trim()
-            .trim_end_matches('/')
-            .to_string(),
+        base_url,
         model: state.copilot.model.clone(),
         api_kind: "chat".to_string(),
         api_key,
@@ -946,6 +1084,7 @@ pub async fn copilot_chat(
             model: provider.model,
             provider: provider.id,
             tool_calls: vec![],
+            pending_approvals: vec![],
         });
     }
 
@@ -1027,7 +1166,8 @@ pub async fn copilot_chat(
 
             let mut reply_text = String::new();
             let mut model_name = provider.model.clone();
-            for _ in 0..MAX_AGENT_ROUNDS {
+            let mut pending_approvals: Vec<PendingApprovalDto> = Vec::new();
+            'rounds: for _ in 0..MAX_AGENT_ROUNDS {
                 let resp = responses_round(&state.http, &provider, &input, &tools).await?;
                 if let Some(m) = resp.get("model").and_then(|v| v.as_str()) {
                     model_name = m.to_string();
@@ -1069,16 +1209,19 @@ pub async fn copilot_chat(
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .to_string();
-                    let result = exec_tool(name, &args, state_ref, models_ref, paths_ref).await;
-                    let (payload, ok) = match result {
-                        Ok(v) => (v, true),
-                        Err(e) => (json!({"error": e}), false),
+                    let Some(payload) = dispatch_tool(
+                        name,
+                        &args,
+                        state_ref,
+                        models_ref,
+                        paths_ref,
+                        &mut trace,
+                        &mut pending_approvals,
+                    )
+                    .await
+                    else {
+                        break 'rounds;
                     };
-                    trace.push(ToolCallTrace {
-                        name: name.to_string(),
-                        detail: trace_detail(name, &args),
-                        ok,
-                    });
                     input.push(json!({
                         "type": "function_call_output",
                         "call_id": call_id,
@@ -1087,7 +1230,9 @@ pub async fn copilot_chat(
                 }
             }
             Ok(CopilotReply {
-                reply: if reply_text.is_empty() {
+                reply: if !pending_approvals.is_empty() {
+                    "Paused — approve the pending tool call(s) to continue.".into()
+                } else if reply_text.is_empty() {
                     "(empty response)".into()
                 } else {
                     reply_text
@@ -1095,6 +1240,7 @@ pub async fn copilot_chat(
                 model: model_name,
                 provider: provider.id,
                 tool_calls: trace,
+                pending_approvals,
             })
         }
         _ => {
@@ -1115,7 +1261,8 @@ pub async fn copilot_chat(
 
             let mut reply_text = String::new();
             let mut model_name = provider.model.clone();
-            for _ in 0..MAX_AGENT_ROUNDS {
+            let mut pending_approvals: Vec<PendingApprovalDto> = Vec::new();
+            'rounds: for _ in 0..MAX_AGENT_ROUNDS {
                 let resp = chat_round(&state.http, &provider, &messages, &tools).await?;
                 if let Some(m) = resp.get("model").and_then(|v| v.as_str()) {
                     model_name = m.to_string();
@@ -1156,16 +1303,19 @@ pub async fn copilot_chat(
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .to_string();
-                    let result = exec_tool(fname, &args, state_ref, models_ref, paths_ref).await;
-                    let (payload, ok) = match result {
-                        Ok(v) => (v, true),
-                        Err(e) => (json!({"error": e}), false),
+                    let Some(payload) = dispatch_tool(
+                        fname,
+                        &args,
+                        state_ref,
+                        models_ref,
+                        paths_ref,
+                        &mut trace,
+                        &mut pending_approvals,
+                    )
+                    .await
+                    else {
+                        break 'rounds;
                     };
-                    trace.push(ToolCallTrace {
-                        name: fname.to_string(),
-                        detail: trace_detail(fname, &args),
-                        ok,
-                    });
                     messages.push(json!({
                         "role": "tool", "tool_call_id": id,
                         "content": payload.to_string(),
@@ -1173,7 +1323,9 @@ pub async fn copilot_chat(
                 }
             }
             Ok(CopilotReply {
-                reply: if reply_text.is_empty() {
+                reply: if !pending_approvals.is_empty() {
+                    "Paused — approve the pending tool call(s) to continue.".into()
+                } else if reply_text.is_empty() {
                     "(empty response)".into()
                 } else {
                     reply_text
@@ -1181,6 +1333,7 @@ pub async fn copilot_chat(
                 model: model_name,
                 provider: provider.id,
                 tool_calls: trace,
+                pending_approvals,
             })
         }
     }

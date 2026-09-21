@@ -484,11 +484,18 @@ export interface ToolCallTraceDto {
   ok: boolean;
 }
 
+export interface PendingApprovalDto {
+  key: string;
+  name: string;
+  detail: string;
+}
+
 export interface CopilotReplyDto {
   reply: string;
   model: string;
   provider: string;
   tool_calls: ToolCallTraceDto[];
+  pending_approvals: PendingApprovalDto[];
 }
 
 // Quant / indicators (OpenBB-style analytics)

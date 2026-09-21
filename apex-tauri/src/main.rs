@@ -96,6 +96,7 @@ fn main() {
             graph::compute_correlations,
             orderbook::get_order_book,
             copilot::copilot_chat,
+            copilot::approve_copilot_tools,
             strategy::list_strategy_files,
             strategy::create_strategy_file,
             strategy::save_strategy_file,

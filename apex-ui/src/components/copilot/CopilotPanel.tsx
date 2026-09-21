@@ -1,12 +1,16 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { copilotChat } from '../../lib/tauri';
-import type { CopilotMessageDto, ToolCallTraceDto } from '../../lib/types';
+import { approveCopilotTools, copilotChat } from '../../lib/tauri';
+import type { CopilotMessageDto, PendingApprovalDto, ToolCallTraceDto } from '../../lib/types';
 
 interface ChatEntry extends CopilotMessageDto {
   id: number;
   model?: string;
   provider?: string;
   toolCalls?: ToolCallTraceDto[];
+  pendingApprovals?: PendingApprovalDto[];
+  approvalState?: 'pending' | 'approved' | 'denied';
+  /** The user message that produced this pending turn (for resend-on-approve). */
+  prompt?: string;
   error?: boolean;
 }
 
@@ -62,6 +66,51 @@ function loadHistory(): ChatEntry[] {
   }
 }
 
+const ApprovalCard: React.FC<{
+  entry: ChatEntry;
+  onApprove: (entry: ChatEntry) => void;
+  onDeny: (entry: ChatEntry) => void;
+}> = ({ entry, onApprove, onDeny }) => {
+  const approvals = entry.pendingApprovals ?? [];
+  return (
+    <div
+      className="mt-1.5 rounded border border-warning/50 bg-warning/10 px-2 py-1.5 text-[11px]"
+      data-testid="copilot-approval-card"
+    >
+      <div className="mb-1 font-medium text-warning">
+        Approval required — the copilot wants to run:
+      </div>
+      {approvals.map((a) => (
+        <div key={a.key} className="font-mono text-[10px] text-text-secondary truncate">
+          {TOOL_LABELS[a.name] ?? a.name} · {a.detail}
+        </div>
+      ))}
+      {entry.approvalState === 'pending' ? (
+        <div className="mt-1.5 flex gap-2">
+          <button
+            onClick={() => onApprove(entry)}
+            className="px-2 py-0.5 rounded bg-bull/20 text-bull border border-bull/40 text-[10px]"
+            data-testid="copilot-approve"
+          >
+            Approve
+          </button>
+          <button
+            onClick={() => onDeny(entry)}
+            className="px-2 py-0.5 rounded bg-bear/20 text-bear border border-bear/40 text-[10px]"
+            data-testid="copilot-deny"
+          >
+            Deny
+          </button>
+        </div>
+      ) : (
+        <div className="mt-1 text-[10px] text-text-muted">
+          {entry.approvalState === 'approved' ? 'Approved — continuing…' : 'Denied.'}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const ToolTrace: React.FC<{ calls: ToolCallTraceDto[] }> = ({ calls }) => (
   <div className="mt-1.5 space-y-0.5" data-testid="copilot-tool-trace">
     {calls.map((c, i) => (
@@ -100,18 +149,20 @@ export const CopilotPanel: React.FC = () => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [entries, busy]);
 
-  const send = useCallback(async (text?: string) => {
-    const message = (text ?? input).trim();
+  const send = useCallback(async (text: string, replay: boolean) => {
+    const message = text.trim();
     if (!message || busy) return;
 
-    const userEntry: ChatEntry = { id: nextId.current++, role: 'user', content: message };
     // History is prior turns only — the backend appends `message` itself.
     const history: CopilotMessageDto[] = entries
       .filter((e) => !e.error)
       .map((e) => ({ role: e.role, content: e.content }));
 
-    setEntries((current) => [...current, userEntry]);
-    setInput('');
+    if (!replay) {
+      const userEntry: ChatEntry = { id: nextId.current++, role: 'user', content: message };
+      setEntries((current) => [...current, userEntry]);
+      setInput('');
+    }
     setBusy(true);
     try {
       const reply = await copilotChat(message, history);
@@ -124,6 +175,10 @@ export const CopilotPanel: React.FC = () => {
           model: reply.model,
           provider: reply.provider,
           toolCalls: reply.tool_calls,
+          pendingApprovals: reply.pending_approvals,
+          approvalState:
+            reply.pending_approvals.length > 0 ? 'pending' : undefined,
+          prompt: message,
         },
       ]);
     } catch (err) {
@@ -139,7 +194,29 @@ export const CopilotPanel: React.FC = () => {
     } finally {
       setBusy(false);
     }
-  }, [busy, entries, input]);
+  }, [busy, entries]);
+
+  const handleApprove = useCallback(
+    (entry: ChatEntry) => {
+      const keys = (entry.pendingApprovals ?? []).map((a) => a.key);
+      const prompt = entry.prompt ?? '';
+      setEntries((current) =>
+        current.map((e) => (e.id === entry.id ? { ...e, approvalState: 'approved' as const } : e)),
+      );
+      void approveCopilotTools(keys)
+        .then(() => {
+          if (prompt) return send(prompt, true);
+        })
+        .catch(() => undefined);
+    },
+    [send],
+  );
+
+  const handleDeny = useCallback((entry: ChatEntry) => {
+    setEntries((current) =>
+      current.map((e) => (e.id === entry.id ? { ...e, approvalState: 'denied' as const } : e)),
+    );
+  }, []);
 
   return (
     <div className="flex flex-col h-full" data-testid="copilot-panel">
@@ -154,7 +231,7 @@ export const CopilotPanel: React.FC = () => {
             {SUGGESTIONS.map((s) => (
               <button
                 key={s}
-                onClick={() => void send(s)}
+                onClick={() => void send(s, false)}
                 className="block w-full text-left px-2 py-1.5 text-xs bg-surface-2 hover:bg-surface-3 border border-[var(--border-color)] rounded text-text-secondary"
                 data-testid="copilot-suggestion"
               >
@@ -181,6 +258,9 @@ export const CopilotPanel: React.FC = () => {
                 {entry.toolCalls && entry.toolCalls.length > 0 && (
                   <ToolTrace calls={entry.toolCalls} />
                 )}
+                {entry.pendingApprovals && entry.pendingApprovals.length > 0 && (
+                  <ApprovalCard entry={entry} onApprove={handleApprove} onDeny={handleDeny} />
+                )}
                 {entry.content}
                 {(entry.model || entry.provider) && entry.model !== 'mock' && (
                   <div className="mt-1 text-[10px] text-text-muted font-mono">
@@ -204,7 +284,7 @@ export const CopilotPanel: React.FC = () => {
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          void send();
+          void send(input, false);
         }}
         className="px-3 py-2 border-t border-[var(--border-color)] flex items-center gap-2"
       >

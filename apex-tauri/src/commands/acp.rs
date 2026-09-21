@@ -112,15 +112,18 @@ pub(crate) async fn acp_prompt(
         std::path::PathBuf::from(state.acp.cwd.trim())
     };
 
-    let mut child = Command::new("sh")
-        .arg("-c")
-        .arg(command)
+    // Tokenize the configured command into argv — the agent runs directly,
+    // no shell: quotes group args, `;`, `|`, `>`, `$(...)` etc. have no
+    // special meaning.
+    let argv = tokenize_command(command)?;
+    let mut child = Command::new(&argv[0])
+        .args(&argv[1..])
         .current_dir(&cwd)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
-        .map_err(|e| format!("Failed to spawn ACP agent `{command}`: {e}"))?;
+        .map_err(|e| format!("Failed to spawn ACP agent `{}`: {e}", argv[0]))?;
 
     let stdin = child.stdin.take().ok_or("ACP agent has no stdin")?;
     let stdout = child.stdout.take().ok_or("ACP agent has no stdout")?;
@@ -188,4 +191,92 @@ pub(crate) async fn acp_prompt(
 
     let _ = client.child.kill().await;
     run
+}
+
+/// Split a configured agent command into argv — whitespace-delimited,
+/// single/double quotes group tokens, `\\` escapes the next char (except
+/// inside single quotes). No shell is involved, so expansions and
+/// metacharacters pass through as literal argv.
+fn tokenize_command(command: &str) -> Result<Vec<String>, String> {
+    let mut argv = Vec::new();
+    let mut cur = String::new();
+    let mut quote: Option<char> = None;
+    let mut in_token = false;
+    let mut chars = command.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' if quote != Some('\'') => match chars.next() {
+                Some(n) => {
+                    cur.push(n);
+                    in_token = true;
+                }
+                None => return Err("trailing backslash in acp.command".into()),
+            },
+            '\'' | '"' => {
+                in_token = true;
+                if quote == Some(c) {
+                    quote = None;
+                } else if quote.is_none() {
+                    quote = Some(c);
+                } else {
+                    cur.push(c);
+                }
+            }
+            c if c.is_whitespace() && quote.is_none() => {
+                if in_token {
+                    argv.push(std::mem::take(&mut cur));
+                    in_token = false;
+                }
+            }
+            _ => {
+                cur.push(c);
+                in_token = true;
+            }
+        }
+    }
+    if quote.is_some() {
+        return Err("unbalanced quote in acp.command".into());
+    }
+    if in_token {
+        argv.push(cur);
+    }
+    if argv.is_empty() {
+        return Err("acp.command is empty".into());
+    }
+    Ok(argv)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tokenizes_simple_and_quoted() {
+        assert_eq!(
+            tokenize_command("claude --acp").unwrap(),
+            vec!["claude", "--acp"]
+        );
+        assert_eq!(
+            tokenize_command("node \"my agent.js\" --flag 'x y'").unwrap(),
+            vec!["node", "my agent.js", "--flag", "x y"]
+        );
+    }
+
+    #[test]
+    fn metachars_stay_literal() {
+        // No shell — these are plain argv strings, not injection vectors.
+        assert_eq!(
+            tokenize_command("agent --prompt 'hi; rm -rf /'").unwrap(),
+            vec!["agent", "--prompt", "hi; rm -rf /"]
+        );
+        assert_eq!(tokenize_command("a;ls").unwrap(), vec!["a;ls"]);
+    }
+
+    #[test]
+    fn rejects_empty_and_unbalanced() {
+        assert!(tokenize_command("").is_err());
+        assert!(tokenize_command("   ").is_err());
+        assert!(tokenize_command("a 'unbalanced").is_err());
+        assert!(tokenize_command("a \\").is_err());
+    }
 }
