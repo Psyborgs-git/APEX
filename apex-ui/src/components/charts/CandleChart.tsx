@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback, useState } from 'react';
 import {
   createChart,
   type IChartApi,
@@ -10,6 +10,7 @@ import {
   CrosshairMode,
 } from 'lightweight-charts';
 import { useMarketStore } from '../../stores/marketStore';
+import { getHistoricalData } from '../../lib/tauri';
 import type { OHLCVDto } from '../../lib/types';
 import { formatPrice, formatVolume } from '../../lib/format';
 
@@ -18,6 +19,15 @@ interface CandleChartProps {
   ohlcvData?: OHLCVDto[];
   height?: number;
 }
+
+type ChartTimeframe = '5m' | '15m' | '1h' | '1d';
+
+const TIMEFRAMES: { id: ChartTimeframe; label: string; bucketSecs: number }[] = [
+  { id: '5m', label: '5m', bucketSecs: 300 },
+  { id: '15m', label: '15m', bucketSecs: 900 },
+  { id: '1h', label: '1H', bucketSecs: 3600 },
+  { id: '1d', label: '1D', bucketSecs: 86400 },
+];
 
 function toChartTime(iso: string): Time {
   return (new Date(iso).getTime() / 1000) as Time;
@@ -41,6 +51,11 @@ const CandleChartInner: React.FC<CandleChartProps> = ({ symbol, ohlcvData, heigh
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
   const getQuote = useMarketStore((s) => s.getQuote);
+  const quote = useMarketStore((s) => s.quotes.get(symbol));
+  const [timeframe, setTimeframe] = useState<ChartTimeframe>('1d');
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const bucketSecs = TIMEFRAMES.find((t) => t.id === timeframe)?.bucketSecs ?? 86400;
 
   const initChart = useCallback(() => {
     const container = containerRef.current;
@@ -102,31 +117,35 @@ const CandleChartInner: React.FC<CandleChartProps> = ({ symbol, ohlcvData, heigh
     candleSeriesRef.current = candleSeries;
     volumeSeriesRef.current = volumeSeries;
 
-    // Load initial data
-    if (ohlcvData && ohlcvData.length > 0) {
-      const candles: CandlestickData<Time>[] = ohlcvData.map((bar) => ({
-        time: toChartTime(bar.time),
-        open: bar.open,
-        high: bar.high,
-        low: bar.low,
-        close: bar.close,
-      }));
-
-      const volumes: HistogramData<Time>[] = ohlcvData.map((bar) => ({
-        time: toChartTime(bar.time),
-        value: bar.volume,
-        color: bar.close >= bar.open ? CHART_COLORS.volumeUp : CHART_COLORS.volumeDown,
-      }));
-
-      candleSeries.setData(candles);
-      volumeSeries.setData(volumes);
-      chart.timeScale().fitContent();
-    }
-
     return chart;
-  }, [ohlcvData, height]);
+  }, [height]);
 
-  // Initialize chart
+  const setBars = useCallback((bars: OHLCVDto[]) => {
+    const candleSeries = candleSeriesRef.current;
+    const volumeSeries = volumeSeriesRef.current;
+    const chart = chartRef.current;
+    if (!candleSeries || !volumeSeries || !chart || bars.length === 0) return;
+
+    const candles: CandlestickData<Time>[] = bars.map((bar) => ({
+      time: toChartTime(bar.time),
+      open: bar.open,
+      high: bar.high,
+      low: bar.low,
+      close: bar.close,
+    }));
+
+    const volumes: HistogramData<Time>[] = bars.map((bar) => ({
+      time: toChartTime(bar.time),
+      value: bar.volume,
+      color: bar.close >= bar.open ? CHART_COLORS.volumeUp : CHART_COLORS.volumeDown,
+    }));
+
+    candleSeries.setData(candles);
+    volumeSeries.setData(volumes);
+    chart.timeScale().fitContent();
+  }, []);
+
+  // Initialize chart once
   useEffect(() => {
     const chart = initChart();
     if (!chart) return;
@@ -155,55 +174,106 @@ const CandleChartInner: React.FC<CandleChartProps> = ({ symbol, ohlcvData, heigh
     };
   }, [height, initChart]);
 
-  // Listen for real-time quote updates
+  // Load OHLCV bars when symbol or timeframe changes
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setLoadError(null);
+
+    const load = async () => {
+      try {
+        const bars = ohlcvData && ohlcvData.length > 0
+          ? ohlcvData
+          : await getHistoricalData(symbol, timeframe, 500);
+        if (cancelled) return;
+        setBars(bars);
+      } catch (err) {
+        if (!cancelled) {
+          setLoadError(err instanceof Error ? err.message : 'Failed to load chart data');
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [symbol, timeframe, ohlcvData, setBars]);
+
+  // Listen for real-time quote updates — bucket ticks into the active timeframe
   useEffect(() => {
     if (!symbol) return;
 
     const intervalId = setInterval(() => {
-      const quote = getQuote(symbol);
-      if (!quote || !candleSeriesRef.current || !volumeSeriesRef.current) return;
+      const q = getQuote(symbol);
+      if (!q || !candleSeriesRef.current || !volumeSeriesRef.current) return;
 
-      const now = (Math.floor(Date.now() / 1000)) as Time;
+      const bucketStart = (Math.floor(Date.now() / 1000 / bucketSecs) * bucketSecs) as Time;
       candleSeriesRef.current.update({
-        time: now,
-        open: quote.open,
-        high: quote.high,
-        low: quote.low,
-        close: quote.last,
+        time: bucketStart,
+        open: q.open,
+        high: q.high,
+        low: q.low,
+        close: q.last,
       });
 
       volumeSeriesRef.current.update({
-        time: now,
-        value: quote.volume,
-        color: quote.last >= quote.open ? CHART_COLORS.volumeUp : CHART_COLORS.volumeDown,
+        time: bucketStart,
+        value: q.volume,
+        color: q.last >= q.open ? CHART_COLORS.volumeUp : CHART_COLORS.volumeDown,
       });
     }, 1000);
 
     return () => clearInterval(intervalId);
-  }, [symbol, getQuote]);
+  }, [symbol, getQuote, bucketSecs]);
 
   return (
     <div className="flex flex-col h-full" data-testid="candle-chart">
       <div className="px-3 py-1.5 border-b border-[var(--border-color)] flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="text-sm font-mono font-medium text-text-primary">{symbol}</span>
-          {(() => {
-            const q = getQuote(symbol);
-            if (!q) return null;
-            return (
-              <>
-                <span className="text-sm font-mono text-text-primary">{formatPrice(q.last)}</span>
-                <span className={`text-xs font-mono ${q.change_pct >= 0 ? 'text-bull' : 'text-bear'}`}>
-                  {q.change_pct >= 0 ? '+' : ''}{q.change_pct.toFixed(2)}%
-                </span>
-                <span className="text-xs font-mono text-text-muted">Vol {formatVolume(q.volume)}</span>
-              </>
-            );
-          })()}
+          {quote && (
+            <>
+              <span className="text-sm font-mono text-text-primary">{formatPrice(quote.last)}</span>
+              <span className={`text-xs font-mono ${quote.change_pct >= 0 ? 'text-bull' : 'text-bear'}`}>
+                {quote.change_pct >= 0 ? '+' : ''}{quote.change_pct.toFixed(2)}%
+              </span>
+              <span className="text-xs font-mono text-text-muted">Vol {formatVolume(quote.volume)}</span>
+            </>
+          )}
         </div>
-        <span className="text-xs text-text-muted font-mono">1D</span>
+        <div className="flex items-center gap-1" data-testid="chart-timeframes">
+          {TIMEFRAMES.map((tf) => (
+            <button
+              key={tf.id}
+              onClick={() => setTimeframe(tf.id)}
+              className={`px-2 py-0.5 text-[10px] font-mono uppercase tracking-wider rounded transition-colors ${
+                timeframe === tf.id
+                  ? 'bg-accent/15 text-accent'
+                  : 'text-text-muted hover:text-text-primary'
+              }`}
+              data-testid={`chart-tf-${tf.id}`}
+            >
+              {tf.label}
+            </button>
+          ))}
+        </div>
       </div>
-      <div ref={containerRef} className="flex-1 min-h-0" />
+      <div className="relative flex-1 min-h-0">
+        <div ref={containerRef} className="absolute inset-0" />
+        {loading && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <span className="text-xs font-mono text-text-muted animate-pulse">Loading bars…</span>
+          </div>
+        )}
+        {loadError && !loading && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <span className="text-xs font-mono text-bear" data-testid="chart-load-error">{loadError}</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

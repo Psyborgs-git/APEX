@@ -8,7 +8,8 @@ import { useEffect, useRef } from 'react';
 import { useMarketStore } from '../stores/marketStore';
 import { useOrderStore } from '../stores/orderStore';
 import { useHealthStore } from '../stores/healthStore';
-import type { QuoteDto, OrderDto, PositionDto, SystemHealthDto } from '../lib/types';
+import { useNewsStore } from '../stores/newsStore';
+import type { QuoteDto, OrderDto, PositionDto, SystemHealthDto, NewsItemDto, AlertDto } from '../lib/types';
 
 const IS_TAURI = typeof window !== 'undefined' && '__TAURI__' in window;
 
@@ -160,6 +161,72 @@ export function useHealthStream() {
 }
 
 /**
+ * Subscribe to news items pushed from the Rust news engine.
+ */
+export function useNewsStream() {
+  const addItem = useNewsStore((s) => s.addItem);
+  const unlistenRef = useRef<UnlistenFn | null>(null);
+
+  useEffect(() => {
+    if (!IS_TAURI) return;
+
+    let mounted = true;
+
+    (async () => {
+      try {
+        const { listen } = await import('@tauri-apps/api/event');
+        const unlisten = await listen<NewsItemDto>('news-item', (event) => {
+          if (mounted && event.payload?.id) {
+            addItem(event.payload);
+          }
+        });
+        unlistenRef.current = unlisten;
+      } catch {
+        // Tauri event API not available
+      }
+    })();
+
+    return () => {
+      mounted = false;
+      unlistenRef.current?.();
+    };
+  }, [addItem]);
+}
+
+/**
+ * Subscribe to fired-alert events pushed by the alert engine.
+ */
+export function useAlertStream() {
+  const addFiredAlert = useNewsStore((s) => s.addFiredAlert);
+  const unlistenRef = useRef<UnlistenFn | null>(null);
+
+  useEffect(() => {
+    if (!IS_TAURI) return;
+
+    let mounted = true;
+
+    (async () => {
+      try {
+        const { listen } = await import('@tauri-apps/api/event');
+        const unlisten = await listen<AlertDto>('alert-fired', (event) => {
+          if (mounted && event.payload?.rule_id) {
+            addFiredAlert(event.payload);
+          }
+        });
+        unlistenRef.current = unlisten;
+      } catch {
+        // Tauri event API not available
+      }
+    })();
+
+    return () => {
+      mounted = false;
+      unlistenRef.current?.();
+    };
+  }, [addFiredAlert]);
+}
+
+/**
  * Master hook that sets up all Tauri event streams.
  * Call once from the app root to initialize all real-time subscriptions.
  */
@@ -168,4 +235,6 @@ export function useTauriEventBridge() {
   useOrderStream();
   usePositionStream();
   useHealthStream();
+  useNewsStream();
+  useAlertStream();
 }

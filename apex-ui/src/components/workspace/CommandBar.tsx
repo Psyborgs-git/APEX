@@ -15,7 +15,20 @@ const PANEL_MAP: Record<string, CenterTab> = {
   DATA: 'data',
   NOTEBOOK: 'notebook',
   HEALTH: 'health',
-  ORDERS: 'chart',
+  NEWS: 'news',
+  BLOTTER: 'blotter',
+  ORDERS: 'blotter',
+  ORDER_BOOK: 'book',
+  BOOK: 'book',
+  SCANNER: 'scanner',
+  SCAN: 'scanner',
+  GRAPH: 'graph',
+  VECTOR: 'graph',
+  COPILOT: 'copilot',
+  AI: 'copilot',
+  MARKET: 'market',
+  MOST: 'market',
+  OVERVIEW: 'market',
   POSITIONS: 'chart',
 };
 
@@ -212,6 +225,10 @@ export const CommandBar: React.FC<CommandBarProps> = ({ onSelectSymbol, onSwitch
           {feedback.message}
         </span>
       )}
+      <div className="hidden md:flex items-center gap-1.5 text-text-muted">
+        <kbd className="px-1.5 py-0.5 bg-surface-2 border border-[var(--border-color)] rounded font-mono text-[9px]">SPACE</kbd>
+        <kbd className="px-1.5 py-0.5 bg-surface-2 border border-[var(--border-color)] rounded font-mono text-[9px]" title="Keyboard shortcuts">?</kbd>
+      </div>
       <div className="flex items-center gap-2 text-xs text-text-muted font-mono">
         <span>{brokerBadgeLabel}</span>
         <span className={`w-2 h-2 rounded-full ${brokerDotClass}`}></span>

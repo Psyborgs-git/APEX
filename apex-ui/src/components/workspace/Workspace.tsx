@@ -8,6 +8,13 @@ import { StrategyIDE } from '../strategy/StrategyIDE';
 import { MLWorkbench } from '../ml/MLWorkbench';
 import { HealthMonitor } from '../monitor/HealthMonitor';
 import { NotebookEditor } from './NotebookEditor';
+import { NewsPanel } from '../news/NewsPanel';
+import { OrderBlotter } from '../trading/OrderBlotter';
+import { OrderBookPanel } from '../charts/OrderBookPanel';
+import { GraphPanel } from '../graph/GraphPanel';
+import { ScannerPanel } from '../scanner/ScannerPanel';
+import { CopilotPanel } from '../copilot/CopilotPanel';
+import { MarketOverview } from '../market/MarketOverview';
 import { addAlert, clearBrokerSession, getAlertRules, getAppSettings, listBrokerConnections, removeAlert, saveAppSettings, setBrokerSession, subscribeSymbols } from '../../lib/tauri';
 import type { AlertRuleDto, AppSettingsDto, AppSettingsUpdateDto, BrokerConnectionDto } from '../../lib/types';
 import { useMarketStore } from '../../stores/marketStore';
@@ -16,6 +23,22 @@ import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { VALID_TABS, type CenterTab } from './workspaceTabs';
 
 type AlertCondition = 'price_above' | 'price_below';
+
+const CENTER_TABS: { id: CenterTab; label: string }[] = [
+  { id: 'chart', label: 'Chart' },
+  { id: 'market', label: 'Market' },
+  { id: 'blotter', label: 'Blotter' },
+  { id: 'book', label: 'Book' },
+  { id: 'news', label: 'News' },
+  { id: 'scanner', label: 'Scanner' },
+  { id: 'graph', label: 'Graph' },
+  { id: 'strategy', label: 'Strategy IDE' },
+  { id: 'ml', label: 'ML Workbench' },
+  { id: 'data', label: 'Stored Data' },
+  { id: 'notebook', label: 'Notebook' },
+  { id: 'copilot', label: 'Copilot' },
+  { id: 'health', label: 'Health' },
+];
 
 const SETTINGS_LABELS: Record<string, string> = {
   paper: 'Paper Trading',
@@ -796,61 +819,21 @@ export const Workspace: React.FC = () => {
         {/* Center: Tab-switchable Chart/OrderEntry or StrategyIDE */}
         <div className="col-span-6 flex flex-col gap-1">
           {/* Center tab bar */}
-          <div className="flex gap-1 bg-surface-1 rounded-lg border border-[var(--border-color)] px-2 py-1">
-            <button
-              onClick={() => setCenterTab('chart')}
-              data-testid="tab-chart"
-              className={`px-3 py-1 text-xs font-mono rounded transition-colors ${
-                centerTab === 'chart' ? 'bg-accent text-white' : 'bg-surface-2 text-text-muted hover:text-text-primary'
-              }`}
-            >
-              Chart
-            </button>
-            <button
-              onClick={() => setCenterTab('strategy')}
-              data-testid="tab-strategy"
-              className={`px-3 py-1 text-xs font-mono rounded transition-colors ${
-                centerTab === 'strategy' ? 'bg-accent text-white' : 'bg-surface-2 text-text-muted hover:text-text-primary'
-              }`}
-            >
-              Strategy IDE
-            </button>
-            <button
-              onClick={() => setCenterTab('ml')}
-              data-testid="tab-ml"
-              className={`px-3 py-1 text-xs font-mono rounded transition-colors ${
-                centerTab === 'ml' ? 'bg-accent text-white' : 'bg-surface-2 text-text-muted hover:text-text-primary'
-              }`}
-            >
-              ML Workbench
-            </button>
-            <button
-              onClick={() => setCenterTab('data')}
-              data-testid="tab-data"
-              className={`px-3 py-1 text-xs font-mono rounded transition-colors ${
-                centerTab === 'data' ? 'bg-accent text-white' : 'bg-surface-2 text-text-muted hover:text-text-primary'
-              }`}
-            >
-              Stored Data
-            </button>
-            <button
-              onClick={() => setCenterTab('notebook')}
-              data-testid="tab-notebook"
-              className={`px-3 py-1 text-xs font-mono rounded transition-colors ${
-                centerTab === 'notebook' ? 'bg-accent text-white' : 'bg-surface-2 text-text-muted hover:text-text-primary'
-              }`}
-            >
-              Notebook
-            </button>
-            <button
-              onClick={() => setCenterTab('health')}
-              data-testid="tab-health"
-              className={`px-3 py-1 text-xs font-mono rounded transition-colors ${
-                centerTab === 'health' ? 'bg-accent text-white' : 'bg-surface-2 text-text-muted hover:text-text-primary'
-              }`}
-            >
-              Health
-            </button>
+          <div className="flex gap-1 flex-wrap bg-surface-1 rounded-lg border border-[var(--border-color)] px-2 py-1">
+            {CENTER_TABS.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setCenterTab(tab.id)}
+                data-testid={`tab-${tab.id}`}
+                className={`px-3 py-1 text-[11px] font-mono uppercase tracking-wider rounded transition-colors ${
+                  centerTab === tab.id
+                    ? 'bg-accent/15 text-accent shadow-[inset_0_-2px_0_0_var(--color-accent)]'
+                    : 'text-text-muted hover:text-text-primary hover:bg-surface-2'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
 
           {centerTab === 'chart' ? (
@@ -869,6 +852,34 @@ export const Workspace: React.FC = () => {
           ) : centerTab === 'ml' ? (
             <div className="flex-1 bg-surface-1 rounded-lg border border-[var(--border-color)] overflow-hidden">
               <MLWorkbench />
+            </div>
+          ) : centerTab === 'blotter' ? (
+            <div className="flex-1 bg-surface-1 rounded-lg border border-[var(--border-color)] overflow-hidden">
+              <OrderBlotter />
+            </div>
+          ) : centerTab === 'book' ? (
+            <div className="flex-1 bg-surface-1 rounded-lg border border-[var(--border-color)] overflow-hidden">
+              <OrderBookPanel defaultSymbol={selectedSymbol} />
+            </div>
+          ) : centerTab === 'news' ? (
+            <div className="flex-1 bg-surface-1 rounded-lg border border-[var(--border-color)] overflow-hidden">
+              <NewsPanel />
+            </div>
+          ) : centerTab === 'scanner' ? (
+            <div className="flex-1 bg-surface-1 rounded-lg border border-[var(--border-color)] overflow-hidden">
+              <ScannerPanel />
+            </div>
+          ) : centerTab === 'graph' ? (
+            <div className="flex-1 bg-surface-1 rounded-lg border border-[var(--border-color)] overflow-hidden">
+              <GraphPanel />
+            </div>
+          ) : centerTab === 'market' ? (
+            <div className="flex-1 bg-surface-1 rounded-lg border border-[var(--border-color)] overflow-hidden">
+              <MarketOverview />
+            </div>
+          ) : centerTab === 'copilot' ? (
+            <div className="flex-1 bg-surface-1 rounded-lg border border-[var(--border-color)] overflow-hidden">
+              <CopilotPanel />
             </div>
           ) : centerTab === 'data' ? (
             <div className="flex-1 bg-surface-1 rounded-lg border border-[var(--border-color)] overflow-hidden">

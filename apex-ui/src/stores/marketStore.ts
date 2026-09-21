@@ -5,6 +5,7 @@ import type { QuoteDto } from '../lib/types';
 interface MarketState {
   quotes: Map<string, QuoteDto>;
   watchlist: string[];
+  lastQuoteAt: number | null;
   updateQuote: (quote: QuoteDto) => void;
   setWatchlist: (symbols: string[]) => void;
   addToWatchlist: (symbol: string) => void;
@@ -17,12 +18,13 @@ export const useMarketStore = create<MarketState>()(
     (set, get) => ({
       quotes: new Map(),
       watchlist: ['RELIANCE.NS', 'TCS.NS', 'HDFCBANK.NS', 'INFY.NS', 'AAPL', 'MSFT', 'GOOGL'],
+      lastQuoteAt: null,
 
       updateQuote: (quote: QuoteDto) => {
         set((state) => {
           const newQuotes = new Map(state.quotes);
           newQuotes.set(quote.symbol, quote);
-          return { quotes: newQuotes };
+          return { quotes: newQuotes, lastQuoteAt: Date.now() };
         });
       },
 

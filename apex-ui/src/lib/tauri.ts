@@ -1,4 +1,4 @@
-import type { QuoteDto, OrderDto, PositionDto, NewOrderRequestDto, RiskStatusDto, MLModelDto, MLTrainingRequestDto, MLTrainingResultDto, SystemHealthDto, AdapterHealthDto, AlertRuleDto, StrategyFileDto, StrategyExecutionResultDto, StrategyBacktestRequestDto, StrategyBacktestResultDto, AccountBalanceDto, BrokerConnectionDto, AppSettingsDto, AppSettingsUpdateDto, NotebookCellExecutionDto, NotebookDocumentDto, NotebookRunRequestDto, NotebookSummaryDto, OHLCVDto } from './types';
+import type { QuoteDto, OrderDto, PositionDto, NewOrderRequestDto, RiskStatusDto, MLModelDto, MLTrainingRequestDto, MLTrainingResultDto, SystemHealthDto, AdapterHealthDto, AlertRuleDto, StrategyFileDto, StrategyExecutionResultDto, StrategyBacktestRequestDto, StrategyBacktestResultDto, AccountBalanceDto, BrokerConnectionDto, AppSettingsDto, AppSettingsUpdateDto, NotebookCellExecutionDto, NotebookDocumentDto, NotebookRunRequestDto, NotebookSummaryDto, OHLCVDto, NewsItemDto, NewsFeedDto, OrderBookDto, GraphDto, ScanOutputDto, ScanRequestDto, CopilotMessageDto, CopilotReplyDto } from './types';
 
 const IS_TAURI = typeof window !== 'undefined' && '__TAURI__' in window;
 
@@ -591,9 +591,106 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
       active_strategies: 0,
     } as any;
   }
+  if (cmd === 'get_orders') {
+    return [...mockOrders].sort((a, b) => b.created_at.localeCompare(a.created_at)) as any;
+  }
+  if (cmd === 'get_news' || cmd === 'search_news') {
+    return buildMockNews(args?.symbol as string | undefined) as any;
+  }
+  if (cmd === 'list_news_feeds') {
+    return [
+      { name: 'CNBC Markets', url: 'https://www.cnbc.com/id/100003114/device/rss/rss.html', enabled: true },
+      { name: 'MarketWatch Top Stories', url: 'https://feeds.marketwatch.com/marketwatch/topstories', enabled: true },
+    ] as NewsFeedDto[] as any;
+  }
+  if (cmd === 'get_order_book') {
+    return buildMockOrderBook((args?.symbol as string) || 'RELIANCE.NS') as any;
+  }
+  if (cmd === 'get_graph' || cmd === 'compute_correlations') {
+    return buildMockGraph() as any;
+  }
+  if (cmd === 'run_scan') {
+    const request = args?.request as ScanRequestDto | undefined;
+    const universe = request?.symbols?.length ? request.symbols : ['RELIANCE.NS', 'TCS.NS', 'HDFCBANK.NS', 'INFY.NS', 'AAPL', 'MSFT', 'GOOGL'];
+    const results = universe.map((symbol, i) => ({
+      symbol,
+      last_price: 140 + i * 37.5,
+      change_pct: ((i % 5) - 1) * 1.3,
+      volume: 800_000 + i * 120_000,
+      matched_at: new Date().toISOString(),
+    }));
+    return {
+      config_name: request?.name ?? 'Ad-hoc scan',
+      scanned_count: universe.length,
+      matched_count: results.length,
+      results,
+      completed_at: new Date().toISOString(),
+    } as ScanOutputDto as any;
+  }
+  if (cmd === 'copilot_chat') {
+    return {
+      reply: '[web-only mode] Copilot needs the desktop app + OPEN_ROUTER key. In-browser responses are stubbed.',
+      model: 'mock',
+    } as CopilotReplyDto as any;
+  }
 
   console.log('[Mock IPC]', cmd, args);
   return {} as T;
+}
+
+function buildMockNews(symbolFilter?: string): NewsItemDto[] {
+  const now = Date.now();
+  const feed = [
+    { headline: 'Sensex, Nifty hit fresh highs as IT stocks rally', source: 'CNBC Markets', symbols: ['TCS.NS', 'INFY.NS'], sentiment: 0.62 },
+    { headline: 'Reliance Industries weighs new energy capex plan', source: 'MarketWatch Top Stories', symbols: ['RELIANCE.NS'], sentiment: 0.41 },
+    { headline: 'Fed officials signal patience on rate cuts', source: 'CNBC Markets', symbols: ['AAPL', 'MSFT'], sentiment: -0.18 },
+    { headline: 'Bitcoin steadies near highs; altcoins mixed', source: 'CoinDesk', symbols: ['BTC-USD', 'ETH-USD'], sentiment: 0.12 },
+    { headline: 'HDFC Bank raises deposit rates amid liquidity push', source: 'MarketWatch Top Stories', symbols: ['HDFCBANK.NS'], sentiment: 0.35 },
+    { headline: 'Alphabet unveils new AI accelerator roadmap', source: 'CNBC Markets', symbols: ['GOOGL'], sentiment: 0.55 },
+  ];
+  return feed
+    .map((item, i) => ({
+      id: `mock-news-${i}`,
+      headline: item.headline,
+      summary: `${item.headline} — extended coverage and analysis from ${item.source}.`,
+      source: item.source,
+      url: '',
+      published: new Date(now - i * 11 * 60_000).toISOString(),
+      symbols: item.symbols,
+      sentiment: item.sentiment,
+    }))
+    .filter((item) => !symbolFilter || item.symbols.includes(symbolFilter));
+}
+
+function buildMockOrderBook(symbol: string): OrderBookDto {
+  const mid = 150.0;
+  const bids = Array.from({ length: 16 }, (_, i) => ({
+    price: Number((mid - 0.02 - i * 0.03).toFixed(2)),
+    quantity: 40 + ((i * 73 + symbol.length * 29) % 160),
+  }));
+  const asks = Array.from({ length: 16 }, (_, i) => ({
+    price: Number((mid + 0.02 + i * 0.03).toFixed(2)),
+    quantity: 40 + ((i * 97 + symbol.length * 31) % 160),
+  }));
+  return { symbol, source: 'synthetic', bids, asks };
+}
+
+function buildMockGraph(): GraphDto {
+  const nodeIds = ['RELIANCE.NS', 'TCS.NS', 'HDFCBANK.NS', 'INFY.NS', 'AAPL', 'MSFT'];
+  const nodes = nodeIds.map((id) => ({
+    id,
+    node_type: 'Instrument',
+    label: id,
+    symbol: id,
+    properties: {},
+  }));
+  const edges = [
+    { source: 'TCS.NS', target: 'INFY.NS', data: { edge_type: { CorrelatedWith: { coefficient: 0.82, window: '90d' } }, weight: 0.82, metadata: {} } },
+    { source: 'AAPL', target: 'MSFT', data: { edge_type: { CorrelatedWith: { coefficient: 0.71, window: '90d' } }, weight: 0.71, metadata: {} } },
+    { source: 'RELIANCE.NS', target: 'HDFCBANK.NS', data: { edge_type: { CorrelatedWith: { coefficient: 0.44, window: '90d' } }, weight: 0.44, metadata: {} } },
+    { source: 'AAPL', target: 'RELIANCE.NS', data: { edge_type: { CorrelatedWith: { coefficient: -0.22, window: '90d' } }, weight: 0.22, metadata: {} } },
+  ];
+  return { nodes, edges };
 }
 
 export async function getQuote(s: string): Promise<QuoteDto> { return invoke<QuoteDto>('get_quote', { symbol: s }); }
@@ -647,3 +744,38 @@ export async function clearBrokerSession(brokerId: string): Promise<BrokerConnec
 
 // Health Monitor
 export async function getSystemHealth(): Promise<SystemHealthDto> { return invoke<SystemHealthDto>('get_system_health'); }
+
+// Orders — blotter
+export async function getOrders(symbol?: string, limit?: number): Promise<OrderDto[]> {
+  return invoke<OrderDto[]>('get_orders', { symbol, limit });
+}
+
+// News
+export async function getNews(limit?: number, symbol?: string): Promise<NewsItemDto[]> {
+  return invoke<NewsItemDto[]>('get_news', { limit, symbol });
+}
+export async function searchNews(query: string, symbol?: string, limit?: number): Promise<NewsItemDto[]> {
+  return invoke<NewsItemDto[]>('search_news', { query, symbol, limit });
+}
+export async function listNewsFeeds(): Promise<NewsFeedDto[]> { return invoke<NewsFeedDto[]>('list_news_feeds'); }
+
+// Order book
+export async function getOrderBook(symbol: string): Promise<OrderBookDto> {
+  return invoke<OrderBookDto>('get_order_book', { symbol });
+}
+
+// Relationship graph
+export async function getGraph(): Promise<GraphDto> { return invoke<GraphDto>('get_graph'); }
+export async function computeCorrelations(symbols: string[], windowDays?: number): Promise<GraphDto> {
+  return invoke<GraphDto>('compute_correlations', { symbols, window_days: windowDays });
+}
+
+// Market scanner
+export async function runScan(request: ScanRequestDto): Promise<ScanOutputDto> {
+  return invoke<ScanOutputDto>('run_scan', { request });
+}
+
+// AI Copilot (OpenRouter — desktop only)
+export async function copilotChat(message: string, history?: CopilotMessageDto[]): Promise<CopilotReplyDto> {
+  return invoke<CopilotReplyDto>('copilot_chat', { message, history });
+}

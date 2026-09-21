@@ -628,7 +628,7 @@ const StrategyIDEInner: React.FC<StrategyIDEProps> = ({
                 onChange={(e) => setNewFileName(e.target.value)}
                 placeholder="filename.py"
                 data-testid="file-name-input"
-                className="flex-1 bg-surface-2 text-text-primary font-mono text-xs px-1 py-0.5 rounded border border-[var(--border-color)] focus:border-accent focus:outline-none"
+                className="flex-1 min-w-0 bg-surface-2 text-text-primary font-mono text-xs px-1 py-0.5 rounded border border-[var(--border-color)] focus:border-accent focus:outline-none"
                 autoFocus
                 onKeyDown={(e) => { if (e.key === 'Enter') void handleNewFile(); }}
               />
@@ -636,7 +636,7 @@ const StrategyIDEInner: React.FC<StrategyIDEProps> = ({
                 type="button"
                 onClick={() => void handleNewFile()}
                 data-testid="confirm-create-file"
-                className="text-xs text-bull"
+                className="shrink-0 text-xs text-bull px-0.5"
               >
                 ✓
               </button>

@@ -301,3 +301,101 @@ export interface BrokerConnectionDto {
   token_field_label: string;
   message: string;
 }
+
+// News
+export interface NewsItemDto {
+  id: string;
+  headline: string;
+  summary: string;
+  source: string;
+  url: string;
+  published: string;
+  symbols: string[];
+  sentiment: number | null;
+}
+
+export interface NewsFeedDto {
+  name: string;
+  url: string;
+  enabled: boolean;
+}
+
+// Order book
+export interface OrderBookLevelDto {
+  price: number;
+  quantity: number;
+}
+
+export interface OrderBookDto {
+  symbol: string;
+  source: 'binance' | 'synthetic' | string;
+  bids: OrderBookLevelDto[];
+  asks: OrderBookLevelDto[];
+}
+
+// Graph
+export interface GraphNodeDto {
+  id: string;
+  node_type: 'Instrument' | 'Sector' | 'MacroVariable' | 'NewsEvent' | 'CustomVariable' | string;
+  label: string;
+  symbol: string | null;
+  properties: Record<string, unknown>;
+}
+
+export interface GraphEdgeDto {
+  source: string;
+  target: string;
+  data: {
+    edge_type: unknown;
+    weight: number;
+    metadata: Record<string, unknown>;
+  };
+}
+
+export interface GraphDto {
+  nodes: GraphNodeDto[];
+  edges: GraphEdgeDto[];
+}
+
+// Scanner
+export interface ScanCriterionDto {
+  kind: string;
+  value?: number;
+  value2?: number;
+  period?: number;
+}
+
+export interface ScanRequestDto {
+  name?: string;
+  symbols: string[];
+  criteria: ScanCriterionDto[];
+  timeframe?: string;
+  lookback_bars?: number;
+}
+
+export interface ScanResultDto {
+  symbol: string;
+  last_price: number;
+  change_pct: number;
+  volume: number;
+  matched_at: string;
+}
+
+export interface ScanOutputDto {
+  config_name: string;
+  scanned_count: number;
+  matched_count: number;
+  results: ScanResultDto[];
+  completed_at: string;
+}
+
+// AI Copilot
+export interface CopilotMessageDto {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface CopilotReplyDto {
+  reply: string;
+  model: string;
+}

@@ -2,6 +2,8 @@ import React from 'react';
 import { Workspace } from './components/workspace/Workspace';
 import { CommandBar } from './components/workspace/CommandBar';
 import { StatusBar } from './components/workspace/StatusBar';
+import { TickerTape } from './components/workspace/TickerTape';
+import { KeyboardHud } from './components/workspace/KeyboardHud';
 import { useDataSync } from './lib/useDataSync';
 import { useTauriEventBridge } from './hooks/useTauriEvents';
 import { useWorkspaceStore } from './stores/workspaceStore';
@@ -14,12 +16,14 @@ export default function App() {
   const setCommandTab = useWorkspaceStore((s) => s.setCommandTab);
 
   return (
-    <div className="flex flex-col h-screen bg-surface-0">
+    <div className="relative flex flex-col h-screen bg-surface-0">
       <CommandBar onSelectSymbol={setCommandSymbol} onSwitchTab={setCommandTab} />
+      <TickerTape />
       <main className="flex-1 overflow-hidden">
         <Workspace />
       </main>
       <StatusBar />
+      <KeyboardHud />
     </div>
   );
 }
