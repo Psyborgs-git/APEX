@@ -265,7 +265,8 @@ fn write_settings_to_file(
 }
 
 fn ensure_table(doc: &mut DocumentMut, section: &str) {
-    if !doc[section].is_table() {
+    let present = doc.get(section).map(|i| i.is_table()).unwrap_or(false);
+    if !present {
         doc[section] = Item::Table(Table::new());
     }
 }
