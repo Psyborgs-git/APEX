@@ -151,3 +151,28 @@ Fresh backend + fresh bundle (no stale vite module this time — TickerTape moun
 ## Environment/testing notes (not app defects)
 - Docked WebKit inspector **captures keyboard focus** — while it's open, Space/typing go to it, not the page (caused apparent Space failures mid-pass; resolved by closing inspector). Its close/dock controls are tiny; right-dock ↔ bottom-dock toggles before the × closes it.
 - Earlier "+" and tab-click misses during this pass were a transient invisible `WebKitWebProcess` overlay (spawned by the first Inspect Element) eating clicks — self-inflicted, unmapped it, not an app issue.
+
+---
+
+# Phase D — Quant Surface (OpenBB-style) Live Verification
+Branch `devin/1789992204-apex-buildout-ui-audit`, commit 2cb5850. Same live setup (`cargo run --bin apex-tauri` on :0, vite :3000). Verified via UI + docked WebKit inspector console driving `__TAURI__.core.invoke`.
+
+## Results
+| Item | Result | Evidence |
+|---|---|---|
+| **IND menu + overlays + oscillator pane** | **PASS.** `chart-indicators-btn` opens `chart-indicators-menu` (Overlay: SMA/EMA/BB/VWAP; Pane: RSI/MACD/STOCH/ATR/STDEV/ROC + Clear all). SMA 20 draws an **amber line** over candles; BB 20·2 draws **3 purple bands**; RSI 14 opens the bottom `oscillator-pane` with a **cyan RSI line** (live 40.35) on its own axis synced to timeframe; **MACD 12·26·9** renders macd line + signal line + red histogram (−5.48/12.53/−17.93). Multiple overlays + one pane coexist; **Clear all** removes every series. | `ss_3bdfb613.png` (SMA amber + menu), `ss_9dcec6cd.png` (SMA+BB+RSI pane), `ss_c4f3c348.png` (MACD pane) |
+| **compute_indicator IPC** | **PASS.** `compute_indicator{symbol:'AAPL',indicator:'rsi',timeframe:'1d'}` → `{overlay:false, series:[{name:'rsi', points:[…1486 pts]}]}`. | `ss_e8d536bc.png` console |
+| **ANALYTICS tab + stats grid** | **PASS.** `analytics-panel` renders; symbol input synced to workspace symbol, SPY benchmark, 1D select. `quant-stats-grid` shows real numbers (AAPL: Sharpe 0.78, Sortino 1.33, Omega 1.15, AnnVol 28.1%, MaxDD −33.4%, N 1499, skew/kurt/JB/quantiles populated). | `ss_f39f27ad.png` |
+| **Rolling vol + rolling sharpe charts** | **PASS.** Both lwc line charts render real series (amber vol, cyan sharpe). | `ss_b563f343.png` |
+| **ACF bar chart (`quant-acf`)** | **FAIL (visual).** 10 bars exist in DOM with correct heights (11.6/5.6/19.2px, colH 88px) but render **fully transparent** — `bg-accent/70` / `bg-bear/70` on Tailwind vars `accent:'var(--color-accent)'` compile to invalid `rgb(var(--color-accent)/0.7)` → `rgba(0,0,0,0)`. Fix: use `bg-accent`+`opacity-70`, or define colors as `rgb(var(--x)/<alpha-value>)`. | `ss_e8d536bc.png` (`rgba(0,0,0,0)`, `bg-accent/70` className), `ss_b563f343.png` (numbers, no bars) |
+| **OLS regression (`quant-regression`)** | **PARTIAL.** Renders fully for same-market pairs — AAPL/SPY: scatter + amber fit line + α 0.00014 / β 1.198 / R² 0.502 / n 1499 + Residuals chart. **FAILS for cross-market** — SPY vs RELIANCE.NS returns `"Regression failed: insufficient variance"` and the section silently unmounts (`.catch(()=>null)`, no empty-state) leaving an **Unhandled Promise Rejection**. Root cause: `get_regression` aligns bars by **exact `to_rfc3339()` timestamp**; US bars are stamped 13:30Z, NSE bars 03:45Z → zero shared timestamps → `ols` n<3. Works only when both symbols share a market clock. Fix: align on date (`to_rfc3339()[..10]`) or accept nearest-date join; render an "insufficient data" empty state instead of hiding. | `ss_f39f27ad.png` (rendered), `ss_c033d664.png` (`RGN_ERR insufficient variance`) |
+| **get_quant_stats / get_regression IPCs** | **PASS.** Both return populated objects (AAPL stats n=1499; SPY/AAPL regression β=1.19, r²=0.502, n=1499). | `ss_e8d536bc.png` |
+| **Regression: chart render + timeframes + rapid tab switch** | **PASS.** Candles render on 1D; timeframe buttons repaint (1D→5M→1D); two rapid cycles CHART↔GRAPH↔ANALYTICS↔NEWS↔SCANNER↔MARKET↔CHART → **no black screen**, chart re-renders each time. | `ss_67c9acdf.png`, `ss_11bb5540.png`, `ss_d1eb7f7a.png` |
+
+## Console errors observed this pass
+- `Error: Object disposed` ×2 from `canvas-element-bitmap-size.mjs:40` — lwc series/oscillator disposal race (likely when Clear-all removed the pane). Non-fatal noise.
+- `Unhandled Promise Rejection: Regression failed: insufficient variance` — the hidden cross-market regression path leaks a rejection (panel `.catch` doesn't cover every caller).
+
+## Net new defects this pass
+1. **ACF bars invisible** (transparent Tailwind var-color + `/opacity` compile) — MEDIUM.
+2. **Regression section hidden for cross-market pairs** (exact-timestamp align) + unhandled rejection + no empty state — MEDIUM.
