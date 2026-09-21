@@ -280,6 +280,226 @@ pub(crate) async fn train_ml_model_inner(
     })
 }
 
+// ── Inference ─────────────────────────────────────────────────────────
+
+/// One model's signal on a symbol's latest bar.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ModelSignalDto {
+    pub model_id: String,
+    pub symbol: String,
+    pub signal: i64,
+    pub probability: Option<f64>,
+    pub features_used: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PredictorCliResult {
+    signal: i64,
+    probability: Option<f64>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    model_id: String,
+    #[serde(default)]
+    features_used: Vec<String>,
+}
+
+/// Compute the standard feature set for `symbol` from stored daily bars and
+/// score it with `model_id` via the Python predictor.
+pub(crate) async fn model_signal_inner(
+    model_id: &str,
+    symbol: &str,
+    models_dir: &Path,
+    runtime_paths: &python_runtime::RuntimePaths,
+    storage: &std::sync::Arc<dyn apex_core::ports::storage::StoragePort>,
+) -> Result<ModelSignalDto, String> {
+    use apex_core::application::indicators as ind;
+    use apex_core::domain::models::{OHLCVQuery, Symbol, Timeframe};
+    use chrono::{Duration, Utc};
+
+    validation::validate_symbol(symbol)?;
+    validation::validate_string_length(model_id, "model_id")?;
+
+    // Model metadata → artifact + required feature order.
+    let metadata_path = models_dir.join(format!("{model_id}.json"));
+    if !metadata_path.exists() {
+        return Err(format!("Unknown model `{model_id}` (no metadata file)"));
+    }
+    let metadata: ModelMetadataFile = serde_json::from_str(
+        &fs::read_to_string(&metadata_path)
+            .map_err(|e| format!("Failed to read model metadata: {e}"))?,
+    )
+    .map_err(|e| format!("Failed to parse model metadata: {e}"))?;
+    let model_path = models_dir.join(&metadata.model_file);
+    if !model_path.exists() {
+        return Err(format!("Model artifact missing: {}", model_path.display()));
+    }
+
+    let to = Utc::now();
+    let bars = storage
+        .query_ohlcv(OHLCVQuery {
+            symbol: Symbol(symbol.to_string()),
+            timeframe: Timeframe::D1,
+            from: to - Duration::days(500),
+            to,
+            limit: Some(300),
+        })
+        .await
+        .map_err(|e| format!("Failed to load bars for {symbol}: {e}"))?;
+    if bars.len() < 60 {
+        return Err(format!(
+            "Not enough stored bars for {symbol} ({} loaded; need ≥60) — fetch history first",
+            bars.len()
+        ));
+    }
+
+    let closes: Vec<f64> = bars.iter().map(|b| b.close).collect();
+    let highs: Vec<f64> = bars.iter().map(|b| b.high).collect();
+    let lows: Vec<f64> = bars.iter().map(|b| b.low).collect();
+    let vols: Vec<f64> = bars.iter().map(|b| b.volume as f64).collect();
+    let last = |v: &Vec<f64>| v.last().copied().unwrap_or(f64::NAN);
+
+    let mut f: HashMap<String, f64> = HashMap::new();
+    f.insert("close".into(), last(&closes));
+    f.insert("open".into(), last(&bars.iter().map(|b| b.open).collect()));
+    f.insert("high".into(), last(&highs));
+    f.insert("low".into(), last(&lows));
+    f.insert("volume".into(), last(&vols));
+    f.insert(
+        "sma_5".into(),
+        last(&ind::sma(&closes, 5).unwrap_or_default()),
+    );
+    f.insert(
+        "sma_20".into(),
+        last(&ind::sma(&closes, 20).unwrap_or_default()),
+    );
+    f.insert(
+        "sma_50".into(),
+        last(&ind::sma(&closes, 50).unwrap_or_default()),
+    );
+    f.insert(
+        "ema_12".into(),
+        last(&ind::ema(&closes, 12).unwrap_or_default()),
+    );
+    f.insert(
+        "ema_26".into(),
+        last(&ind::ema(&closes, 26).unwrap_or_default()),
+    );
+    f.insert(
+        "rsi_14".into(),
+        last(&ind::rsi(&closes, 14).unwrap_or_default()),
+    );
+    f.insert(
+        "macd_signal".into(),
+        last(
+            &ind::macd(&closes, 12, 26, 9)
+                .map(|r| r.signal_line)
+                .unwrap_or_default(),
+        ),
+    );
+    let bb = ind::bollinger_bands(&closes, 20, 2.0).unwrap_or(ind::BollingerBandsResult {
+        upper: vec![],
+        middle: vec![],
+        lower: vec![],
+    });
+    f.insert("bb_upper".into(), last(&bb.upper));
+    f.insert("bb_lower".into(), last(&bb.lower));
+    f.insert("bb_middle".into(), last(&bb.middle));
+    f.insert(
+        "atr_14".into(),
+        last(&ind::atr(&highs, &lows, &closes, 14).unwrap_or_default()),
+    );
+    f.insert(
+        "stddev_20".into(),
+        last(&ind::std_dev(&closes, 20).unwrap_or_default()),
+    );
+    f.insert(
+        "roc_10".into(),
+        last(&ind::roc(&closes, 10).unwrap_or_default()),
+    );
+    f.insert(
+        "volume_lag_1".into(),
+        vols.get(vols.len().saturating_sub(2))
+            .copied()
+            .unwrap_or(0.0),
+    );
+    let python = python_runtime::resolve_python_executable(
+        runtime_paths,
+        "APEX_ML_PYTHON_PATH",
+        &["APEX_STRATEGY_PYTHON_PATH"],
+    )?;
+
+    let output = Command::new(&python)
+        .current_dir(runtime_paths.work_root())
+        .env(
+            "PYTHONPATH",
+            python_runtime::build_python_path(runtime_paths)?,
+        )
+        .env("PYTHONIOENCODING", "utf-8")
+        .arg("-m")
+        .arg("ml.predict")
+        .arg("--model-path")
+        .arg(&model_path)
+        .arg("--features-json")
+        .arg(serde_json::to_string(&f).map_err(|e| format!("Failed to encode features: {e}"))?)
+        .output()
+        .await
+        .map_err(|e| {
+            format!(
+                "Failed to start Python predictor with {}: {e}",
+                python.display()
+            )
+        })?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !output.status.success() {
+        let message = stderr
+            .lines()
+            .rev()
+            .find(|l| !l.trim().is_empty())
+            .or_else(|| stdout.lines().rev().find(|l| !l.trim().is_empty()))
+            .unwrap_or("prediction failed without an error message");
+        return Err(format!(
+            "Predictor error for {model_id} on {symbol}: {message}"
+        ));
+    }
+    let json_line = stdout
+        .lines()
+        .rev()
+        .find(|l| !l.trim().is_empty())
+        .ok_or_else(|| "Predictor returned no JSON".to_string())?;
+    let res: PredictorCliResult = serde_json::from_str(json_line)
+        .map_err(|e| format!("Failed to parse predictor output `{json_line}`: {e}"))?;
+
+    Ok(ModelSignalDto {
+        model_id: model_id.to_string(),
+        symbol: symbol.to_string(),
+        signal: res.signal,
+        probability: res.probability,
+        features_used: res.features_used,
+    })
+}
+
+/// Score the latest bars of `symbol` with a trained model — returns
+/// {signal, probability}. Shared by the UI, copilot, and automation engine.
+#[tauri::command]
+pub async fn predict_model_signal(
+    model_id: String,
+    symbol: String,
+    models: tauri::State<'_, ModelRegistry>,
+    runtime_paths: tauri::State<'_, python_runtime::RuntimePaths>,
+    app_state: tauri::State<'_, crate::state::AppState>,
+) -> Result<ModelSignalDto, String> {
+    model_signal_inner(
+        &model_id,
+        &symbol,
+        &models.models_dir,
+        &runtime_paths,
+        &app_state.storage,
+    )
+    .await
+}
+
 /// Delete a trained ML model by ID.
 #[tauri::command]
 pub async fn delete_ml_model(

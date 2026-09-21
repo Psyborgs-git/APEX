@@ -301,6 +301,41 @@ export interface MLModelDto {
   target_column: string;
 }
 
+export interface ModelSignalDto {
+  model_id: string;
+  symbol: string;
+  signal: number;
+  probability: number | null;
+  features_used: string[];
+}
+
+export interface AutomationDto {
+  id: string;
+  name: string;
+  kind: string;
+  symbol: string;
+  model_id: string;
+  interval_secs: number;
+  quantity: number;
+  threshold: number;
+  broker_id: string;
+  enabled: boolean;
+  created_at: string;
+  last_run_at: string | null;
+  last_result: string | null;
+}
+
+export interface CreateAutomationDto {
+  name: string;
+  kind: string;
+  symbol: string;
+  model_id: string;
+  interval_secs?: number;
+  quantity?: number;
+  threshold?: number;
+  broker_id?: string;
+}
+
 export interface MLTrainingRequestDto {
   algorithm: string;
   data_path: string;

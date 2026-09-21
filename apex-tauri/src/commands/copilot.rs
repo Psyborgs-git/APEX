@@ -2,12 +2,14 @@ use crate::commands::ml::ModelRegistry;
 use crate::commands::python_runtime;
 use crate::commands::scanner::ScanCriterionDto;
 use crate::commands::strategy::StrategyBacktestRequestDto;
-use crate::commands::{data, ml, quant, scanner, strategy};
+use crate::commands::{automation, data, ml, quant, scanner, strategy};
 use crate::dto::MLTrainingRequestDto;
 use crate::state::AppState;
 use crate::validation;
 use apex_core::application::quant as q;
-use apex_core::domain::models::{Symbol, Timeframe};
+use apex_core::domain::models::{
+    NewOrderRequest, OrderId, OrderQuery, OrderSide, OrderType, Symbol, Timeframe,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::State;
@@ -181,6 +183,69 @@ fn tool_schemas() -> Value {
                 "n_splits": {"type": "integer", "default": 5},
                 "lag_periods": {"type": "array", "items": {"type": "integer"}, "default": [1]} },
             "required": ["algorithm", "data_path", "target_column", "feature_columns"] })),
+        ("get_model_signal", "Score a trained ML model on a symbol's latest bar — returns {signal: 1=buy 0=sell -1=hold, probability}", json!({
+            "type": "object", "properties": {
+                "model_id": {"type": "string"},
+                "symbol": {"type": "string"} },
+            "required": ["model_id", "symbol"] })),
+        ("get_positions", "Current open positions (paper + connected brokers)", json!({
+            "type": "object", "properties": {} })),
+        ("get_open_orders", "Resting (unfilled) orders", json!({
+            "type": "object", "properties": {} })),
+        ("list_orders", "Recent order history, newest first", json!({
+            "type": "object", "properties": {
+                "symbol": {"type": "string"},
+                "limit": {"type": "integer", "default": 25} } })),
+        ("place_order", "Place an order via the risk-gated order manager. Defaults to the paper broker — live brokers are refused unless [automations] allow_live_trading = true", json!({
+            "type": "object", "properties": {
+                "symbol": {"type": "string"},
+                "side": {"type": "string", "enum": ["buy", "sell"]},
+                "quantity": {"type": "number"},
+                "order_type": {"type": "string", "default": "market"},
+                "price": {"type": "number"},
+                "stop_price": {"type": "number"},
+                "broker_id": {"type": "string", "default": "paper"} },
+            "required": ["symbol", "side", "quantity"] })),
+        ("cancel_order", "Cancel a resting order", json!({
+            "type": "object", "properties": {
+                "order_id": {"type": "string"},
+                "broker_id": {"type": "string", "default": "paper"} },
+            "required": ["order_id"] })),
+        ("create_automation", "Create a persisted scheduled rule: run model_id's signal on symbol every interval_secs and place quantity via broker_id when probability >= threshold. Defaults to paper.", json!({
+            "type": "object", "properties": {
+                "name": {"type": "string"},
+                "symbol": {"type": "string"},
+                "model_id": {"type": "string"},
+                "interval_secs": {"type": "integer", "default": 300},
+                "quantity": {"type": "number", "default": 1},
+                "threshold": {"type": "number", "default": 0.5},
+                "broker_id": {"type": "string", "default": "paper"} },
+            "required": ["name", "symbol", "model_id"] })),
+        ("list_automations", "List all automation rules with last-run status", json!({
+            "type": "object", "properties": {} })),
+        ("set_automation_enabled", "Enable or pause an automation rule", json!({
+            "type": "object", "properties": {
+                "id": {"type": "string"},
+                "enabled": {"type": "boolean"} },
+            "required": ["id", "enabled"] })),
+        ("delete_automation", "Permanently delete an automation rule", json!({
+            "type": "object", "properties": {
+                "id": {"type": "string"} },
+            "required": ["id"] })),
+        ("create_alert", "Create an in-app alert on a symbol", json!({
+            "type": "object", "properties": {
+                "symbol": {"type": "string"},
+                "condition": {"type": "string", "enum": ["price_above", "price_below", "pct_change", "vwap_cross"]},
+                "threshold": {"type": "number"},
+                "pct": {"type": "number"},
+                "window_secs": {"type": "integer", "default": 300} },
+            "required": ["symbol", "condition"] })),
+        ("list_alerts", "List configured alert rules", json!({
+            "type": "object", "properties": {} })),
+        ("remove_alert", "Remove an alert rule", json!({
+            "type": "object", "properties": {
+                "id": {"type": "string"} },
+            "required": ["id"] })),
     ];
     Value::Array(
         tools
@@ -479,6 +544,254 @@ async fn exec_tool(
             let r = ml::train_ml_model_inner(req, &models.models_dir, runtime_paths).await?;
             Ok(json!({"model_id": r.model_id, "metrics": r.metrics,
                       "features": r.feature_names}))
+        }
+        "get_model_signal" => {
+            let s = ml::model_signal_inner(
+                arg_str(args, "model_id")?,
+                arg_str(args, "symbol")?,
+                &models.models_dir,
+                runtime_paths,
+                &state.storage,
+            )
+            .await?;
+            Ok(json!({"model_id": s.model_id, "symbol": s.symbol,
+                      "signal": s.signal, "probability": s.probability}))
+        }
+        "get_positions" => {
+            let positions = state.otm.get_positions();
+            Ok(
+                json!({"count": positions.len(), "positions": positions.iter().map(|p| {
+                json!({"symbol": p.symbol.0, "quantity": p.quantity,
+                       "avg_price": p.avg_price, "pnl": p.pnl, "pnl_pct": p.pnl_pct})
+            }).collect::<Vec<_>>()}),
+            )
+        }
+        "get_open_orders" => {
+            let orders = state.otm.open_orders();
+            Ok(
+                json!({"count": orders.len(), "orders": orders.iter().map(|o| {
+                json!({"id": o.id.0, "symbol": o.symbol.0, "side": format!("{:?}", o.side),
+                       "quantity": o.quantity, "price": o.price, "status": format!("{:?}", o.status)})
+            }).collect::<Vec<_>>()}),
+            )
+        }
+        "list_orders" => {
+            let limit = clamp_limit(args.get("limit"), 25, 100);
+            let symbol = args.get("symbol").and_then(|v| v.as_str());
+            if let Some(s) = symbol {
+                validation::validate_symbol(s)?;
+            }
+            let mut orders = state
+                .storage
+                .query_orders(OrderQuery {
+                    symbol: symbol.map(|s| Symbol(s.to_uppercase())),
+                    status: None,
+                    broker_id: None,
+                    from: None,
+                    to: None,
+                    limit: Some(limit),
+                })
+                .await
+                .map_err(|e| format!("order query failed: {e}"))?;
+            for open in state.otm.open_orders() {
+                if !orders.iter().any(|o| o.id == open.id) {
+                    orders.push(open);
+                }
+            }
+            orders.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+            orders.truncate(limit);
+            Ok(
+                json!({"count": orders.len(), "orders": orders.iter().map(|o| {
+                json!({"id": o.id.0, "symbol": o.symbol.0, "side": format!("{:?}", o.side),
+                       "quantity": o.quantity, "price": o.price,
+                       "status": format!("{:?}", o.status),
+                       "broker_id": o.broker_id})
+            }).collect::<Vec<_>>()}),
+            )
+        }
+        "place_order" => {
+            let symbol = arg_str(args, "symbol")?.to_uppercase();
+            let side_s = arg_str(args, "side")?.to_lowercase();
+            let side = match side_s.as_str() {
+                "buy" => OrderSide::Buy,
+                "sell" => OrderSide::Sell,
+                _ => return Err(format!("invalid side `{side_s}`")),
+            };
+            let quantity = args
+                .get("quantity")
+                .and_then(|v| v.as_f64())
+                .ok_or("missing `quantity`")?;
+            validation::validate_symbol(&symbol)?;
+            validation::validate_quantity(quantity)?;
+            validation::validate_price(args.get("price").and_then(|v| v.as_f64()))?;
+            validation::validate_price(args.get("stop_price").and_then(|v| v.as_f64()))?;
+
+            let broker_id = args
+                .get("broker_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("paper")
+                .to_string();
+            automation::check_broker_allowed(state, &broker_id)?;
+
+            let order_type = match args
+                .get("order_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("market")
+                .to_lowercase()
+                .as_str()
+            {
+                "market" => OrderType::Market,
+                "limit" => OrderType::Limit,
+                "stop" => OrderType::Stop,
+                "stoplimit" | "stop_limit" => OrderType::StopLimit,
+                other => return Err(format!("invalid order_type `{other}`")),
+            };
+
+            let id = state
+                .otm
+                .submit_order(
+                    NewOrderRequest {
+                        symbol: Symbol(symbol.clone()),
+                        side,
+                        order_type,
+                        quantity,
+                        price: args.get("price").and_then(|v| v.as_f64()),
+                        stop_price: args.get("stop_price").and_then(|v| v.as_f64()),
+                        tag: Some("copilot".into()),
+                    },
+                    &broker_id,
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+            Ok(json!({"order_id": id.0, "symbol": symbol, "broker_id": broker_id}))
+        }
+        "cancel_order" => {
+            let order_id = arg_str(args, "order_id")?;
+            let broker_id = args
+                .get("broker_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("paper");
+            validation::validate_broker_id(broker_id)?;
+            state
+                .otm
+                .cancel_order(&OrderId(order_id.to_string()), broker_id)
+                .await
+                .map_err(|e| e.to_string())?;
+            Ok(json!({"cancelled": order_id}))
+        }
+        "create_automation" => {
+            let dto = automation::CreateAutomationDto {
+                name: arg_str(args, "name")?.to_string(),
+                kind: "model_signal".into(),
+                symbol: arg_str(args, "symbol")?.to_string(),
+                model_id: arg_str(args, "model_id")?.to_string(),
+                interval_secs: args
+                    .get("interval_secs")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(300),
+                quantity: args.get("quantity").and_then(|v| v.as_f64()).unwrap_or(1.0),
+                threshold: args
+                    .get("threshold")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.5),
+                broker_id: args
+                    .get("broker_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("paper")
+                    .to_string(),
+            };
+            let created = automation::create_automation_inner(dto, state)?;
+            Ok(json!({"created": created.id, "name": created.name,
+                      "broker_id": created.broker_id, "interval_secs": created.interval_secs}))
+        }
+        "list_automations" => {
+            let list: Vec<automation::AutomationDto> = state
+                .automations
+                .list()
+                .iter()
+                .map(automation::AutomationDto::from)
+                .collect();
+            Ok(serde_json::to_value(&list).map_err(|e| e.to_string())?)
+        }
+        "set_automation_enabled" => {
+            let id = arg_str(args, "id")?;
+            let enabled = args
+                .get("enabled")
+                .and_then(|v| v.as_bool())
+                .ok_or("missing `enabled`")?;
+            if !state.automations.set_enabled(id, enabled) {
+                return Err(format!("no automation `{id}`"));
+            }
+            Ok(json!({"id": id, "enabled": enabled}))
+        }
+        "delete_automation" => {
+            let id = arg_str(args, "id")?;
+            if !state.automations.remove_rule(id) {
+                return Err(format!("no automation `{id}`"));
+            }
+            Ok(json!({"deleted": id}))
+        }
+        "create_alert" => {
+            use apex_core::application::alert_engine::{AlertDelivery, AlertRule, StoredAlert};
+            let symbol = arg_str(args, "symbol")?.to_uppercase();
+            let rule = match arg_str(args, "condition")? {
+                "price_above" => AlertRule::PriceAbove {
+                    symbol: symbol.clone(),
+                    threshold: args
+                        .get("threshold")
+                        .and_then(|v| v.as_f64())
+                        .ok_or("missing `threshold`")?,
+                },
+                "price_below" => AlertRule::PriceBelow {
+                    symbol: symbol.clone(),
+                    threshold: args
+                        .get("threshold")
+                        .and_then(|v| v.as_f64())
+                        .ok_or("missing `threshold`")?,
+                },
+                "pct_change" => AlertRule::PctChange {
+                    symbol: symbol.clone(),
+                    pct: args
+                        .get("pct")
+                        .and_then(|v| v.as_f64())
+                        .ok_or("missing `pct`")?,
+                    window_secs: args
+                        .get("window_secs")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(300),
+                },
+                "vwap_cross" => AlertRule::VwapCross {
+                    symbol: symbol.clone(),
+                },
+                other => return Err(format!("invalid condition `{other}`")),
+            };
+            let id = uuid::Uuid::new_v4().to_string();
+            state
+                .alerts
+                .add_rule(StoredAlert {
+                    id: id.clone(),
+                    rule,
+                    delivery: vec![AlertDelivery::InApp],
+                    enabled: true,
+                })
+                .await;
+            Ok(json!({"alert_id": id, "symbol": symbol}))
+        }
+        "list_alerts" => {
+            let rules = state.alerts.get_rules().await;
+            Ok(
+                json!({"count": rules.len(), "alerts": rules.iter().map(|r| {
+                json!({"id": r.id, "enabled": r.enabled,
+                       "rule": serde_json::to_value(&r.rule).unwrap_or_default()})
+            }).collect::<Vec<_>>()}),
+            )
+        }
+        "remove_alert" => {
+            let id = arg_str(args, "id")?;
+            if !state.alerts.remove_rule(id).await {
+                return Err(format!("no alert `{id}`"));
+            }
+            Ok(json!({"removed": id}))
         }
         other => Err(format!("unknown tool `{other}`")),
     }

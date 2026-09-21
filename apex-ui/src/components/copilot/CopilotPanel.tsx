@@ -15,6 +15,8 @@ const SUGGESTIONS = [
   'Which watchlist symbols are moving most today?',
   'Backtest the default strategy on RELIANCE.NS and report the metrics',
   'Export RELIANCE.NS bars and train a model to predict next-day direction',
+  'Place a paper order: buy 5 RELIANCE.NS at market',
+  'Create an automation that trades my model on RELIANCE.NS every 5 minutes',
 ];
 
 const TOOL_LABELS: Record<string, string> = {
@@ -31,7 +33,34 @@ const TOOL_LABELS: Record<string, string> = {
   export_bars_csv: 'CSV export',
   list_ml_models: 'Models',
   train_ml_model: 'Train model',
+  get_model_signal: 'Signal',
+  get_positions: 'Positions',
+  get_open_orders: 'Open orders',
+  list_orders: 'Orders',
+  place_order: 'Place order',
+  cancel_order: 'Cancel order',
+  create_automation: 'New automation',
+  list_automations: 'Automations',
+  set_automation_enabled: 'Toggle rule',
+  delete_automation: 'Delete rule',
+  create_alert: 'New alert',
+  list_alerts: 'Alerts',
+  remove_alert: 'Remove alert',
 };
+
+const HISTORY_KEY = 'apex.copilot.history';
+const HISTORY_LIMIT = 100;
+
+function loadHistory(): ChatEntry[] {
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as ChatEntry[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
 
 const ToolTrace: React.FC<{ calls: ToolCallTraceDto[] }> = ({ calls }) => (
   <div className="mt-1.5 space-y-0.5" data-testid="copilot-tool-trace">
@@ -51,13 +80,23 @@ const ToolTrace: React.FC<{ calls: ToolCallTraceDto[] }> = ({ calls }) => (
 );
 
 export const CopilotPanel: React.FC = () => {
-  const [entries, setEntries] = useState<ChatEntry[]>([]);
+  const [entries, setEntries] = useState<ChatEntry[]>(loadHistory);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
-  const nextId = useRef(1);
+  const nextId = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // nextId stays ahead of the largest persisted id after reload.
   useEffect(() => {
+    nextId.current = entries.reduce((m, e) => Math.max(m, e.id), 0) + 1;
+  }, [entries]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(entries.slice(-HISTORY_LIMIT)));
+    } catch {
+      /* storage full or unavailable — chat still works in-memory */
+    }
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [entries, busy]);
 
@@ -108,8 +147,9 @@ export const CopilotPanel: React.FC = () => {
         {entries.length === 0 ? (
           <div className="space-y-2" data-testid="copilot-empty">
             <p className="text-xs text-text-muted">
-              Ask about positions, quotes, scans — or have it build and iterate on a strategy:
-              it can read live data, write strategy files, run backtests, and train models.
+              Ask about positions, quotes, scans — or have it place paper orders, set alerts,
+              write strategy files, run backtests, train models, and create automations that
+              trade a model's signal on a schedule.
             </p>
             {SUGGESTIONS.map((s) => (
               <button

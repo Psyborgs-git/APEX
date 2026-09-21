@@ -1,5 +1,6 @@
 pub mod acp;
 pub mod alerts;
+pub mod automation;
 pub mod brokers;
 pub mod copilot;
 pub mod data;

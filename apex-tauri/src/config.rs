@@ -30,6 +30,8 @@ pub struct AppConfig {
     pub llm: LlmConfig,
     #[serde(default)]
     pub acp: AcpConfig,
+    #[serde(default)]
+    pub automations: AutomationsConfig,
 }
 
 impl AppConfig {
@@ -201,6 +203,35 @@ impl Default for AcpConfig {
             cwd: String::new(),
         }
     }
+}
+
+/// Scheduled automations (model-signal trading rules etc.).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AutomationsConfig {
+    /// Master switch — false disables the scheduler entirely.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// When false, automations and copilot order tools may only target the
+    /// paper adapter; live broker ids are rejected.
+    #[serde(default)]
+    pub allow_live_trading: bool,
+    /// Cap on orders a single rule may place per UTC day.
+    #[serde(default = "default_max_orders_per_day")]
+    pub max_orders_per_day: u32,
+}
+
+impl Default for AutomationsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            allow_live_trading: false,
+            max_orders_per_day: default_max_orders_per_day(),
+        }
+    }
+}
+
+fn default_max_orders_per_day() -> u32 {
+    100
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1,4 +1,5 @@
 pub mod alert_engine;
+pub mod automation;
 pub mod backtest_engine;
 pub mod circuit_breaker;
 pub mod data_quality;

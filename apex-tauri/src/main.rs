@@ -7,8 +7,8 @@ mod validation;
 
 use commands::strategy;
 use commands::{
-    alerts, brokers, copilot, data, graph, health, market, ml, news, notebook, orderbook, orders,
-    quant, risk, scanner, settings,
+    alerts, automation, brokers, copilot, data, graph, health, market, ml, news, notebook,
+    orderbook, orders, quant, risk, scanner, settings,
 };
 use tauri::Manager;
 
@@ -62,6 +62,9 @@ fn main() {
             // Register ML model registry state
             app.manage(ml::ModelRegistry::new(&runtime_paths));
 
+            // Background scheduler for automation rules
+            automation::spawn_automation_loop(&app.handle());
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -102,6 +105,11 @@ fn main() {
             ml::list_ml_models,
             ml::train_ml_model,
             ml::delete_ml_model,
+            ml::predict_model_signal,
+            automation::create_automation,
+            automation::list_automations,
+            automation::delete_automation,
+            automation::set_automation_enabled,
             brokers::list_broker_connections,
             brokers::set_broker_session,
             brokers::clear_broker_session,

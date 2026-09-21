@@ -24,6 +24,7 @@ use apex_adapters::market_data::zerodha_kite::ZerodhaKiteAdapter;
 use apex_adapters::storage::sqlite_storage::SqliteStorage;
 use apex_adapters::storage::timescale::TimescaleAdapter;
 use apex_core::application::alert_engine::AlertEngine;
+use apex_core::application::automation::AutomationEngine;
 use apex_core::application::circuit_breaker::reconcile_on_startup;
 use apex_core::application::graph_engine::GraphEngine;
 use apex_core::application::market_data_aggregator::MarketDataAggregator;
@@ -323,6 +324,8 @@ pub struct AppState {
     pub copilot: CopilotConfig,
     pub llm: crate::config::LlmConfig,
     pub acp: crate::config::AcpConfig,
+    pub automations_cfg: crate::config::AutomationsConfig,
+    pub automations: Arc<AutomationEngine>,
     pub http: reqwest::Client,
     pub paper: Arc<PaperTradingAdapter>,
     brokers: HashMap<String, BrokerRuntimeEntry>,
@@ -779,6 +782,8 @@ impl AppState {
             copilot: config.copilot.clone(),
             llm: config.llm.clone(),
             acp: config.acp.clone(),
+            automations_cfg: config.automations.clone(),
+            automations: crate::commands::automation::new_engine(&resolved_data_dir),
             http: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(30))
                 .build()

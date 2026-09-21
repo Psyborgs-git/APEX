@@ -7,6 +7,7 @@ import { CandleChart } from '../charts/CandleChart';
 import { StrategyIDE } from '../strategy/StrategyIDE';
 import { MLWorkbench } from '../ml/MLWorkbench';
 import { HealthMonitor } from '../monitor/HealthMonitor';
+import { AutomationsPanel } from '../monitor/AutomationsPanel';
 import { NotebookEditor } from './NotebookEditor';
 import { NewsPanel } from '../news/NewsPanel';
 import { OrderBlotter } from '../trading/OrderBlotter';
@@ -40,6 +41,7 @@ const CENTER_TABS: { id: CenterTab; label: string }[] = [
   { id: 'strategy', label: 'Strategy IDE' },
   { id: 'ml', label: 'ML Workbench' },
   { id: 'data', label: 'Stored Data' },
+  { id: 'automations', label: 'Automations' },
   { id: 'notebook', label: 'Notebook' },
   { id: 'health', label: 'Health' },
 ];
@@ -1226,6 +1228,10 @@ export const Workspace: React.FC = () => {
           ) : centerTab === 'market' ? (
             <div className="flex-1 bg-surface-1 rounded-lg border border-[var(--border-color)] overflow-hidden">
               <MarketOverview />
+            </div>
+          ) : centerTab === 'automations' ? (
+            <div className="flex-1 bg-surface-1 rounded-lg border border-[var(--border-color)] overflow-hidden">
+              <AutomationsPanel />
             </div>
           ) : centerTab === 'data' ? (
             <div className="flex-1 bg-surface-1 rounded-lg border border-[var(--border-color)] overflow-hidden">

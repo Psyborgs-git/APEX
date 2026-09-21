@@ -35,6 +35,9 @@ const PANEL_MAP: Record<string, CenterTab | 'copilot'> = {
   MARKET: 'market',
   MOST: 'market',
   OVERVIEW: 'market',
+  AUTOMATIONS: 'automations',
+  AUTOMATION: 'automations',
+  AUTO: 'automations',
   POSITIONS: 'chart',
 };
 

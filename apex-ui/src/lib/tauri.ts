@@ -1,4 +1,4 @@
-import type { QuoteDto, OrderDto, PositionDto, NewOrderRequestDto, RiskStatusDto, MLModelDto, MLTrainingRequestDto, MLTrainingResultDto, SystemHealthDto, AdapterHealthDto, AlertRuleDto, StrategyFileDto, StrategyExecutionResultDto, StrategyBacktestRequestDto, StrategyBacktestResultDto, AccountBalanceDto, BrokerConnectionDto, AppSettingsDto, AppSettingsUpdateDto, NotebookCellExecutionDto, NotebookDocumentDto, NotebookRunRequestDto, NotebookSummaryDto, OHLCVDto, NewsItemDto, NewsFeedDto, OrderBookDto, GraphDto, ScanOutputDto, ScanRequestDto, CopilotMessageDto, CopilotReplyDto, IndicatorResultDto, QuantStatsDto, RegressionDto } from './types';
+import type { QuoteDto, OrderDto, PositionDto, NewOrderRequestDto, RiskStatusDto, MLModelDto, MLTrainingRequestDto, MLTrainingResultDto, SystemHealthDto, AdapterHealthDto, AlertRuleDto, StrategyFileDto, StrategyExecutionResultDto, StrategyBacktestRequestDto, StrategyBacktestResultDto, AccountBalanceDto, BrokerConnectionDto, AppSettingsDto, AppSettingsUpdateDto, NotebookCellExecutionDto, NotebookDocumentDto, NotebookRunRequestDto, NotebookSummaryDto, OHLCVDto, NewsItemDto, NewsFeedDto, OrderBookDto, GraphDto, ScanOutputDto, ScanRequestDto, CopilotMessageDto, CopilotReplyDto, IndicatorResultDto, QuantStatsDto, RegressionDto, ModelSignalDto, AutomationDto, CreateAutomationDto } from './types';
 
 const IS_TAURI = typeof window !== 'undefined' && '__TAURI__' in window;
 
@@ -755,6 +755,13 @@ export async function getAlertRules(): Promise<AlertRuleDto[]> { return invoke<A
 export async function listMLModels(): Promise<MLModelDto[]> { return invoke<MLModelDto[]>('list_ml_models'); }
 export async function trainMLModel(r: MLTrainingRequestDto): Promise<MLTrainingResultDto> { return invoke<MLTrainingResultDto>('train_ml_model', { request: r }); }
 export async function deleteMLModel(id: string): Promise<boolean> { return invoke<boolean>('delete_ml_model', { modelId: id }); }
+export async function predictModelSignal(modelId: string, symbol: string): Promise<ModelSignalDto> { return invoke<ModelSignalDto>('predict_model_signal', { modelId, symbol }); }
+
+// Automations — persisted scheduled model-signal trading rules
+export async function listAutomations(): Promise<AutomationDto[]> { return invoke<AutomationDto[]>('list_automations'); }
+export async function createAutomation(request: CreateAutomationDto): Promise<AutomationDto> { return invoke<AutomationDto>('create_automation', { request }); }
+export async function deleteAutomation(id: string): Promise<boolean> { return invoke<boolean>('delete_automation', { id }); }
+export async function setAutomationEnabled(id: string, enabled: boolean): Promise<boolean> { return invoke<boolean>('set_automation_enabled', { id, enabled }); }
 
 // Broker connectivity
 export async function listBrokerConnections(): Promise<BrokerConnectionDto[]> { return invoke<BrokerConnectionDto[]>('list_broker_connections'); }
