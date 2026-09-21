@@ -273,15 +273,19 @@ const CandleChartInner: React.FC<CandleChartProps> = ({ symbol, ohlcvData, heigh
      
   }, [height, initChart, setBars]);
 
-  // Load OHLCV bars when symbol or timeframe changes. Reset the live tick
-  // bucket here (before setBars runs) so a new instrument can't inherit the
-  // previous series' h/l/v — and so setBars stays the final writer to
-  // lastBarTimeRef once fresh bars land.
+  // Instrument/timeframe change → drop the live tick bucket. Declared BEFORE
+  // the loader so it runs first in the same commit (setBars stays the final
+  // writer to lastBarTimeRef); deps exclude ohlcvData so a same-series refresh
+  // doesn't wipe the live bucket mid-session.
   useEffect(() => {
-    let cancelled = false;
     bucketRef.current = null;
     prevVolumeRef.current = null;
     lastBarTimeRef.current = 0;
+  }, [symbol, timeframe]);
+
+  // Load OHLCV bars when symbol or timeframe changes
+  useEffect(() => {
+    let cancelled = false;
     setLoading(true);
     setLoadError(null);
 

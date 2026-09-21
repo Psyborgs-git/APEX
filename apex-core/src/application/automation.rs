@@ -81,18 +81,28 @@ impl AutomationEngine {
     }
 
     fn load(&self) {
-        let raw = match std::fs::read_to_string(&self.persist_path) {
-            Ok(r) => r,
-            Err(_) => return,
-        };
-        match serde_json::from_str::<Vec<AutomationRule>>(&raw) {
-            Ok(list) => {
-                let mut rules = self.rules.write().unwrap();
-                for r in list {
-                    rules.insert(r.id.clone(), r);
+        // Prefer the live file; fall back to the staged `.bak` copy a
+        // save() may have left behind if it crashed mid-replace.
+        for path in [
+            self.persist_path.clone(),
+            self.persist_path.with_extension("json.bak"),
+        ] {
+            let raw = match std::fs::read_to_string(&path) {
+                Ok(r) => r,
+                Err(_) => continue,
+            };
+            match serde_json::from_str::<Vec<AutomationRule>>(&raw) {
+                Ok(list) => {
+                    let mut rules = self.rules.write().unwrap();
+                    for r in list {
+                        rules.insert(r.id.clone(), r);
+                    }
+                    return;
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, path = %path.display(), "Ignoring malformed automations file")
                 }
             }
-            Err(e) => tracing::warn!(error = %e, "Ignoring malformed automations.json"),
         }
     }
 
@@ -104,23 +114,42 @@ impl AutomationEngine {
         }
         match serde_json::to_string_pretty(&list) {
             Ok(json) => {
-                // Atomic-ish write: temp file + rename. Unix `rename`
-                // atomically replaces the destination; on Windows it refuses
-                // to overwrite, so fall back to copy+remove — the durable
-                // copy is never deleted before its replacement exists.
+                // Durable replace: full tmp write → stage dest as `.bak` →
+                // install tmp over dest (rename; copy on Windows, which can't
+                // rename over an existing file) → restore `.bak` on failure.
+                // load() falls back to `.bak` if the live file is absent.
                 let tmp = self.persist_path.with_extension("json.tmp");
+                let bak = self.persist_path.with_extension("json.bak");
                 if let Err(e) = std::fs::write(&tmp, &json) {
                     tracing::warn!(error = %e, "Failed to write automations tmp file");
                     return;
                 }
-                if let Err(e) = std::fs::rename(&tmp, &self.persist_path) {
-                    tracing::debug!(error = %e, "rename failed — falling back to copy");
-                    match std::fs::copy(&tmp, &self.persist_path) {
-                        Ok(_) => {
-                            let _ = std::fs::remove_file(&tmp);
+                let mut staged_backup = false;
+                if self.persist_path.exists() {
+                    if bak.exists() {
+                        let _ = std::fs::remove_file(&bak);
+                    }
+                    match std::fs::rename(&self.persist_path, &bak) {
+                        Ok(()) => staged_backup = true,
+                        Err(e) => {
+                            tracing::warn!(error = %e, "Failed to stage automations backup")
                         }
-                        Err(e2) => {
-                            tracing::warn!(error = %e2, "Failed to persist automations.json");
+                    }
+                }
+                let installed = std::fs::rename(&tmp, &self.persist_path)
+                    .or_else(|_| std::fs::copy(&tmp, &self.persist_path).map(|_| ()))
+                    .is_ok();
+                if installed {
+                    let _ = std::fs::remove_file(&tmp);
+                    if staged_backup {
+                        let _ = std::fs::remove_file(&bak);
+                    }
+                } else {
+                    tracing::warn!("Failed to persist automations.json");
+                    let _ = std::fs::remove_file(&tmp);
+                    if staged_backup {
+                        if let Err(e) = std::fs::rename(&bak, &self.persist_path) {
+                            tracing::warn!(error = %e, "Failed to restore automations backup");
                         }
                     }
                 }
