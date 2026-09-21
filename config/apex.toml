@@ -82,10 +82,10 @@ commission_bps = 3.0
 [risk]
 # Maximum daily loss (absolute value in account currency).
 # Trading is halted when session P&L breaches this threshold.
-max_daily_loss = 50_000.0
+max_daily_loss = 50000.0
 
 # Maximum single-order notional value.
-max_order_value = 500_000.0
+max_order_value = 500000.0
 
 # Maximum number of open positions at any time.
 max_open_positions = 20
@@ -250,4 +250,24 @@ model = "openrouter/free"
 base_url = "https://openrouter.ai/api/v1"
 
 # Max tokens per completion.
+max_tokens = 1024
+
+[appearance]
+theme = "dark"
+density = "comfortable"
+
+[acp]
+command = ""
+cwd = ""
+
+[llm]
+active = "openrouter"
+
+[[llm.providers]]
+id = "openrouter"
+name = "OpenRouter"
+base_url = "https://openrouter.ai/api/v1"
+model = "openrouter/free"
+api_kind = "chat"
+api_key_env = "OPEN_ROUTER"
 max_tokens = 1024
