@@ -11,6 +11,7 @@ export const VALID_TABS = [
   'book',
   'graph',
   'scanner',
+  'analytics',
   'copilot',
 ] as const
 

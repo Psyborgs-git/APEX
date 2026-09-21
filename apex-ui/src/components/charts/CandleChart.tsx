@@ -10,7 +10,7 @@ import {
   CrosshairMode,
 } from 'lightweight-charts';
 import { useMarketStore } from '../../stores/marketStore';
-import { getHistoricalData } from '../../lib/tauri';
+import { getHistoricalData, computeIndicator } from '../../lib/tauri';
 import type { OHLCVDto } from '../../lib/types';
 import { formatPrice, formatVolume } from '../../lib/format';
 
@@ -45,6 +45,44 @@ const CHART_COLORS = {
   crosshair: '#5c5c7a',
 } as const;
 
+// OpenBB-style technical extension surface: price overlays + oscillator pane.
+type OverlayId = 'sma' | 'ema' | 'bbands' | 'vwap';
+type OscillatorId = 'rsi' | 'macd' | 'stoch' | 'atr' | 'stddev' | 'roc';
+
+const OVERLAY_INDICATORS: { id: OverlayId; label: string }[] = [
+  { id: 'sma', label: 'SMA 20' },
+  { id: 'ema', label: 'EMA 20' },
+  { id: 'bbands', label: 'BB 20·2' },
+  { id: 'vwap', label: 'VWAP' },
+];
+
+const OSCILLATORS: { id: OscillatorId; label: string }[] = [
+  { id: 'rsi', label: 'RSI 14' },
+  { id: 'macd', label: 'MACD 12·26·9' },
+  { id: 'stoch', label: 'STOCH 14·3' },
+  { id: 'atr', label: 'ATR 14' },
+  { id: 'stddev', label: 'STDEV 20' },
+  { id: 'roc', label: 'ROC 10' },
+];
+
+const INDICATOR_SERIES_COLORS: Record<string, string> = {
+  sma: '#f59e0b',
+  ema: '#22d3ee',
+  upper: '#a78bfa',
+  middle: '#a78bfa',
+  lower: '#a78bfa',
+  vwap: '#f472b6',
+  rsi: '#22d3ee',
+  macd: '#22d3ee',
+  signal: '#f59e0b',
+  histogram: '#7c7c96',
+  k: '#22d3ee',
+  d: '#f59e0b',
+  atr: '#f59e0b',
+  stddev: '#a78bfa',
+  roc: '#22d3ee',
+};
+
 const CandleChartInner: React.FC<CandleChartProps> = ({ symbol, ohlcvData, height }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -56,7 +94,28 @@ const CandleChartInner: React.FC<CandleChartProps> = ({ symbol, ohlcvData, heigh
   const [timeframe, setTimeframe] = useState<ChartTimeframe>('1d');
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [activeOverlays, setActiveOverlays] = useState<Set<OverlayId>>(new Set());
+  const [activeOscillator, setActiveOscillator] = useState<OscillatorId | null>(null);
+  const [indMenuOpen, setIndMenuOpen] = useState(false);
+  const [indError, setIndError] = useState<string | null>(null);
+  const overlaySeriesRef = useRef<Map<string, ISeriesApi<'Line'>[]>>(new Map());
+  const oscContainerRef = useRef<HTMLDivElement>(null);
   const bucketSecs = TIMEFRAMES.find((t) => t.id === timeframe)?.bucketSecs ?? 86400;
+
+  const toSeriesData = useCallback(
+    (points: { time: string; value: number }[]): { time: Time; value: number }[] => {
+      const seen = new Set<number>();
+      return points
+        .filter((p) => {
+          const t = new Date(p.time).getTime();
+          if (!Number.isFinite(t) || seen.has(t)) return false;
+          seen.add(t);
+          return Number.isFinite(p.value);
+        })
+        .map((p) => ({ time: toChartTime(p.time), value: p.value }));
+    },
+    [],
+  );
 
   const initChart = useCallback(() => {
     const container = containerRef.current;
@@ -219,6 +278,141 @@ const CandleChartInner: React.FC<CandleChartProps> = ({ symbol, ohlcvData, heigh
     };
   }, [symbol, timeframe, ohlcvData, setBars]);
 
+  // Overlay indicators (SMA/EMA/BBANDS/VWAP) — line series on the price pane
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    let cancelled = false;
+
+    const existing = overlaySeriesRef.current;
+    for (const [id, series] of existing) {
+      if (!activeOverlays.has(id as OverlayId)) {
+        series.forEach((s) => chart.removeSeries(s));
+        existing.delete(id);
+      }
+    }
+
+    for (const id of activeOverlays) {
+      void computeIndicator(symbol, id, timeframe)
+        .then((res) => {
+          const c = chartRef.current;
+          if (cancelled || !c) return;
+          overlaySeriesRef.current.get(id)?.forEach((s) => c.removeSeries(s));
+          const list: ISeriesApi<'Line'>[] = res.series.map((s) => {
+            const line = c.addLineSeries({
+              color: INDICATOR_SERIES_COLORS[s.name] ?? '#a78bfa',
+              lineWidth: s.name === 'middle' ? 1 : 2,
+              priceLineVisible: false,
+              lastValueVisible: false,
+              crosshairMarkerVisible: false,
+            });
+            line.setData(toSeriesData(s.points));
+            return line;
+          });
+          overlaySeriesRef.current.set(id, list);
+        })
+        .catch((e: unknown) => {
+          if (!cancelled) setIndError(typeof e === 'string' ? e : 'indicator failed');
+        });
+    }
+
+    return () => {
+      cancelled = true;
+      // Symbol/timeframe changed → drop stale overlay lines so they get recomputed.
+      const c = chartRef.current;
+      if (c) {
+        for (const [, series] of existing) {
+          series.forEach((s) => c.removeSeries(s));
+        }
+        existing.clear();
+      }
+    };
+  }, [activeOverlays, symbol, timeframe, toSeriesData]);
+
+  // Oscillator pane — a second synced chart below the candles
+  useEffect(() => {
+    const container = oscContainerRef.current;
+    if (!activeOscillator || !container) return;
+    let cancelled = false;
+
+    const chart = createChart(container, {
+      layout: {
+        background: { type: ColorType.Solid, color: CHART_COLORS.background },
+        textColor: CHART_COLORS.text,
+        fontFamily: "'JetBrains Mono', monospace",
+        fontSize: 10,
+      },
+      grid: {
+        vertLines: { color: CHART_COLORS.grid },
+        horzLines: { color: CHART_COLORS.grid },
+      },
+      rightPriceScale: { borderColor: CHART_COLORS.border },
+      localization: { locale: 'en-US' },
+      timeScale: { borderColor: CHART_COLORS.border, timeVisible: true, secondsVisible: false },
+      width: container.clientWidth,
+      height: container.clientHeight,
+    });
+
+    void computeIndicator(symbol, activeOscillator, timeframe)
+      .then((res) => {
+        if (cancelled) return;
+        for (const s of res.series) {
+          if (s.name === 'histogram') {
+            const hist = chart.addHistogramSeries({ color: INDICATOR_SERIES_COLORS.histogram });
+            hist.setData(
+              toSeriesData(s.points).map((p) => ({
+                ...p,
+                color: p.value >= 0 ? CHART_COLORS.volumeUp : CHART_COLORS.volumeDown,
+              })),
+            );
+          } else {
+            const line = chart.addLineSeries({
+              color: INDICATOR_SERIES_COLORS[s.name] ?? '#22d3ee',
+              lineWidth: 1,
+              priceLineVisible: false,
+            });
+            line.setData(toSeriesData(s.points));
+          }
+        }
+        chart.timeScale().fitContent();
+        // Follow the main chart's viewport
+        const main = chartRef.current;
+        if (main) {
+          main.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+            if (range) chart.timeScale().setVisibleLogicalRange(range);
+          });
+        }
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setIndError(typeof e === 'string' ? e : 'indicator failed');
+      });
+
+    const resizeObserver = new ResizeObserver(() => {
+      chart.applyOptions({ width: container.clientWidth, height: container.clientHeight });
+    });
+    resizeObserver.observe(container);
+
+    return () => {
+      cancelled = true;
+      resizeObserver.disconnect();
+      chart.remove();
+    };
+  }, [activeOscillator, symbol, timeframe, toSeriesData]);
+
+  const toggleOverlay = (id: OverlayId) => {
+    setActiveOverlays((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  // Reset indicator error when the underlying series changes
+  useEffect(() => {
+    setIndError(null);
+  }, [symbol, timeframe, activeOverlays, activeOscillator]);
+
   // Listen for real-time quote updates — bucket ticks into the active timeframe
   useEffect(() => {
     if (!symbol) return;
@@ -269,6 +463,61 @@ const CandleChartInner: React.FC<CandleChartProps> = ({ symbol, ohlcvData, heigh
           )}
         </div>
         <div className="flex items-center gap-1" data-testid="chart-timeframes">
+          <div className="relative">
+            <button
+              onClick={() => setIndMenuOpen((v) => !v)}
+              className={`px-2 py-0.5 text-[10px] font-mono uppercase tracking-wider rounded transition-colors ${
+                activeOverlays.size > 0 || activeOscillator
+                  ? 'bg-accent/15 text-accent'
+                  : 'text-text-muted hover:text-text-primary'
+              }`}
+              data-testid="chart-indicators-btn"
+            >
+              IND
+            </button>
+            {indMenuOpen && (
+              <div
+                className="absolute right-0 top-full mt-1 z-20 w-40 rounded border border-[var(--border-color)] bg-surface-1 shadow-lg py-1"
+                data-testid="chart-indicators-menu"
+              >
+                <div className="px-2 py-1 text-[9px] font-mono uppercase tracking-wider text-text-muted">Overlay</div>
+                {OVERLAY_INDICATORS.map((ind) => (
+                  <button
+                    key={ind.id}
+                    onClick={() => toggleOverlay(ind.id)}
+                    className={`block w-full text-left px-3 py-1 text-[11px] font-mono ${
+                      activeOverlays.has(ind.id) ? 'text-accent' : 'text-text-primary hover:bg-surface-2'
+                    }`}
+                    data-testid={`ind-overlay-${ind.id}`}
+                  >
+                    {activeOverlays.has(ind.id) ? '● ' : '○ '}{ind.label}
+                  </button>
+                ))}
+                <div className="px-2 py-1 text-[9px] font-mono uppercase tracking-wider text-text-muted border-t border-[var(--border-color)] mt-1 pt-1.5">Pane</div>
+                {OSCILLATORS.map((ind) => (
+                  <button
+                    key={ind.id}
+                    onClick={() => setActiveOscillator((cur) => (cur === ind.id ? null : ind.id))}
+                    className={`block w-full text-left px-3 py-1 text-[11px] font-mono ${
+                      activeOscillator === ind.id ? 'text-accent' : 'text-text-primary hover:bg-surface-2'
+                    }`}
+                    data-testid={`ind-osc-${ind.id}`}
+                  >
+                    {activeOscillator === ind.id ? '● ' : '○ '}{ind.label}
+                  </button>
+                ))}
+                {(activeOverlays.size > 0 || activeOscillator) && (
+                  <button
+                    onClick={() => { setActiveOverlays(new Set()); setActiveOscillator(null); }}
+                    className="block w-full text-left px-3 py-1 text-[11px] font-mono text-bear hover:bg-surface-2 border-t border-[var(--border-color)] mt-1 pt-1.5"
+                    data-testid="ind-clear"
+                  >
+                    Clear all
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
           {TIMEFRAMES.map((tf) => (
             <button
               key={tf.id}
@@ -297,7 +546,20 @@ const CandleChartInner: React.FC<CandleChartProps> = ({ symbol, ohlcvData, heigh
             <span className="text-xs font-mono text-bear" data-testid="chart-load-error">{loadError}</span>
           </div>
         )}
+        {indError && (
+          <div className="absolute bottom-1 left-2 pointer-events-none">
+            <span className="text-[10px] font-mono text-bear" data-testid="indicator-error">{indError}</span>
+          </div>
+        )}
       </div>
+      {activeOscillator && (
+        <div className="h-28 shrink-0 border-t border-[var(--border-color)] relative" data-testid="oscillator-pane">
+          <div className="absolute top-0.5 left-2 z-10 text-[9px] font-mono uppercase tracking-wider text-text-muted">
+            {OSCILLATORS.find((o) => o.id === activeOscillator)?.label}
+          </div>
+          <div ref={oscContainerRef} className="absolute inset-0" />
+        </div>
+      )}
     </div>
   );
 };

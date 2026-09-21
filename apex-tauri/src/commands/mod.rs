@@ -11,6 +11,7 @@ pub mod notebook;
 pub mod orderbook;
 pub mod orders;
 pub mod python_runtime;
+pub mod quant;
 pub mod risk;
 pub mod scanner;
 pub mod settings;

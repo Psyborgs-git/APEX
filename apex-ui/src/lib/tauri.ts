@@ -1,4 +1,4 @@
-import type { QuoteDto, OrderDto, PositionDto, NewOrderRequestDto, RiskStatusDto, MLModelDto, MLTrainingRequestDto, MLTrainingResultDto, SystemHealthDto, AdapterHealthDto, AlertRuleDto, StrategyFileDto, StrategyExecutionResultDto, StrategyBacktestRequestDto, StrategyBacktestResultDto, AccountBalanceDto, BrokerConnectionDto, AppSettingsDto, AppSettingsUpdateDto, NotebookCellExecutionDto, NotebookDocumentDto, NotebookRunRequestDto, NotebookSummaryDto, OHLCVDto, NewsItemDto, NewsFeedDto, OrderBookDto, GraphDto, ScanOutputDto, ScanRequestDto, CopilotMessageDto, CopilotReplyDto } from './types';
+import type { QuoteDto, OrderDto, PositionDto, NewOrderRequestDto, RiskStatusDto, MLModelDto, MLTrainingRequestDto, MLTrainingResultDto, SystemHealthDto, AdapterHealthDto, AlertRuleDto, StrategyFileDto, StrategyExecutionResultDto, StrategyBacktestRequestDto, StrategyBacktestResultDto, AccountBalanceDto, BrokerConnectionDto, AppSettingsDto, AppSettingsUpdateDto, NotebookCellExecutionDto, NotebookDocumentDto, NotebookRunRequestDto, NotebookSummaryDto, OHLCVDto, NewsItemDto, NewsFeedDto, OrderBookDto, GraphDto, ScanOutputDto, ScanRequestDto, CopilotMessageDto, CopilotReplyDto, IndicatorResultDto, QuantStatsDto, RegressionDto } from './types';
 
 const IS_TAURI = typeof window !== 'undefined' && '__TAURI__' in window;
 
@@ -778,4 +778,20 @@ export async function runScan(request: ScanRequestDto): Promise<ScanOutputDto> {
 // AI Copilot (OpenRouter — desktop only)
 export async function copilotChat(message: string, history?: CopilotMessageDto[]): Promise<CopilotReplyDto> {
   return invoke<CopilotReplyDto>('copilot_chat', { message, history });
+}
+
+// Quant analytics (OpenBB-style)
+export async function computeIndicator(
+  symbol: string,
+  indicator: string,
+  timeframe?: string,
+  params?: Record<string, number>,
+): Promise<IndicatorResultDto> {
+  return invoke<IndicatorResultDto>('compute_indicator', { symbol, indicator, timeframe, params });
+}
+export async function getQuantStats(symbol: string, timeframe?: string, window?: number): Promise<QuantStatsDto> {
+  return invoke<QuantStatsDto>('get_quant_stats', { symbol, timeframe, window });
+}
+export async function getRegression(xSymbol: string, ySymbol: string, timeframe?: string): Promise<RegressionDto> {
+  return invoke<RegressionDto>('get_regression', { xSymbol, ySymbol, timeframe });
 }

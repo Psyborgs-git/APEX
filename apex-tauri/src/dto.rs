@@ -391,6 +391,78 @@ pub struct BrokerConnectionDto {
     pub message: String,
 }
 
+/// One point of an indicator/quant series, aligned to a bar time (RFC3339).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeriesPointDto {
+    pub time: String,
+    pub value: f64,
+}
+
+/// A named series of aligned points (e.g. "upper" band, "macd" line).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NamedSeriesDto {
+    pub name: String,
+    pub points: Vec<SeriesPointDto>,
+}
+
+/// Result of a `compute_indicator` call.
+/// `overlay` = draw on the price pane; false = dedicated oscillator pane.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IndicatorResultDto {
+    pub symbol: String,
+    pub indicator: String,
+    pub overlay: bool,
+    pub series: Vec<NamedSeriesDto>,
+}
+
+/// Quant summary over a symbol's return series (OpenBB quantitative.summary).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuantStatsDto {
+    pub symbol: String,
+    pub n: usize,
+    pub mean: f64,
+    pub std_dev: f64,
+    pub variance: f64,
+    pub skewness: f64,
+    pub kurtosis: f64,
+    pub min: f64,
+    pub q05: f64,
+    pub q25: f64,
+    pub median: f64,
+    pub q75: f64,
+    pub q95: f64,
+    pub max: f64,
+    pub jarque_bera: f64,
+    pub normal: bool,
+    pub sharpe: f64,
+    pub sortino: f64,
+    pub omega: f64,
+    pub max_drawdown: f64,
+    pub ann_volatility: f64,
+    /// ACF at lags 1..=10
+    pub autocorr: Vec<f64>,
+    /// Rolling stats series aligned to bar times
+    pub rolling_vol: Vec<SeriesPointDto>,
+    pub rolling_sharpe: Vec<SeriesPointDto>,
+}
+
+/// OLS regression y = alpha + beta*x over aligned return series.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegressionDto {
+    pub x_symbol: String,
+    pub y_symbol: String,
+    pub n: usize,
+    pub alpha: f64,
+    pub beta: f64,
+    pub r_squared: f64,
+    /// Per-observation residuals aligned to the shared timestamps
+    pub residuals: Vec<SeriesPointDto>,
+    /// Scatter of (x, y) return pairs for the regression plot
+    pub scatter: Vec<[f64; 2]>,
+    /// Fitted line endpoints for charting: [x_min, x_max] → [y_min, y_max]
+    pub fit_line: Vec<[f64; 2]>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

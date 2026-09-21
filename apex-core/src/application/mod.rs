@@ -12,3 +12,4 @@ pub mod scanner;
 pub mod sentiment;
 pub mod data_quality;
 pub mod metrics;
+pub mod quant;

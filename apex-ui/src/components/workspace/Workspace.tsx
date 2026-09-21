@@ -15,6 +15,7 @@ import { GraphPanel } from '../graph/GraphPanel';
 import { ScannerPanel } from '../scanner/ScannerPanel';
 import { CopilotPanel } from '../copilot/CopilotPanel';
 import { MarketOverview } from '../market/MarketOverview';
+import { AnalyticsPanel } from '../quant/AnalyticsPanel';
 import { ErrorBoundary } from '../common/ErrorBoundary';
 import { addAlert, clearBrokerSession, getAlertRules, getAppSettings, listBrokerConnections, removeAlert, saveAppSettings, setBrokerSession, subscribeSymbols } from '../../lib/tauri';
 import type { AlertRuleDto, AppSettingsDto, AppSettingsUpdateDto, BrokerConnectionDto } from '../../lib/types';
@@ -33,6 +34,7 @@ const CENTER_TABS: { id: CenterTab; label: string }[] = [
   { id: 'news', label: 'News' },
   { id: 'scanner', label: 'Scanner' },
   { id: 'graph', label: 'Graph' },
+  { id: 'analytics', label: 'Analytics' },
   { id: 'strategy', label: 'Strategy IDE' },
   { id: 'ml', label: 'ML Workbench' },
   { id: 'data', label: 'Stored Data' },
@@ -874,6 +876,10 @@ export const Workspace: React.FC = () => {
           ) : centerTab === 'graph' ? (
             <div className="flex-1 bg-surface-1 rounded-lg border border-[var(--border-color)] overflow-hidden">
               <GraphPanel />
+            </div>
+          ) : centerTab === 'analytics' ? (
+            <div className="flex-1 bg-surface-1 rounded-lg border border-[var(--border-color)] overflow-hidden">
+              <AnalyticsPanel defaultSymbol={selectedSymbol} />
             </div>
           ) : centerTab === 'market' ? (
             <div className="flex-1 bg-surface-1 rounded-lg border border-[var(--border-color)] overflow-hidden">

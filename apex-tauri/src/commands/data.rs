@@ -1,18 +1,19 @@
 use crate::dto::OHLCVDto;
 use crate::state::AppState;
-use apex_core::domain::models::{OHLCVQuery, Symbol, Timeframe};
+use apex_core::domain::models::{OHLCV, OHLCVQuery, Symbol, Timeframe};
 use chrono::Utc;
 use tauri::State;
 
-/// Get historical data for a symbol from storage.
-#[tauri::command]
-pub async fn get_historical_data(
-    symbol: String,
-    timeframe: Option<String>,
-    limit: Option<usize>,
-    state: State<'_, AppState>,
-) -> Result<Vec<OHLCVDto>, String> {
-    let tf = match timeframe.as_deref().unwrap_or("d1").to_lowercase().as_str() {
+/// Load OHLCV bars for a symbol: storage first, falling back to the market
+/// data adapter (persisting what it returns). Shared by chart/history,
+/// indicator, and quant commands — OpenBB-style "fetch then cache" pipeline.
+pub(crate) async fn load_bars(
+    state: &AppState,
+    symbol: &str,
+    timeframe: Option<&str>,
+    limit: usize,
+) -> Result<Vec<OHLCV>, String> {
+    let tf = match timeframe.unwrap_or("d1").to_lowercase().as_str() {
         "1m" | "m1" => Timeframe::M1,
         "5m" | "m5" => Timeframe::M5,
         "15m" | "m15" => Timeframe::M15,
@@ -24,10 +25,9 @@ pub async fn get_historical_data(
     };
 
     let now = Utc::now();
-    let limit = limit.unwrap_or(500);
 
     let params = OHLCVQuery {
-        symbol: Symbol(symbol.clone()),
+        symbol: Symbol(symbol.to_string()),
         timeframe: tf.clone(),
         from: chrono::DateTime::UNIX_EPOCH,
         to: now,
@@ -52,7 +52,7 @@ pub async fn get_historical_data(
 
         let fetched = state
             .history_source
-            .get_historical_ohlcv(&Symbol(symbol.clone()), tf, from, now)
+            .get_historical_ohlcv(&Symbol(symbol.to_string()), tf, from, now)
             .await
             .map_err(|e| format!("Failed to fetch historical data for {}: {}", symbol, e))?;
 
@@ -65,7 +65,19 @@ pub async fn get_historical_data(
     }
 
     let start = bars.len().saturating_sub(limit);
-    Ok(bars[start..].iter().map(OHLCVDto::from).collect())
+    Ok(bars.split_off(start))
+}
+
+/// Get historical data for a symbol from storage.
+#[tauri::command]
+pub async fn get_historical_data(
+    symbol: String,
+    timeframe: Option<String>,
+    limit: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<Vec<OHLCVDto>, String> {
+    let bars = load_bars(&state, &symbol, timeframe.as_deref(), limit.unwrap_or(500)).await?;
+    Ok(bars.iter().map(OHLCVDto::from).collect())
 }
 
 /// Get watchlist symbols from storage.

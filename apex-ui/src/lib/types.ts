@@ -399,3 +399,60 @@ export interface CopilotReplyDto {
   reply: string;
   model: string;
 }
+
+// Quant / indicators (OpenBB-style analytics)
+export interface SeriesPointDto {
+  time: string;
+  value: number;
+}
+
+export interface NamedSeriesDto {
+  name: string;
+  points: SeriesPointDto[];
+}
+
+export interface IndicatorResultDto {
+  symbol: string;
+  indicator: string;
+  overlay: boolean;
+  series: NamedSeriesDto[];
+}
+
+export interface QuantStatsDto {
+  symbol: string;
+  n: number;
+  mean: number;
+  std_dev: number;
+  variance: number;
+  skewness: number;
+  kurtosis: number;
+  min: number;
+  q05: number;
+  q25: number;
+  median: number;
+  q75: number;
+  q95: number;
+  max: number;
+  jarque_bera: number;
+  normal: boolean;
+  sharpe: number;
+  sortino: number;
+  omega: number;
+  max_drawdown: number;
+  ann_volatility: number;
+  autocorr: number[];
+  rolling_vol: SeriesPointDto[];
+  rolling_sharpe: SeriesPointDto[];
+}
+
+export interface RegressionDto {
+  x_symbol: string;
+  y_symbol: string;
+  n: number;
+  alpha: number;
+  beta: number;
+  r_squared: number;
+  residuals: SeriesPointDto[];
+  scatter: [number, number][];
+  fit_line: [number, number][];
+}

@@ -5,7 +5,7 @@ mod state;
 mod tracing_setup;
 mod validation;
 
-use commands::{alerts, brokers, copilot, data, graph, health, market, ml, news, notebook, orderbook, orders, risk, scanner, settings};
+use commands::{alerts, brokers, copilot, data, graph, health, market, ml, news, notebook, orderbook, orders, quant, risk, scanner, settings};
 use commands::strategy;
 use tauri::Manager;
 
@@ -77,6 +77,9 @@ fn main() {
             risk::reset_halt,
             data::get_historical_data,
             data::get_watchlist_symbols,
+            quant::compute_indicator,
+            quant::get_quant_stats,
+            quant::get_regression,
             news::get_news,
             news::search_news,
             news::list_news_feeds,
