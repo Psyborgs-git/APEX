@@ -191,3 +191,41 @@ Rebuilt `apex-tauri` + relaunched (fresh vite modules confirmed — `opacity-70`
 | **Regression sanity** | **PASS.** IND overlays still render (SMA 20 amber line over candles); ANALYTICS loads AAPL stats fully (Sharpe 0.78, n1499) incl. visible ACF + OLS β1.198. | `ss_887ecd60.png` (SMA line), `ss_e88587da.png` (AAPL panel) |
 
 **Console:** fully clean this pass — no `Object disposed`, no unhandled rejections (cross-market regression renders now, so the rejection path isn't hit).
+
+---
+
+# Phase F — d5af093: theme/density, Backtest, agentic Copilot, LLM providers, Zerodha
+Rebuilt + relaunched (`cargo build` + `./target/debug/apex-tauri`, OPEN_ROUTER in env); fresh vite modules confirmed.
+
+## ⛔ HEADLINE DEFECT — Settings Save panics, nothing persists
+`save_app_settings` **panics**: `tokio-rt-worker panicked at apex-tauri/src/commands/settings.rs:268: index not found`. `ensure_table()` does `doc[section].is_table()` via toml_edit's immutable `Index`, which panics on a missing key — and the shipped `config/apex.toml` has **no `[appearance]`, `[acp]`, or `[llm]` tables**. The first `ensure_table("appearance")` call throws before `fs::write`, so the whole save is lost and the frontend invoke hangs (button stuck "Saving…" — promise never settles). Reproduced 2/2.
+**Impact:** theme/density/persist, `[[llm.providers]]` write, `active_provider`, ACP command — none persist. Fix: `ensure_table` should use `doc.entry(section).or_insert(...)` / `doc.get(section)` instead of `doc[section]` indexing. Optionally also ship `[appearance]`/`[llm]`/`[acp]` stubs in `apex.toml`.
+Verified: `config/apex.toml` unchanged post-save (still `theme = "dark"`, none of the new sections). Theme reverted to dark on reload — confirming non-persistence.
+
+## Results per item
+| Item | Result | Evidence |
+|---|---|---|
+| **Theme + density live-apply** | **PARTIAL.** Dark→Light and comfortable→compact apply instantly on select, no restart; light theme legible on panels/watchlist/controls. **Caveat:** the lightweight-charts candle chart keeps its own dark palette under light theme (readable, just doesn't restyle). Persist step broken by the save panic above. | `ss_78578a3a.png` (light+compact settings), `ss_c60457a4.png` (light app) |
+| **Backtest tab** | **PASS.** Default strategy `my_strategy.py` preselected, symbol RELIANCE.NS, d1. Run → **equity curve + drawdown chart + metrics grid + trades table** all render (RELIANCE.NS: Return −3.15%, Sharpe −0.86, 33 trades, 499 bars; AAPL re-run: +0.75%, Sharpe 0.70, 21 trades). `run_strategy_backtest` IPC returns real populated DTOs. Run button is a small icon (~34×24) just right of the capital spinner — easy to misclick on neighbors, but real clicks work. | `ss_4a8d62c0.png` (AAPL result), `ss_f338d317.png` (metrics+trades) |
+| **Copilot agentic loop** | **PASS.** "Backtest the default strategy on RELIANCE.NS…" → `copilot-tool-trace` shows Strategies → Read file → Backtest, then a reply quoting **real metrics matching the actual backtest** (−3.15%, ₹96,850.76 equity, Sharpe −0.86, 33 trades, 18.18% win). "Latest quote for RELIANCE.NS" → `Quote` tool call + real quote (₹1,247.40, +1.71%, vol 10,007,218). Real OpenRouter model badge. | `ss_272e383c.png` (tool trace + metrics), `ss_d52b7a2c.png` (quote) |
+| **LLM providers in Settings** | **FAIL (persist).** `llm-settings-section`, **Add Provider** opens a full provider row (id, api_kind, base_url, model, key env var, max_tokens); **Active Provider** select includes the added provider; ACP section has command + cwd inputs. But **Save panics** (above) → `[[llm.providers]]` never written, `key_configured` badge unverifiable (it renders only on a persisted provider). | `ss_07aa3f06.png` (provider form), `ss_8f71a59e.png` (active select) |
+| **Zerodha card** | **PASS.** Card shows "NOT CONFIGURED — Add ZERODHA_API_KEY to .env and restart"; no `kite-request-token`/`kite-login` row (expected — env var unset). | `ss_5e5761e2.png` |
+| **Regression** | **PASS.** Watchlist real CHG%, chart renders + IND menu/overlays (SMA amber) work, ANALYTICS tab loads (ACF bars now colored + cross-market OLS renders — both Phase-E fixes hold), Market tab populated, tabs switch fine. Webview console clean — no new JS errors. | `ss_bfe78315.png` (analytics), `ss_87f66bfc.png` (SMA) |
+
+## Secondary notes
+- The hung `save_app_settings` invoke left the settings "Saving…" state — subsequent interaction was fine (earlier "tabs not switching" was my clicking one row too high on the compact wrapped tab bar; tabs actually sit at y≈127).
+- Copilot ran the backtest on `m5` timeframe (its choice) — metrics still quoted correctly and matched the real run.
+
+---
+
+# Phase G — c8b38d5: settings-save panic fix re-verification
+`ensure_table` now probes with `doc.get(section)` (immutable `Index` panicked on missing keys). Rebuilt + relaunched.
+
+| Item | Result | Evidence |
+|---|---|---|
+| **Theme/density persist** | **PASS.** Light + compact → Save → `[appearance]` theme="light"/density="compact" written to `config/apex.toml`; **0 panics**; green "Settings saved…" toast. Theme persisted across a full backend restart (fresh launch rendered light+compact). | `ss_a96263b8.png` (save toast), `ss_0bb9d6b2.png` (light after restart) |
+| **LLM provider round-trip** | **PASS.** Added `openrouter` (base_url openrouter.ai/api/v1, model openrouter/free, env OPEN_ROUTER, api_kind chat), set Active → `[[llm.providers]]` + `active="provider-1"` written; provider row shows green **"KEY SET"** badge (env detected), still present after reopening modal (fresh `get_app_settings` read). | `ss_fdaeb88d.png` (KEY SET badge + active) |
+| **Copilot via registry provider** | **PASS.** After backend restart (state.llm is startup-cached — file write alone doesn't apply it), "latest quote for RELIANCE.NS" → `Quote` tool + real reply ₹1,247.40; reply badge **`provider-1 · inclusionai/ling-3.0-flash-v1:free`** — proves the registry path (provider-1 → openrouter/free), not legacy `[copilot]`. | `ss_f8c42368.png` |
+| **No dup sections on re-save** | **PASS.** 3 consecutive saves — config has exactly one `[appearance]`, `[acp]`, `[llm]`, `[[llm.providers]]`. | config/apex.toml tail |
+
+**Note:** `save_app_settings` writes the file but doesn't refresh `AppState.llm` — provider changes take effect on the NEXT backend start (matches the "Apply on Restart" label). Verified restart path; a live-reload of llm state would be a nice-to-have.

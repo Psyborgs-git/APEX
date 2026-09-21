@@ -22,10 +22,18 @@ The format is based on "Keep a Changelog" and this project adheres to [Semantic 
 - **Watchlist Upgrades**: Price flash on tick changes (green/red), sortable Symbol/Last/Chg% columns
 - **Status Bar**: Feed liveness indicator (LIVE/STALE by last quote arrival) and subscribed-symbol count
 - **Chart Timeframes**: 5m/15m/1H/1D selector on the candle chart with live ticks bucketed into the active timeframe
+- **Quant Analytics Tab**: OpenBB-style analytics — `compute_indicator` (10 indicators, chart overlays + synced oscillator pane), `get_quant_stats` (returns/skew/kurtosis/Jarque-Bera/Sharpe/Sortino/Omega/max-DD/ACF + rolling vol & Sharpe), `get_regression` (date-aligned cross-market OLS with scatter/fit/residuals); `apex-core::application::quant` pure-Rust stats module
+- **Light/Dark Theme + Compact Density**: `[appearance]` config section, full light palette + compact spacing/density overrides in `tokens.css`, live-applied via `html[data-theme]`/`data-density]`, persisted through settings
+- **Backtest Tab**: dedicated UX — strategy file picker, params (symbol/timeframe/date range/quantity/capital), equity-curve + drawdown charts, metrics grid, full trade log; `:BACKTEST` command
+- **Agentic Copilot**: tool-call loop (≤10 rounds) over live terminal state — quotes, OHLCV, quant stats, regression, scans, news, strategy read/write, backtests, CSV export, ML model list/train — so the model can build→test→optimise iteratively; tool trace rendered inline in the chat
+- **LLM Provider Registry**: `[[llm.providers]]` config + Settings CRUD — OpenAI-compatible endpoints with `api_kind` chat (`/chat/completions`), responses (`/responses`), or acp; keys referenced by env-var name only; active-provider picker with key-configured badges
+- **ACP Connector**: newline JSON-RPC stdio bridge to external agents/IDEs (initialize → session/new → session/prompt, streamed `agent_message_chunk` collection); `[acp]` command config, `api_kind: acp` routes copilot to it
+- **Zerodha Kite Login**: `zerodha_login` command exchanges the Kite `request_token` for a daily `access_token` (sha256 `api_key+request_token+api_secret` checksum) and installs it on both Zerodha adapters; Settings broker card gets a Kite login row
 
 ### Fixed
 - **Blank Candle Chart**: `CandleChart` never fetched OHLCV data and `get_historical_data` only read sqlite — the backend now falls back to the market data adapter on a storage miss and persists fetched bars
 - **Silent Mock Mode in Desktop App**: `tauri.conf.json` lacked `withGlobalTauri`, so `window.__TAURI__` was never injected and the desktop build silently ran browser-mode mock data (every symbol showed 150.20). CSP `connect-src` now also allows `ipc:` / `ipc.localhost` for Tauri IPC
+- **Settings save panic**: `ensure_table` used immutable `doc[section]` indexing which panics on missing sections — probes with `doc.get()` first so `[appearance]`/`[llm]`/`[acp]` are created on first save
 - `PolymarketAdapter::fetch_markets` and `PolymarketMarket` made public (test compile error on `main`)
 - Live-network crypto adapter integration tests marked `#[ignore]` — they hit real exchange APIs and broke offline `cargo test`
 - **VADER-Style NLP Sentiment Pipeline**: Financial-domain lexicon-based sentiment analysis with 80+ terms, negation handling, degree modifiers, capitalisation boost, and VADER-normalised compound scoring (−1.0 to +1.0)
