@@ -225,11 +225,22 @@ pub async fn get_regression(
         return Err("Not enough overlapping bars for regression".to_string());
     }
 
-    // Align on shared bar timestamps, then take returns of the aligned closes.
-    let xclose: HashMap<String, f64> = xbars.iter().map(|b| (b.time.to_rfc3339(), b.close)).collect();
+    // Align on shared bar timestamps. For daily/weekly bars align on the
+    // calendar date — exchanges in different timezones stamp the same trading
+    // day at different instants (US 13:30Z vs NSE 03:45Z).
+    let tf_str = timeframe.as_deref().unwrap_or("d1").to_lowercase();
+    let daily = matches!(tf_str.as_str(), "d1" | "1d" | "w1" | "1w");
+    let key_of = |b: &OHLCV| {
+        if daily {
+            b.time.format("%Y-%m-%d").to_string()
+        } else {
+            b.time.to_rfc3339()
+        }
+    };
+    let xclose: HashMap<String, f64> = xbars.iter().map(|b| (key_of(b), b.close)).collect();
     let mut aligned: Vec<(String, f64, f64)> = ybars
         .iter()
-        .filter_map(|b| xclose.get(&b.time.to_rfc3339()).map(|&x| (b.time.to_rfc3339(), x, b.close)))
+        .filter_map(|b| xclose.get(&key_of(b)).map(|&x| (b.time.to_rfc3339(), x, b.close)))
         .collect();
     aligned.sort_by(|a, b| a.0.cmp(&b.0));
 

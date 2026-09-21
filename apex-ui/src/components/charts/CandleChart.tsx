@@ -5,6 +5,7 @@ import {
   type ISeriesApi,
   type CandlestickData,
   type HistogramData,
+  type LogicalRange,
   type Time,
   ColorType,
   CrosshairMode,
@@ -353,6 +354,7 @@ const CandleChartInner: React.FC<CandleChartProps> = ({ symbol, ohlcvData, heigh
       height: container.clientHeight,
     });
 
+    let rangeSync: { source: ReturnType<IChartApi['timeScale']>; handler: (range: LogicalRange | null) => void } | null = null;
     void computeIndicator(symbol, activeOscillator, timeframe)
       .then((res) => {
         if (cancelled) return;
@@ -375,12 +377,16 @@ const CandleChartInner: React.FC<CandleChartProps> = ({ symbol, ohlcvData, heigh
           }
         }
         chart.timeScale().fitContent();
-        // Follow the main chart's viewport
+        // Follow the main chart's viewport — unsubscribed in cleanup so the
+        // main chart never calls into this chart after it's removed.
         const main = chartRef.current;
         if (main) {
-          main.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+          const source = main.timeScale();
+          const handler = (range: LogicalRange | null) => {
             if (range) chart.timeScale().setVisibleLogicalRange(range);
-          });
+          };
+          source.subscribeVisibleLogicalRangeChange(handler);
+          rangeSync = { source, handler };
         }
       })
       .catch((e: unknown) => {
@@ -395,6 +401,9 @@ const CandleChartInner: React.FC<CandleChartProps> = ({ symbol, ohlcvData, heigh
     return () => {
       cancelled = true;
       resizeObserver.disconnect();
+      if (rangeSync) {
+        rangeSync.source.unsubscribeVisibleLogicalRangeChange(rangeSync.handler);
+      }
       chart.remove();
     };
   }, [activeOscillator, symbol, timeframe, toSeriesData]);

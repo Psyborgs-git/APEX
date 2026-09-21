@@ -103,6 +103,7 @@ const AnalyticsPanelInner: React.FC<AnalyticsPanelProps> = ({ defaultSymbol }) =
   const [timeframe, setTimeframe] = useState('1d');
   const [stats, setStats] = useState<QuantStatsDto | null>(null);
   const [reg, setReg] = useState<RegressionDto | null>(null);
+  const [regError, setRegError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -116,12 +117,16 @@ const AnalyticsPanelInner: React.FC<AnalyticsPanelProps> = ({ defaultSymbol }) =
     setError(null);
     void Promise.all([
       getQuantStats(symbol, timeframe),
-      getRegression(benchmark, symbol, timeframe).catch(() => null),
+      getRegression(benchmark, symbol, timeframe).catch((e: unknown) => {
+        setRegError(typeof e === 'string' ? e : 'regression unavailable');
+        return null;
+      }),
     ])
       .then(([s, r]) => {
         if (cancelled) return;
         setStats(s);
         setReg(r);
+        if (r) setRegError(null);
       })
       .catch((e: unknown) => {
         if (!cancelled) {
@@ -230,7 +235,7 @@ const AnalyticsPanelInner: React.FC<AnalyticsPanelProps> = ({ defaultSymbol }) =
                 {stats.autocorr.map((v, i) => (
                   <div key={i} className="flex-1 flex flex-col items-center justify-end h-full">
                     <div
-                      className={`w-full rounded-sm ${v >= 0 ? 'bg-accent/70' : 'bg-bear/70'}`}
+                      className={`w-full rounded-sm opacity-70 ${v >= 0 ? 'bg-accent' : 'bg-bear'}`}
                       style={{ height: `${Math.min(100, (Math.abs(v) / acfMax) * 88) + 4}%` }}
                       title={`lag ${i + 1}: ${v.toFixed(3)}`}
                     />
@@ -240,6 +245,12 @@ const AnalyticsPanelInner: React.FC<AnalyticsPanelProps> = ({ defaultSymbol }) =
               </div>
             </div>
           </>
+        )}
+
+        {stats && !reg && (
+          <div className="border-t border-[var(--border-color)] px-3 py-2 text-xs font-mono text-text-muted" data-testid="quant-regression-empty">
+            OLS regression unavailable{regError ? `: ${regError}` : ` — insufficient overlapping data between ${symbol} and ${benchmark}`}
+          </div>
         )}
 
         {reg && scatterRender && (
