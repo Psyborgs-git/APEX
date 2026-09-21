@@ -20,6 +20,10 @@ pub struct AppConfig {
     pub risk: RiskSection,
     #[serde(default)]
     pub storage: StorageConfig,
+    #[serde(default)]
+    pub news: NewsConfig,
+    #[serde(default)]
+    pub copilot: CopilotConfig,
 }
 
 impl AppConfig {
@@ -224,6 +228,70 @@ impl StorageConfig {
     }
 }
 
+/// RSS/Atom feed source configuration for the news engine.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewsFeedConfig {
+    pub name: String,
+    pub url: String,
+    /// "rss" or "atom"
+    #[serde(default = "default_feed_type")]
+    pub feed_type: String,
+    /// 1-10, higher = more important
+    #[serde(default = "default_feed_priority")]
+    pub priority: u8,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+
+/// News engine configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewsConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// How often feeds are polled, in seconds.
+    #[serde(default = "default_news_poll_secs")]
+    pub poll_interval_secs: u64,
+    #[serde(default)]
+    pub feeds: Vec<NewsFeedConfig>,
+}
+
+impl Default for NewsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            poll_interval_secs: default_news_poll_secs(),
+            feeds: Vec::new(),
+        }
+    }
+}
+
+/// AI copilot (OpenRouter) configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CopilotConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// OpenRouter model slug. "openrouter/free" auto-routes to a free model.
+    #[serde(default = "default_copilot_model")]
+    pub model: String,
+    /// OpenRouter API base URL.
+    #[serde(default = "default_copilot_base_url")]
+    pub base_url: String,
+    /// Max tokens per response.
+    #[serde(default = "default_copilot_max_tokens")]
+    pub max_tokens: u32,
+}
+
+impl Default for CopilotConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            model: default_copilot_model(),
+            base_url: default_copilot_base_url(),
+            max_tokens: default_copilot_max_tokens(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StorageBackendKind {
     Sqlite,
@@ -247,6 +315,34 @@ fn normalize_optional_string(value: String) -> Option<String> {
 
 fn default_data_dir() -> String {
     "data".to_string()
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_feed_type() -> String {
+    "rss".to_string()
+}
+
+fn default_feed_priority() -> u8 {
+    5
+}
+
+fn default_news_poll_secs() -> u64 {
+    300
+}
+
+fn default_copilot_model() -> String {
+    "openrouter/free".to_string()
+}
+
+fn default_copilot_base_url() -> String {
+    "https://openrouter.ai/api/v1".to_string()
+}
+
+fn default_copilot_max_tokens() -> u32 {
+    1024
 }
 
 fn default_max_daily_loss() -> f64 {

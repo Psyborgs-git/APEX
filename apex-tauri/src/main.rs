@@ -5,7 +5,7 @@ mod state;
 mod tracing_setup;
 mod validation;
 
-use commands::{alerts, brokers, data, health, market, ml, notebook, orders, risk, settings};
+use commands::{alerts, brokers, copilot, data, graph, health, market, ml, news, notebook, orderbook, orders, risk, scanner, settings};
 use commands::strategy;
 use tauri::Manager;
 
@@ -68,6 +68,7 @@ fn main() {
             orders::modify_order,
             orders::get_positions,
             orders::get_open_orders,
+            orders::get_orders,
             orders::get_account_balance,
             alerts::add_alert,
             alerts::remove_alert,
@@ -76,6 +77,14 @@ fn main() {
             risk::reset_halt,
             data::get_historical_data,
             data::get_watchlist_symbols,
+            news::get_news,
+            news::search_news,
+            news::list_news_feeds,
+            scanner::run_scan,
+            graph::get_graph,
+            graph::compute_correlations,
+            orderbook::get_order_book,
+            copilot::copilot_chat,
             strategy::list_strategy_files,
             strategy::create_strategy_file,
             strategy::save_strategy_file,

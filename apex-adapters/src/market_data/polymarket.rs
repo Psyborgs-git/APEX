@@ -55,7 +55,7 @@ impl PolymarketAdapter {
     }
 
     /// Fetch market data from Polymarket GraphQL API
-    async fn fetch_markets(&self) -> Result<Vec<PolymarketMarket>> {
+    pub async fn fetch_markets(&self) -> Result<Vec<PolymarketMarket>> {
         let query = r#"
             query {
                 markets(orderBy: volumeDesc) {
@@ -333,7 +333,7 @@ struct MarketsResponse {
 }
 
 #[derive(Debug, Deserialize)]
-struct PolymarketMarket {
+pub struct PolymarketMarket {
     id: String,
     question: String,
     #[serde(rename = "outcomeAssetCount")]

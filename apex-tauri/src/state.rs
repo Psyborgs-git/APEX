@@ -24,13 +24,18 @@ use crate::commands::python_runtime::RuntimePaths;
 use crate::config::{AppConfig, StorageBackendKind};
 use apex_core::application::alert_engine::AlertEngine;
 use apex_core::application::circuit_breaker::reconcile_on_startup;
+use apex_core::application::graph_engine::GraphEngine;
 use apex_core::application::market_data_aggregator::MarketDataAggregator;
 use apex_core::application::metrics::Metrics;
+use apex_core::application::news_engine::{FeedType, NewsEngine, NewsFeed};
 use apex_core::application::order_trade_manager::OrderTradeManager;
 use apex_core::application::risk_engine::{RiskConfig, RiskEngine};
+use apex_core::application::scanner::MarketScanner;
 use apex_core::bus::message_bus::{BusMessage, MessageBus, Topic};
 use apex_core::ports::execution::ExecutionPort;
+use apex_core::ports::market_data::MarketDataPort;
 use apex_core::ports::storage::StoragePort;
+use crate::config::CopilotConfig;
 
 fn env_var(name: &str) -> Option<String> {
     let raw = std::env::var(name).ok()?;
@@ -308,6 +313,12 @@ pub struct AppState {
     pub storage_backend: String,
     pub storage_target: String,
     pub metrics: Arc<Metrics>,
+    pub news: Arc<NewsEngine>,
+    pub graph: Arc<tokio::sync::RwLock<GraphEngine>>,
+    pub scanner: Arc<MarketScanner>,
+    pub history_source: Arc<dyn MarketDataPort>,
+    pub copilot: CopilotConfig,
+    pub http: reqwest::Client,
     brokers: HashMap<String, BrokerRuntimeEntry>,
     pub started_at: Instant,
 }
@@ -348,7 +359,8 @@ impl AppState {
         let mut brokers = HashMap::new();
 
         let yahoo_adapter = Arc::new(YahooFinanceAdapter::new());
-        aggregator_inner.add_adapter(yahoo_adapter);
+        aggregator_inner.add_adapter(yahoo_adapter.clone());
+        let scanner_source: Arc<dyn MarketDataPort> = yahoo_adapter;
 
         // Register paper trading adapter — always available as default execution.
         let paper = Arc::new(PaperTradingAdapter::new());
@@ -650,6 +662,62 @@ impl AppState {
         let otm = Arc::new(otm_inner);
 
         let alerts = Arc::new(AlertEngine::new(bus.clone()));
+        alerts.start();
+
+        // Evaluate DailyPnl alert rules against the live session P&L whenever a
+        // position update lands on the bus.
+        {
+            let alerts = alerts.clone();
+            let risk = risk.clone();
+            let bus = bus.clone();
+            tokio::spawn(async move {
+                let mut rx = bus.subscribe(Topic::PositionUpdate);
+                loop {
+                    match rx.recv().await {
+                        Ok(_) => alerts.evaluate_pnl(risk.session_pnl()).await,
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    }
+                }
+            });
+        }
+
+        // News engine — publishes items onto the bus for the `news-item` push.
+        let (news_tx, mut news_rx) = tokio::sync::mpsc::unbounded_channel();
+        let news_engine = Arc::new(NewsEngine::new(news_tx));
+        if config.news.enabled {
+            for feed in &config.news.feeds {
+                if !feed.enabled {
+                    continue;
+                }
+                news_engine.add_feed(NewsFeed {
+                    name: feed.name.clone(),
+                    url: feed.url.clone(),
+                    feed_type: if feed.feed_type.eq_ignore_ascii_case("atom") {
+                        FeedType::Atom
+                    } else {
+                        FeedType::Rss
+                    },
+                    priority: feed.priority,
+                    enabled: feed.enabled,
+                });
+            }
+            news_engine
+                .clone()
+                .start_polling_loop(config.news.poll_interval_secs)
+                .await;
+        }
+        {
+            let bus = bus.clone();
+            tokio::spawn(async move {
+                while let Some(item) = news_rx.recv().await {
+                    bus.publish(Topic::NewsItem, BusMessage::News(item));
+                }
+            });
+        }
+
+        let graph = Arc::new(tokio::sync::RwLock::new(GraphEngine::new()));
+        let scanner = Arc::new(MarketScanner::new(scanner_source.clone()));
 
         // Crash recovery — reconcile stale orders and positions on startup
         let broker_ids = otm.authenticated_broker_ids();
@@ -689,6 +757,15 @@ impl AppState {
             storage_backend: storage.backend.to_string(),
             storage_target: storage.target,
             metrics,
+            news: news_engine,
+            graph,
+            scanner,
+            history_source: scanner_source,
+            copilot: config.copilot.clone(),
+            http: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .unwrap_or_default(),
             brokers,
             started_at: Instant::now(),
         })

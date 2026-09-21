@@ -10,6 +10,7 @@
     "frontendDist": "../apex-ui/dist"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "title": "APEX Terminal",
@@ -25,7 +26,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self'; connect-src 'self' https://query1.finance.yahoo.com; img-src 'self' data:"
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost https://query1.finance.yahoo.com https://openrouter.ai https://api.binance.com; img-src 'self' data:"
     }
   },
   "bundle": {

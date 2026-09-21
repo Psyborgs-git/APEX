@@ -7,6 +7,7 @@ use apex_core::ports::market_data::MarketDataPort;
 use apex_core::domain::models::Symbol;
 
 #[tokio::test]
+#[ignore = "requires live network access to exchange APIs"]
 async fn test_binance_adapter_connection() {
     let adapter = BinanceAdapter::new();
     
@@ -26,6 +27,7 @@ async fn test_binance_adapter_connection() {
 }
 
 #[tokio::test]
+#[ignore = "requires live network access to exchange APIs"]
 async fn test_coinbase_adapter_connection() {
     let adapter = CoinbaseAdapter::new();
     
@@ -45,6 +47,7 @@ async fn test_coinbase_adapter_connection() {
 }
 
 #[tokio::test]
+#[ignore = "requires live network access to exchange APIs"]
 async fn test_polymarket_adapter_markets() {
     let adapter = PolymarketAdapter::new();
     
@@ -56,6 +59,7 @@ async fn test_polymarket_adapter_markets() {
 }
 
 #[tokio::test]
+#[ignore = "requires live network access to exchange APIs"]
 async fn test_binance_historical_ohlcv() {
     let adapter = BinanceAdapter::new();
     let symbol = Symbol("BTCUSDT".to_string());
@@ -72,6 +76,7 @@ async fn test_binance_historical_ohlcv() {
 }
 
 #[tokio::test]
+#[ignore = "requires live network access to exchange APIs"]
 async fn test_coinbase_historical_ohlcv() {
     let adapter = CoinbaseAdapter::new();
     let symbol = Symbol("BTC-USD".to_string());

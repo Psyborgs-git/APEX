@@ -454,6 +454,17 @@ impl NewsEngine {
         results.into_iter().take(limit).collect()
     }
 
+    /// Get the most recent news items across all feeds, newest first.
+    pub fn latest_news(&self, limit: usize) -> Vec<NewsItem> {
+        let mut results: Vec<NewsItem> = self
+            .news_cache
+            .iter()
+            .map(|e| e.value().clone())
+            .collect();
+        results.sort_by(|a, b| b.published.cmp(&a.published));
+        results.into_iter().take(limit).collect()
+    }
+
     /// Get news items for a specific symbol
     pub fn get_news_for_symbol(&self, symbol: &Symbol, limit: usize) -> Vec<NewsItem> {
         let mut results: Vec<NewsItem> = self.news_cache

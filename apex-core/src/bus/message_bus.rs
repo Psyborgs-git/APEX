@@ -88,11 +88,22 @@ impl MessageBus {
     }
 
     /// Publish a message to a topic. Creates the channel if it doesn't exist.
+    /// Parameterized topics (`Tick`, `Quote`, `OrderUpdate`, `StrategySignal`)
+    /// also fan out to their `"*"` wildcard channel so subscribers can listen
+    /// to every message of that kind via e.g. `Topic::Quote("*".into())`.
     /// Returns the number of receivers that received the message.
     pub fn publish(&self, topic: Topic, message: BusMessage) -> usize {
+        let mut delivered = self.send_on(&topic, message.clone());
+        if let Some(wildcard) = wildcard_variant(&topic) {
+            delivered += self.send_on(&wildcard, message);
+        }
+        delivered
+    }
+
+    fn send_on(&self, topic: &Topic, message: BusMessage) -> usize {
         let sender = self
             .senders
-            .entry(topic)
+            .entry(topic.clone())
             .or_insert_with(|| broadcast::channel(self.channel_size).0);
         // If no receivers, send returns Err but that's OK
         sender.send(message).unwrap_or(0)
@@ -116,6 +127,18 @@ impl MessageBus {
 impl Default for MessageBus {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Map a parameterized topic to its `*` wildcard variant.
+fn wildcard_variant(topic: &Topic) -> Option<Topic> {
+    let wildcard = "*".to_string();
+    match topic {
+        Topic::Tick(key) if key != &wildcard => Some(Topic::Tick(wildcard)),
+        Topic::Quote(key) if key != &wildcard => Some(Topic::Quote(wildcard)),
+        Topic::OrderUpdate(key) if key != &wildcard => Some(Topic::OrderUpdate(wildcard)),
+        Topic::StrategySignal(key) if key != &wildcard => Some(Topic::StrategySignal(wildcard)),
+        _ => None,
     }
 }
 
@@ -228,5 +251,68 @@ mod tests {
 
         let _rx2 = bus.subscribe(Topic::Tick("AAPL".into()));
         assert_eq!(bus.topic_count(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_wildcard_subscriber_receives_parameterized_publish() {
+        let bus = MessageBus::new();
+        let mut rx = bus.subscribe(Topic::Quote("*".into()));
+
+        let quote = Quote {
+            symbol: Symbol("AAPL".into()),
+            bid: 149.0,
+            ask: 150.0,
+            last: 149.5,
+            open: 148.0,
+            high: 151.0,
+            low: 147.5,
+            volume: 1_000_000,
+            change_pct: 0.8,
+            vwap: 149.2,
+            updated_at: Utc::now(),
+        };
+
+        let delivered = bus.publish(
+            Topic::Quote("AAPL".into()),
+            BusMessage::QuoteData(quote.clone()),
+        );
+        assert_eq!(delivered, 1);
+
+        let msg = tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv())
+            .await
+            .expect("timed out waiting for wildcard delivery")
+            .expect("channel closed");
+        match msg {
+            BusMessage::QuoteData(q) => assert_eq!(q.symbol.0, "AAPL"),
+            other => panic!("unexpected message: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_wildcard_publish_does_not_fan_out_again() {
+        let bus = MessageBus::new();
+        let mut rx = bus.subscribe(Topic::Quote("*".into()));
+
+        let quote = Quote {
+            symbol: Symbol("*".into()),
+            bid: 0.0,
+            ask: 0.0,
+            last: 0.0,
+            open: 0.0,
+            high: 0.0,
+            low: 0.0,
+            volume: 0,
+            change_pct: 0.0,
+            vwap: 0.0,
+            updated_at: Utc::now(),
+        };
+
+        bus.publish(Topic::Quote("*".into()), BusMessage::QuoteData(quote));
+        let msg = rx.recv().await.expect("channel closed");
+        assert!(matches!(msg, BusMessage::QuoteData(_)));
+        // No second copy should arrive on the same channel
+        assert!(tokio::time::timeout(std::time::Duration::from_millis(50), rx.recv())
+            .await
+            .is_err());
     }
 }

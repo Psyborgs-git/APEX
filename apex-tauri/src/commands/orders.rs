@@ -121,6 +121,46 @@ pub async fn get_open_orders(state: State<'_, AppState>) -> Result<Vec<OrderDto>
         .collect())
 }
 
+/// Get order history (all statuses, newest first) — backs the order blotter.
+/// Falls back to the in-memory open-order map when storage has no rows yet,
+/// so a fresh session still shows resting orders.
+#[tauri::command]
+pub async fn get_orders(
+    symbol: Option<String>,
+    limit: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<Vec<OrderDto>, String> {
+    if let Some(ref s) = symbol {
+        validation::validate_symbol(s)?;
+    }
+
+    let mut orders = state
+        .storage
+        .query_orders(OrderQuery {
+            symbol: symbol.clone().map(Symbol),
+            status: None,
+            broker_id: None,
+            from: None,
+            to: None,
+            limit: Some(limit.unwrap_or(200).min(1000)),
+        })
+        .await
+        .map_err(|e| format!("Failed to query orders: {}", e))?;
+
+    // Merge in-memory open orders not yet flushed to storage.
+    for open in state.otm.open_orders() {
+        if !orders.iter().any(|o| o.id == open.id) {
+            if symbol.as_ref().map(|s| open.symbol.0 == *s).unwrap_or(true) {
+                orders.push(open);
+            }
+        }
+    }
+    orders.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    orders.truncate(limit.unwrap_or(200).min(1000));
+
+    Ok(orders.iter().map(OrderDto::from).collect())
+}
+
 /// Get account balance for a broker.
 #[tauri::command]
 pub async fn get_account_balance(

@@ -69,6 +69,30 @@ impl AlertEngine {
         self.rules.read().await.clone()
     }
 
+    /// Spawn the background evaluation loop.
+    ///
+    /// Subscribes to the quote wildcard topic on the message bus and evaluates
+    /// every enabled rule against each incoming quote. Without this, rules are
+    /// stored but never evaluated.
+    pub fn start(self: &Arc<Self>) {
+        let engine = Arc::clone(self);
+        tokio::spawn(async move {
+            let mut rx = engine.bus.subscribe(Topic::Quote("*".into()));
+            loop {
+                match rx.recv().await {
+                    Ok(BusMessage::QuoteData(quote)) => {
+                        engine.evaluate_quote(&quote).await;
+                    }
+                    Ok(_) => {}
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                        tracing::warn!(skipped, "Alert engine lagging behind quote stream");
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                }
+            }
+        });
+    }
+
     /// Evaluate all rules against a quote update
     pub async fn evaluate_quote(&self, quote: &Quote) {
         let rules = self.rules.read().await;
