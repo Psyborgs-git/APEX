@@ -104,22 +104,25 @@ impl AutomationEngine {
         }
         match serde_json::to_string_pretty(&list) {
             Ok(json) => {
-                // Atomic-ish write: temp file + rename. On Windows, `rename`
-                // refuses to overwrite an existing destination — remove it
-                // first, and log every failure instead of swallowing it.
+                // Atomic-ish write: temp file + rename. Unix `rename`
+                // atomically replaces the destination; on Windows it refuses
+                // to overwrite, so fall back to copy+remove — the durable
+                // copy is never deleted before its replacement exists.
                 let tmp = self.persist_path.with_extension("json.tmp");
                 if let Err(e) = std::fs::write(&tmp, &json) {
                     tracing::warn!(error = %e, "Failed to write automations tmp file");
                     return;
                 }
-                if self.persist_path.exists() {
-                    if let Err(e) = std::fs::remove_file(&self.persist_path) {
-                        tracing::warn!(error = %e, "Failed to replace automations.json");
-                        return;
-                    }
-                }
                 if let Err(e) = std::fs::rename(&tmp, &self.persist_path) {
-                    tracing::warn!(error = %e, "Failed to rename automations tmp file");
+                    tracing::debug!(error = %e, "rename failed — falling back to copy");
+                    match std::fs::copy(&tmp, &self.persist_path) {
+                        Ok(_) => {
+                            let _ = std::fs::remove_file(&tmp);
+                        }
+                        Err(e2) => {
+                            tracing::warn!(error = %e2, "Failed to persist automations.json");
+                        }
+                    }
                 }
             }
             Err(e) => tracing::warn!(error = %e, "Failed to serialize automations"),
