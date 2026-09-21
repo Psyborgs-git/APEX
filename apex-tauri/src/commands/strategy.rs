@@ -315,7 +315,16 @@ pub(crate) fn normalize_strategy_path(
     if trimmed.is_empty() {
         return Err("Strategy path must not be empty".into());
     }
-    if Path::new(trimmed).extension() != Some(OsStr::new("py")) {
+    // Containment: every component must be a plain name — no `..`, `.`,
+    // absolute roots, or drive prefixes can escape the strategy root.
+    let rel = Path::new(trimmed);
+    if !rel
+        .components()
+        .all(|c| matches!(c, std::path::Component::Normal(_)))
+    {
+        return Err("Strategy path must stay inside the strategies directory".into());
+    }
+    if rel.extension() != Some(OsStr::new("py")) {
         return Err("Strategy files must end in .py".into());
     }
 

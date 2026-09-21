@@ -317,7 +317,12 @@ pub(crate) async fn model_signal_inner(
     use chrono::{Duration, Utc};
 
     validation::validate_symbol(symbol)?;
-    validation::validate_string_length(model_id, "model_id")?;
+    // model_id selects a file inside models_dir — restrict to a safe
+    // filename charset (no separators, no `..`) so it can't escape.
+    validation::validate_symbol(model_id)?;
+    if model_id.contains("..") {
+        return Err("model_id must not contain '..'".into());
+    }
 
     // Model metadata → artifact + required feature order.
     let metadata_path = models_dir.join(format!("{model_id}.json"));
@@ -329,6 +334,15 @@ pub(crate) async fn model_signal_inner(
             .map_err(|e| format!("Failed to read model metadata: {e}"))?,
     )
     .map_err(|e| format!("Failed to parse model metadata: {e}"))?;
+    // The metadata file names the artifact — require a bare filename so a
+    // tampered metadata JSON can't redirect the loader outside models_dir.
+    if !metadata
+        .model_file
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '.' || c == '_' || c == '-')
+    {
+        return Err("model metadata contains an invalid model_file".into());
+    }
     let model_path = models_dir.join(&metadata.model_file);
     if !model_path.exists() {
         return Err(format!("Model artifact missing: {}", model_path.display()));

@@ -727,9 +727,33 @@ impl AppState {
         }
         {
             let bus = bus.clone();
+            let alerts = alerts.clone();
             tokio::spawn(async move {
                 while let Some(item) = news_rx.recv().await {
+                    alerts.evaluate_news(&item).await;
                     bus.publish(Topic::NewsItem, BusMessage::News(item));
+                }
+            });
+        }
+
+        // Order journal — persist every order update so the blotter survives
+        // restarts (the storage write is an upsert keyed on order id).
+        {
+            let storage = storage.storage.clone();
+            let bus = bus.clone();
+            tokio::spawn(async move {
+                let mut rx = bus.subscribe(Topic::OrderUpdate("*".into()));
+                loop {
+                    match rx.recv().await {
+                        Ok(BusMessage::OrderData(order)) => {
+                            if let Err(e) = storage.write_order(&order).await {
+                                tracing::warn!(error = %e, order = %order.id.0, "Failed to journal order");
+                            }
+                        }
+                        Ok(_) => {}
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    }
                 }
             });
         }

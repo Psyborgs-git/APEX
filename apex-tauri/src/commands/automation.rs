@@ -61,6 +61,7 @@ pub struct AutomationDto {
     pub created_at: String,
     pub last_run_at: Option<String>,
     pub last_result: Option<String>,
+    pub orders_today: u32,
 }
 
 impl From<&AutomationRule> for AutomationDto {
@@ -83,6 +84,7 @@ impl From<&AutomationRule> for AutomationDto {
             created_at: r.created_at.to_rfc3339(),
             last_run_at: r.last_run_at.map(|t| t.to_rfc3339()),
             last_result: r.last_result.clone(),
+            orders_today: r.orders_today,
         }
     }
 }
@@ -173,6 +175,13 @@ async fn run_rule(
     models: &ModelRegistry,
     runtime_paths: &RuntimePaths,
 ) -> String {
+    // Recheck the live-trading gate on every run — the stored rule predates
+    // any config change, so a rule created while allow_live_trading was true
+    // must stop trading the moment it's turned off.
+    if let Err(e) = check_broker_allowed(state, &rule.broker_id) {
+        return format!("blocked: {e}");
+    }
+
     let signal = match crate::commands::ml::model_signal_inner(
         &rule.model_id,
         &rule.symbol,
@@ -204,6 +213,11 @@ async fn run_rule(
         OrderSide::Buy => "BUY",
         OrderSide::Sell => "SELL",
     };
+    let cap = state.automations_cfg.max_orders_per_day;
+    if !state.automations.can_place_today(&rule.id, cap) {
+        return format!("blocked: daily order cap reached ({cap})");
+    }
+
     let order = NewOrderRequest {
         symbol: Symbol(rule.symbol.clone()),
         side: side.clone(),
@@ -215,15 +229,18 @@ async fn run_rule(
     };
 
     match state.otm.submit_order(order, &rule.broker_id).await {
-        Ok(id) => format!(
-            "placed {side} {qty} {sym} @ mkt (order {oid}) — signal={sig} prob={prob:.2}",
-            side = side_label,
-            qty = rule.quantity,
-            sym = rule.symbol,
-            oid = id.0,
-            sig = signal.signal,
-            prob = prob,
-        ),
+        Ok(id) => {
+            state.automations.record_order(&rule.id);
+            format!(
+                "placed {side} {qty} {sym} @ mkt (order {oid}) — signal={sig} prob={prob:.2}",
+                side = side_label,
+                qty = rule.quantity,
+                sym = rule.symbol,
+                oid = id.0,
+                sig = signal.signal,
+                prob = prob,
+            )
+        }
         Err(e) => format!("order rejected: {e}"),
     }
 }

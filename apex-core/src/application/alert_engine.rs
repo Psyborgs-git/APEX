@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
@@ -60,6 +61,9 @@ pub struct AlertEngine {
     /// false→true edge and re-arms once the condition clears, so a
     /// sustained breach emits exactly one notification.
     triggered: Arc<dashmap::DashMap<String, bool>>,
+    /// Rolling per-symbol price history for windowed PctChange rules
+    /// (pruned to the last 24h).
+    price_windows: dashmap::DashMap<String, std::collections::VecDeque<(DateTime<Utc>, f64)>>,
 }
 
 impl AlertEngine {
@@ -69,7 +73,27 @@ impl AlertEngine {
             bus,
             rules: Arc::new(tokio::sync::RwLock::new(Vec::new())),
             triggered: Arc::new(dashmap::DashMap::new()),
+            price_windows: dashmap::DashMap::new(),
         }
+    }
+
+    /// Percentage change of `quote.last` against the price at the start of
+    /// the rolling window (`window_secs` back from `quote.time`).
+    fn windowed_pct_change(&self, quote: &Quote, window_secs: u64) -> Option<f64> {
+        let window = self.price_windows.get(&quote.symbol.0)?;
+        let cutoff = quote.updated_at - chrono::Duration::seconds(window_secs as i64);
+        // Reference = newest sample at-or-before the window start (falls back
+        // to the oldest recorded price when the window isn't filled yet).
+        let reference = window
+            .iter()
+            .rev()
+            .find(|(t, _)| *t <= cutoff)
+            .or_else(|| window.front())
+            .map(|(_, p)| *p)?;
+        if reference.abs() < f64::EPSILON {
+            return None;
+        }
+        Some((quote.last - reference) / reference * 100.0)
     }
 
     /// Add a new alert rule
@@ -118,8 +142,26 @@ impl AlertEngine {
         });
     }
 
+    /// Record a quote into the rolling price window used by PctChange rules.
+    fn record_price_window(&self, quote: &Quote) {
+        let cutoff = quote.updated_at - chrono::Duration::hours(24);
+        let mut window = self
+            .price_windows
+            .entry(quote.symbol.0.clone())
+            .or_default();
+        window.push_back((quote.updated_at, quote.last));
+        while window.front().map(|(t, _)| *t < cutoff).unwrap_or(false) {
+            window.pop_front();
+        }
+        // Cap pathological tick rates — per-symbol history stays bounded.
+        while window.len() > 50_000 {
+            window.pop_front();
+        }
+    }
+
     /// Evaluate all rules against a quote update
     pub async fn evaluate_quote(&self, quote: &Quote) {
+        self.record_price_window(quote);
         let rules = self.rules.read().await;
         for stored_alert in rules.iter() {
             if !stored_alert.enabled {
@@ -147,7 +189,14 @@ impl AlertEngine {
                 AlertRule::PriceAbove { threshold, .. } => quote.last > *threshold,
                 AlertRule::PriceBelow { threshold, .. } => quote.last < *threshold,
                 AlertRule::VwapCross { .. } => (quote.last - quote.vwap).abs() < 0.01,
-                AlertRule::PctChange { pct, .. } => quote.change_pct.abs() >= *pct,
+                AlertRule::PctChange {
+                    pct, window_secs, ..
+                } => {
+                    self.windowed_pct_change(quote, *window_secs)
+                        .unwrap_or(quote.change_pct)
+                        .abs()
+                        >= *pct
+                }
                 _ => false,
             };
 
@@ -161,6 +210,33 @@ impl AlertEngine {
                 if fired {
                     self.fire_alert(&stored_alert.id, &stored_alert.rule);
                 }
+            }
+        }
+    }
+
+    /// Evaluate NewsKeyword rules against an incoming news item — the pattern
+    /// matches case-insensitively against headline+summary; `symbols` filters
+    /// the item's symbol tags (empty = match any).
+    pub async fn evaluate_news(&self, item: &crate::domain::models::NewsItem) {
+        let rules = self.rules.read().await;
+        let haystack = format!("{} {}", item.headline, item.summary).to_lowercase();
+        for stored_alert in rules.iter() {
+            if !stored_alert.enabled {
+                continue;
+            }
+            if let AlertRule::NewsKeyword { pattern, symbols } = &stored_alert.rule {
+                if !haystack.contains(&pattern.to_lowercase()) {
+                    continue;
+                }
+                // symbols filter: when populated, require a tag intersection
+                if !symbols.is_empty()
+                    && !symbols
+                        .iter()
+                        .any(|s| item.symbols.iter().any(|is| is.0.eq_ignore_ascii_case(s)))
+                {
+                    continue;
+                }
+                self.fire_alert(&stored_alert.id, &stored_alert.rule);
             }
         }
     }

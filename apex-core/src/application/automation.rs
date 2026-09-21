@@ -41,6 +41,12 @@ pub struct AutomationRule {
     pub last_run_at: Option<DateTime<Utc>>,
     /// Human-readable outcome of the most recent run.
     pub last_result: Option<String>,
+    /// UTC day (YYYY-MM-DD) `orders_today` counts against.
+    #[serde(default)]
+    pub orders_day: Option<String>,
+    /// Orders successfully placed on `orders_day`.
+    #[serde(default)]
+    pub orders_today: u32,
 }
 
 impl AutomationRule {
@@ -145,6 +151,8 @@ impl AutomationEngine {
             created_at: Utc::now(),
             last_run_at: None,
             last_result: None,
+            orders_day: None,
+            orders_today: 0,
         };
         self.rules
             .write()
@@ -185,6 +193,31 @@ impl AutomationEngine {
             .filter(|r| r.is_due(now))
             .cloned()
             .collect()
+    }
+
+    /// Whether the rule may place another order today (UTC), under `cap`.
+    pub fn can_place_today(&self, id: &str, cap: u32) -> bool {
+        let today = Utc::now().format("%Y-%m-%d").to_string();
+        match self.rules.read().unwrap().get(id) {
+            Some(r) => r.orders_day.as_deref() != Some(today.as_str()) || r.orders_today < cap,
+            None => false,
+        }
+    }
+
+    /// Increment the rule's successful-order count for the current UTC day
+    /// (resets when the day rolls over).
+    pub fn record_order(&self, id: &str) {
+        let today = Utc::now().format("%Y-%m-%d").to_string();
+        let mut rules = self.rules.write().unwrap();
+        if let Some(r) = rules.get_mut(id) {
+            if r.orders_day.as_deref() != Some(today.as_str()) {
+                r.orders_day = Some(today);
+                r.orders_today = 0;
+            }
+            r.orders_today += 1;
+            drop(rules);
+            self.save();
+        }
     }
 
     /// Stamp a run outcome back onto the rule.
@@ -268,6 +301,30 @@ mod tests {
         let e2 = AutomationEngine::new(path.clone());
         assert_eq!(e2.list().len(), 1);
         assert_eq!(e2.list()[0].name, "persisted");
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn daily_order_cap() {
+        let (e, path) = engine();
+        let r = e.add_rule(
+            "capped".into(),
+            AutomationKind::ModelSignal,
+            "AAPL".into(),
+            "m".into(),
+            60,
+            1.0,
+            0.5,
+            "paper".into(),
+        );
+        assert!(e.can_place_today(&r.id, 2));
+        e.record_order(&r.id);
+        e.record_order(&r.id);
+        assert!(!e.can_place_today(&r.id, 2));
+        // count survives reload
+        let e2 = AutomationEngine::new(path.clone());
+        assert!(!e2.can_place_today(&r.id, 2));
+        assert!(e2.can_place_today(&r.id, 3));
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 }

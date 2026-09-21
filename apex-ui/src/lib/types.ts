@@ -323,6 +323,7 @@ export interface AutomationDto {
   created_at: string;
   last_run_at: string | null;
   last_result: string | null;
+  orders_today: number;
 }
 
 export interface CreateAutomationDto {
