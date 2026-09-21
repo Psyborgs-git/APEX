@@ -176,3 +176,18 @@ Branch `devin/1789992204-apex-buildout-ui-audit`, commit 2cb5850. Same live setu
 ## Net new defects this pass
 1. **ACF bars invisible** (transparent Tailwind var-color + `/opacity` compile) — MEDIUM.
 2. **Regression section hidden for cross-market pairs** (exact-timestamp align) + unhandled rejection + no empty state — MEDIUM.
+
+---
+
+# Phase E — Defect-Fix Re-verification (commit 827f23a / relaunched binary)
+
+Rebuilt `apex-tauri` + relaunched (fresh vite modules confirmed — `opacity-70`, `quant-regression-empty`, `unsubscribeVisibleLogicalRangeChange` all present in served transforms). Verified via UI + docked inspector console.
+
+| Item | Result | Evidence |
+|---|---|---|
+| **ACF bars visible** | **PASS.** `quant-acf` bars now render with real color — computed `background-color: rgb(68,136,255)` (was `rgba(0,0,0,0)`). Blue `bg-accent` bars on positive lags, red `bg-bear` on negative; `opacity-70` applied on top. | `ss_zoom_da3d5504.png` (10 colored bars), `ss_179d2202.png` (`acfBg=rgb(68,136,255)`) |
+| **Cross-market OLS regression** | **PASS.** RELIANCE.NS vs SPY now **renders** — `quant-regression` mounted (`reg=true`, `empty=false`): scatter + amber fit line + α 0.00012 / β 0.184 / R² 0.018 / n 1430 + Residuals chart. Date-key alignment (`format("%Y-%m-%d")`) resolves the US 13:30Z vs NSE 03:45Z timestamp mismatch. No silent hide, no unhandled rejection. | `ss_ddc8b6bf.png` (section rendered), `ss_179d2202.png` (`reg=true`) |
+| **lwc `Object disposed` on Clear-all** | **PASS.** RSI pane clear AND multi-series (SMA overlay + MACD pane w/ line+signal+histogram) clear both produced **zero** console errors — `unsubscribeVisibleLogicalRangeChange` fix eliminated the disposal race. Console stayed clean. | `ss_ce35458a.png`, `ss_7a8ae813.png` (clean console post-clear) |
+| **Regression sanity** | **PASS.** IND overlays still render (SMA 20 amber line over candles); ANALYTICS loads AAPL stats fully (Sharpe 0.78, n1499) incl. visible ACF + OLS β1.198. | `ss_887ecd60.png` (SMA line), `ss_e88587da.png` (AAPL panel) |
+
+**Console:** fully clean this pass — no `Object disposed`, no unhandled rejections (cross-market regression renders now, so the rejection path isn't hit).
