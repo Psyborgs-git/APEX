@@ -122,3 +122,32 @@ One headline renders `+0.18` where a relative time is expected (visible on the l
 ### Environmental (unchanged)
 - Binance HTTP 451 geo-block persists — crypto L2 book can't be verified from this host.
 - WebKit inspector works in this debug build now (used for all console verification) — but note console `type` input can leak into page inputs if focus is off; the `{SYMBOL}` artifacts seen during the pass were my leaked typing, not an app bug.
+
+---
+
+# Re-verification pass #2 — second-pass fixes (2025-09-21)
+
+Fresh backend + fresh bundle (no stale vite module this time — TickerTape mounted from boot). All four targeted fixes verified live.
+
+## Results
+
+| Item | Result | Evidence |
+|---|---|---|
+| **Alert latch** | **PASS.** Created RELIANCE.NS `PriceAbove 1000` via UI (form + Save — persisted to `alert_rules` in sqlite, survives page reload). FIRED ALERTS banner showed exactly **one** entry "RELIANCE.NS price above 1000.00", held at 1 over 60s+; zero re-fires after page reload (backend `triggered` latch held). Code fix verified: `evaluate_quote` now early-continues when `symbol != quote.symbol.0`, so foreign-symbol ticks no longer touch `triggered`. | `ss_a303a1f0.png`-era banner, `ss_2f72e6f3.png` (no banner post-reload) |
+| **Post-startup subscription** | **PASS.** TickerTape populated at boot: S&P 500 7,722.61, NASDAQ 26,422.21 ▲1.51%, DOW 51,888.49, NIFTY 50 23,414.38, BTC 86,066 ▲6.04%, ETH 2,748, GOLD, WTI, EURUSD — real values, not "Awaiting market data…". MARKET tab: all 10 index cards populated (S&P+0.92%, NASDAQ+1.48%, NIFTY+0.29%, BTC+5.98%, GOLD−1.16%, USDINR 95.81+0.86%), breadth 6 adv/1 dec. | `ss_zoom_598b748f.png` (tape), `ss_8baa1003.png` (market cards) |
+| **Chart console spam** | **PASS.** Inspector console open on 1D chart for ~30s: **zero** "Cannot update oldest data" errors (previously ~1/s, 850+ total). Fix verified in code: `bucketStart = Math.max(bucketFloor(now), lastBarTimeRef.current)` clamps to last bar time so `update()` never regresses. Live-update path now executes each tick (no throw ⇒ candle updates when the quote moves). | `ss_2a742072.png` (clean console) |
+| **Graph compute + drag** | **PASS.** "Compute from watchlist" renders **7 nodes • 1 edge** — no blackout, no error card. Dragging TCS.NS moved the node and the force layout re-settled (edge ρ 0.82 to RELIANCE.NS stays attached). `select.prototype.call.bind` bug resolved. | `ss_c495d190.png` (rendered), `ss_d3bdedf5.png` (post-drag) |
+
+## Also re-confirmed this pass
+- Space → command input focus → `:BLOTTER`/`:NEWS`/`:CHART`/`:GRAPH` all execute with toasts (Space verified working with inspector closed — see note).
+- `?` opens the KEYBOARD & COMMANDS overlay (shortcuts + syntax).
+- News: entities decoded; entity tag chips render (AMD, AI, ECB, CNN, MS…). Sentiment badges (+0.10, −0.10…) present.
+- Watchlist CHG% real; Blotter/Positions session-scoped (0 orders / 0 open on fresh backend — consistent with in-memory paper trading).
+
+## Minor / cosmetic observations (non-blocking)
+- Graph shows one node labeled by raw UUID (`6ae6bc59-a3df-4979-…`, a Strategy node) instead of a name; one node partially clipped at the right canvas edge.
+- Alerts panel "+" and Save buttons sit near panel edges — clickable but tight at this window height.
+
+## Environment/testing notes (not app defects)
+- Docked WebKit inspector **captures keyboard focus** — while it's open, Space/typing go to it, not the page (caused apparent Space failures mid-pass; resolved by closing inspector). Its close/dock controls are tiny; right-dock ↔ bottom-dock toggles before the × closes it.
+- Earlier "+" and tab-click misses during this pass were a transient invisible `WebKitWebProcess` overlay (spawned by the first Inspect Element) eating clicks — self-inflicted, unmapped it, not an app issue.
