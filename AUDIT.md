@@ -71,3 +71,54 @@ Headlines render `&#x2018;` `&#x2019;` `&apos;` etc. literally (e.g. "&#x2018;&#
 - Notebook cell **Run**, Strategy **Run/Backtest**, ML **Train Model**, Load Stored Data fetch — UI renders, execution paths not exercised.
 - Book tab live crypto depth — blocked by geo-block (no Binance access from this host).
 - Console error capture — WebKit inspector unusable (above).
+
+---
+
+# Re-verification pass — post-fix round (2025-09-21, later)
+
+App restarted fresh (PID ~108265); vite dev server on `:3000`. All fixes were claimed verified by the lead; re-tested live below.
+
+## IMPORTANT — stale vite module during the pass
+
+The webview was initially running a **stale `App.tsx`** transform — the served module had no `TickerTape`/`KeyboardHud` imports at all (vite's transform cache had not invalidated). `touch src/App.tsx` + page reload loaded the real bundle. **This means TickerTape and KeyboardHud were NOT actually live in the running app before the reload** — anything the lead "verified" about them earlier was against a stale bundle. After reload: tape mounts (empty state), HUD works.
+
+## Re-verified working
+
+| Item | Result | Evidence |
+|---|---|---|
+| Chart candles/volume/axes on 1D | Candles, volume histogram, price axis, day axis all render; real Yahoo daily bars | `ss_9166625a.png` |
+| Timeframe switch | 5m/15m/1H/1D buttons switch state; `get_historical_data('RELIANCE.NS','15m')` returns real intraday bars (2026-09-15T03:45 15m bars); chart repaints, crosshair shows intraday times | console verification |
+| Paper order | BUY 1 RELIANCE.NS market → **Filled**@paper in Blotter; Positions "1 open RELIANCE.NS avg 1,247.65". Persists across reload | `ss_2a32fa5a.png` |
+| Alert create/save | `add_alert` succeeds with `{id, ruleJson}` args — camelCase fix confirmed working (earlier `rule_json` mismatch resolved). Remove works via `remove_alert {ruleId}` | console `ADD_OK`, `NOW_RULES: 0` |
+| News entities | Headlines render decoded — "Mbappé", "It's", apostrophes clean | News tab |
+| Watchlist CHG% | Real non-zero: RELIANCE +1.71%, TCS +1.13%, HDFCBANK +1.16%, INFY −1.23%, AAPL +0.5%, MSFT −0.1%, GOOGL +2.1% | live screenshots |
+| MARKET tab | Real breadth **4 advancing / 3 declining / 0 flat**; Top Gainers +1.71/+1.13/+1.16/+0.64; Top Losers −1.23/−0.80/−0.26; headlines populated | `ss_922503a4.png` |
+| Graph containment | "Compute from watchlist" → **GRAPH ERROR** card + RETRY instead of blackout — ErrorBoundary fix works | `ss_7d4ba8dc.png` |
+| KeyboardHud `?` | Opens "KEYBOARD & COMMANDS" overlay listing shortcuts + command syntax (post-reload) | `ss_157b60cb.png` |
+| Space → CommandBar | Space focuses the command input (verified); fix #7 (`isEditable` incl. BUTTON/SELECT/A) is present in code — WebKit doesn't keyboard-focus buttons on click so the hijack path couldn't be exercised by mouse, code-level verified | `ss_7f981b60.png` |
+
+## Defects — still broken / newly found
+
+### HIGH — Alert latch still broken: fires ~once per matching quote (banner spammed to 100+)
+Created RELIANCE.NS `PriceAbove 1000` (always true, last≈1247): the FIRED ALERTS banner accumulated **+97 events** and kept growing — it fires on essentially every poll cycle.
+**Root cause (code-verified)** in `alert_engine.rs::evaluate_quote`: for every incoming quote, `fired` is computed as `symbol == quote.symbol && cond` — so a quote for a *different* symbol (TCS.NS, INFY.NS…) evaluates `fired=false`, and the `if fired != was_triggered` branch then writes `triggered[id]=false`, **re-arming the latch**. With ~7 symbols polling round-robin, ~6/7 ticks reset it and each RELIANCE.NS tick re-fires. The latch only works in a single-symbol world. Fix: skip latch updates when the rule's symbol doesn't match the quote's symbol (early-continue on symbol mismatch before computing `fired`).
+Also observed: `get_alert_rules` returned **3 rules** for one intended alert — `add_rule` blindly pushes with no dedup on id.
+
+### HIGH — Post-startup symbol subscription is a no-op (TickerTape / Market index cards dead forever)
+`TickerTape`/`MarketOverview` call `subscribeSymbols(INDEX_SYMBOLS)` on mount, but:
+1. `market_data_aggregator.rs:84` — `if self.started_adapters.contains_key(&adapter_id) { continue; }` — an already-started adapter is **never re-subscribed**, so the index symbols never reach Yahoo.
+2. `yahoo_finance.rs::subscribe` — the poll loop iterates the **`symbols` Vec captured in the closure**, not `self.subscribed_symbols` — so even if subscribe were re-called, newly-added symbols would never be polled.
+Result: tape shows "Awaiting market data…" permanently, Market index cards show `--` permanently, and any symbol added mid-session gets no quotes. Only the 7 initial watchlist symbols ever stream.
+
+### MEDIUM — Chart console spam: "Cannot update oldest data" every second on 1D
+`CandleChart.tsx:230` live-tick interval calls `candleSeries.update({time: bucketStart})` where `bucketStart` = today's 00:00-UTC bucket; the last stored daily bar's timestamp is later (exchange-tz-dated), so lightweight-charts throws every 1s tick. Observed 850+ occurrences accumulating. The live last-candle update is dead on 1D; console noise masks real errors.
+
+### LOW — Graph compute still throws (contained, but feature dead)
+The `select.prototype.call.bind` nonsense expression at `VectorGraph.tsx:245` still throws "undefined is not an object" on mount — the ErrorBoundary (fix #4) catches it, so it's a graceful dead-feature now rather than a blackout.
+
+### LOW — News item time badge shows "+0.18"
+One headline renders `+0.18` where a relative time is expected (visible on the last news row). Minor formatting defect in the timestamp rendering.
+
+### Environmental (unchanged)
+- Binance HTTP 451 geo-block persists — crypto L2 book can't be verified from this host.
+- WebKit inspector works in this debug build now (used for all console verification) — but note console `type` input can leak into page inputs if focus is off; the `{SYMBOL}` artifacts seen during the pass were my leaked typing, not an app bug.

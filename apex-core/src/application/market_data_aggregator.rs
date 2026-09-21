@@ -79,10 +79,9 @@ impl MarketDataAggregator {
         for adapter in &self.adapters {
             let adapter_id = adapter.adapter_id().to_string();
 
-            if self.started_adapters.contains_key(&adapter_id) {
-                continue;
-            }
-
+            // Always forward new symbols: adapters already running update
+            // their live subscription set (WS adapters may open an extra
+            // socket; the poller extends its shared set).
             let mut tick_stream = match adapter.subscribe(symbols).await {
                 Ok(stream) => stream,
                 Err(err) => {

@@ -24,6 +24,7 @@ pub struct YahooFinanceAdapter {
     client: reqwest::Client,
     status: Arc<RwLock<AdapterHealth>>,
     subscribed_symbols: Arc<RwLock<Vec<Symbol>>>,
+    poll_started: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl YahooFinanceAdapter {
@@ -39,6 +40,7 @@ impl YahooFinanceAdapter {
             client,
             status: Arc::new(RwLock::new(AdapterHealth::Healthy)),
             subscribed_symbols: Arc::new(RwLock::new(Vec::new())),
+            poll_started: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
 
@@ -270,9 +272,20 @@ impl MarketDataPort for YahooFinanceAdapter {
             }
         }
 
-        // Polling loop: fetch quotes and emit ticks every POLL_INTERVAL
+        // Polling loop: fetch quotes and emit ticks every POLL_INTERVAL.
+        // Spawned once — subsequent subscribe() calls only extend the shared
+        // symbol set, which the loop re-reads each pass. The extra receiver
+        // handed back to the caller simply stays idle.
+        if self
+            .poll_started
+            .swap(true, std::sync::atomic::Ordering::SeqCst)
+        {
+            return Ok(rx);
+        }
+        let subscribed = self.subscribed_symbols.clone();
         tokio::spawn(async move {
             loop {
+                let symbols: Vec<Symbol> = subscribed.read().await.clone();
                 for symbol in &symbols {
                     let yahoo_symbol = YahooFinanceAdapter::format_symbol(symbol);
                     let url =

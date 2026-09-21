@@ -50,6 +50,7 @@ const CandleChartInner: React.FC<CandleChartProps> = ({ symbol, ohlcvData, heigh
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
+  const lastBarTimeRef = useRef<number>(0);
   const getQuote = useMarketStore((s) => s.getQuote);
   const quote = useMarketStore((s) => s.quotes.get(symbol));
   const [timeframe, setTimeframe] = useState<ChartTimeframe>('1d');
@@ -157,6 +158,7 @@ const CandleChartInner: React.FC<CandleChartProps> = ({ symbol, ohlcvData, heigh
 
     candleSeries.setData(candles);
     volumeSeries.setData(volumes);
+    lastBarTimeRef.current = Number(candles[candles.length - 1].time);
     chart.timeScale().fitContent();
   }, []);
 
@@ -226,7 +228,13 @@ const CandleChartInner: React.FC<CandleChartProps> = ({ symbol, ohlcvData, heigh
       if (!q || !candleSeriesRef.current || !volumeSeriesRef.current) return;
       if (![q.open, q.high, q.low, q.last, q.volume].every((v) => Number.isFinite(v))) return;
 
-      const bucketStart = (Math.floor(Date.now() / 1000 / bucketSecs) * bucketSecs) as Time;
+      // Ticks must never update at a time earlier than the last stored bar
+      // (e.g. today's daily bar is timestamped at market open, after the
+      // midnight bucket boundary) — lwc rejects that as 'oldest data'.
+      const bucketStart = Math.max(
+        Math.floor(Date.now() / 1000 / bucketSecs) * bucketSecs,
+        lastBarTimeRef.current,
+      ) as Time;
       candleSeriesRef.current.update({
         time: bucketStart,
         open: q.open,

@@ -83,3 +83,17 @@ Notebook: render without crash.
 Attempt WebKitGTK devtools (right-click → Inspect Element) or check vite/browser console for
 red errors; report visible symptoms. Layout audit at current resolution vs 1920 min —
 note truncation/overlap, NaN rendering, dead buttons.
+
+---
+
+# Re-verification pass (post-fix round)
+
+Lead fixed all CRITICAL/HIGH/MEDIUM findings; app restarted fresh (PID ~108265, vite :1420 inside Tauri webview). Verify each fix live:
+
+- T-FIX1 Chart: candles + volume + axes render for RELIANCE.NS on 1D; timeframe switch repaints.
+- T-FIX2 Watchlist: CHG% shows real non-zero values.
+- T-FIX3 Order Entry: BUY 1 RELIANCE.NS market on Paper fills → appears in Positions + Blotter.
+- T-FIX4 Alerts: "+" → RELIANCE.NS PriceAbove 1000 → Save succeeds, rule appears in list.
+- T-FIX5 Graph: "Compute from watchlist" does NOT black out the app (graph or error card).
+- T-FIX6 News: headlines render entities decoded (no &#39;/&apos;/&#x27;).
+- T-FIX7 MARKET tab renders + TickerTape visible; "?" opens KeyboardHud; Space focuses CommandBar.

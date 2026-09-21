@@ -10,7 +10,7 @@ import {
   type Simulation,
 } from 'd3-force';
 import { select } from 'd3';
-import { zoom as d3Zoom, type D3ZoomEvent } from 'd3';
+import { drag as d3Drag, zoom as d3Zoom, type D3ZoomEvent, type D3DragEvent } from 'd3';
 
 interface GraphNode extends SimulationNodeDatum {
   id: string;
@@ -240,13 +240,23 @@ const VectorGraphInner: React.FC<VectorGraphProps> = ({
         .attr('stroke-opacity', 0.4);
     });
 
-    // Drag behavior
-    nodeGroup.call(
-      select.prototype.call.bind(
-        svgSel,
-        // Drag is handled via simulation alpha restart
-      ) as never,
-    );
+    // Drag nodes to reposition them; the pin releases on drag end.
+    const dragBehavior = d3Drag<SVGGElement, GraphNode>()
+      .on('start', (event: D3DragEvent<SVGGElement, GraphNode, GraphNode>, d) => {
+        simulation.alphaTarget(0.3).restart();
+        d.fx = d.x;
+        d.fy = d.y;
+      })
+      .on('drag', (event: D3DragEvent<SVGGElement, GraphNode, GraphNode>, d) => {
+        d.fx = event.x;
+        d.fy = event.y;
+      })
+      .on('end', (event: D3DragEvent<SVGGElement, GraphNode, GraphNode>, d) => {
+        simulation.alphaTarget(0);
+        d.fx = null;
+        d.fy = null;
+      });
+    nodeGroup.call(dragBehavior);
 
     // Tick update
     simulation.on('tick', () => {

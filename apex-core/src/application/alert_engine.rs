@@ -58,7 +58,9 @@ impl AlertEngine {
     /// Add a new alert rule
     pub async fn add_rule(&self, alert: StoredAlert) {
         info!("Adding alert rule: {:?}", alert.id);
-        self.rules.write().await.push(alert);
+        let mut rules = self.rules.write().await;
+        rules.retain(|r| r.id != alert.id);
+        rules.push(alert);
     }
 
     /// Remove an alert rule by ID
@@ -107,16 +109,28 @@ impl AlertEngine {
                 continue;
             }
 
+            // Quote-driven rules only evaluate against their own symbol — a
+            // foreign tick must not touch the trigger latch.
+            let rule_symbol = match &stored_alert.rule {
+                AlertRule::PriceAbove { symbol, .. }
+                | AlertRule::PriceBelow { symbol, .. }
+                | AlertRule::PctChange { symbol, .. }
+                | AlertRule::VwapCross { symbol } => Some(symbol.as_str()),
+                _ => None,
+            };
+            let symbol = match rule_symbol {
+                Some(s) => s,
+                None => continue,
+            };
+            if symbol != quote.symbol.0 {
+                continue;
+            }
+
             let fired = match &stored_alert.rule {
-                AlertRule::PriceAbove { symbol, threshold } => {
-                    symbol == &quote.symbol.0 && quote.last > *threshold
-                }
-                AlertRule::PriceBelow { symbol, threshold } => {
-                    symbol == &quote.symbol.0 && quote.last < *threshold
-                }
-                AlertRule::VwapCross { symbol } => {
-                    symbol == &quote.symbol.0 && (quote.last - quote.vwap).abs() < 0.01
-                }
+                AlertRule::PriceAbove { threshold, .. } => quote.last > *threshold,
+                AlertRule::PriceBelow { threshold, .. } => quote.last < *threshold,
+                AlertRule::VwapCross { .. } => (quote.last - quote.vwap).abs() < 0.01,
+                AlertRule::PctChange { pct, .. } => quote.change_pct.abs() >= *pct,
                 _ => false,
             };
 
