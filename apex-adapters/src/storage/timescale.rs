@@ -194,6 +194,23 @@ impl TimescaleAdapter {
             Timeframe::W1 => "W1",
         }
     }
+
+    fn string_to_timeframe(s: &str) -> Timeframe {
+        match s {
+            "S1" => Timeframe::S1,
+            "S5" => Timeframe::S5,
+            "S15" => Timeframe::S15,
+            "M1" => Timeframe::M1,
+            "M3" => Timeframe::M3,
+            "M5" => Timeframe::M5,
+            "M15" => Timeframe::M15,
+            "M30" => Timeframe::M30,
+            "H1" => Timeframe::H1,
+            "H4" => Timeframe::H4,
+            "W1" => Timeframe::W1,
+            _ => Timeframe::D1,
+        }
+    }
 }
 
 #[async_trait]
@@ -239,7 +256,6 @@ impl StoragePort for TimescaleAdapter {
         let client = self.pool.get().await
             .context("Failed to get database connection")?;
 
-        // Use a default timeframe for manually inserted bars
         let stmt = client.prepare(
             "INSERT INTO ohlcv (time, symbol, timeframe, open, high, low, close, volume)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -252,12 +268,13 @@ impl StoragePort for TimescaleAdapter {
         ).await?;
 
         for bar in bars {
+            let timeframe_str = Self::timeframe_to_string(&bar.timeframe);
             client.execute(
                 &stmt,
                 &[
                     &bar.time,
                     &bar.symbol.0,
-                    &"M1", // Default to M1, can be extended to support other timeframes
+                    &timeframe_str,
                     &bar.open,
                     &bar.high,
                     &bar.low,
@@ -278,7 +295,7 @@ impl StoragePort for TimescaleAdapter {
         let timeframe_str = Self::timeframe_to_string(&params.timeframe);
 
         let query = format!(
-            "SELECT time, symbol, open, high, low, close, volume
+            "SELECT time, symbol, open, high, low, close, volume, timeframe
              FROM ohlcv
              WHERE symbol = $1 AND timeframe = $2 AND time >= $3 AND time <= $4
              ORDER BY time ASC
@@ -303,9 +320,11 @@ impl StoragePort for TimescaleAdapter {
         let mut results = Vec::with_capacity(rows.len());
         for row in rows {
             let volume: i64 = row.get(6);
+            let tf_str: String = row.get(7);
             results.push(OHLCV {
                 time: row.get(0),
                 symbol: Symbol(row.get(1)),
+                timeframe: Self::string_to_timeframe(&tf_str),
                 open: row.get(2),
                 high: row.get(3),
                 low: row.get(4),

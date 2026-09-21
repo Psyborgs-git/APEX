@@ -276,6 +276,7 @@ impl MarketDataPort for GrowwMarketDataAdapter {
                 bars.push(OHLCV {
                     time,
                     symbol: symbol.clone(),
+                    timeframe: timeframe.clone(),
                     open: arr[1].as_f64().unwrap_or(0.0),
                     high: arr[2].as_f64().unwrap_or(0.0),
                     low: arr[3].as_f64().unwrap_or(0.0),

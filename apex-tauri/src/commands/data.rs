@@ -40,8 +40,28 @@ pub(crate) async fn load_bars(
         .await
         .map_err(|e| format!("Failed to query historical data for {}: {}", symbol, e))?;
 
-    // Storage miss → pull from the market data adapter and persist for next time.
-    if bars.is_empty() {
+    // Refresh when the cache is empty, undersized, or its newest bar is older
+    // than the requested timeframe's bucket — a partial/old cache must not
+    // starve intraday charts or analytics of recent data.
+    let bucket_secs: i64 = match tf {
+        Timeframe::S1 => 1,
+        Timeframe::S5 => 5,
+        Timeframe::S15 => 15,
+        Timeframe::M1 => 60,
+        Timeframe::M3 => 180,
+        Timeframe::M5 => 300,
+        Timeframe::M15 => 900,
+        Timeframe::M30 => 1800,
+        Timeframe::H1 => 3600,
+        Timeframe::H4 => 14400,
+        Timeframe::D1 => 86_400,
+        Timeframe::W1 => 604_800,
+    };
+    let newest_is_stale = bars
+        .last()
+        .map(|b| (now - b.time).num_seconds() > bucket_secs * 2)
+        .unwrap_or(true);
+    if bars.is_empty() || bars.len() < limit || newest_is_stale {
         let lookback_days = match tf {
             Timeframe::S1 | Timeframe::S5 | Timeframe::S15 => 1,
             Timeframe::M1 | Timeframe::M3 | Timeframe::M5 | Timeframe::M15 | Timeframe::M30 => 7,
@@ -57,10 +77,18 @@ pub(crate) async fn load_bars(
             .map_err(|e| format!("Failed to fetch historical data for {}: {}", symbol, e))?;
 
         if !fetched.is_empty() {
-            if let Err(e) = state.storage.write_ohlcv(&fetched).await {
+            // Merge cached + fetched on bar time (fetched wins) so a larger
+            // request backfills the cache instead of being trimmed by it.
+            let mut merged: std::collections::BTreeMap<chrono::DateTime<Utc>, OHLCV> =
+                bars.iter().map(|b| (b.time, b.clone())).collect();
+            for b in &fetched {
+                merged.insert(b.time, b.clone());
+            }
+            let merged: Vec<OHLCV> = merged.into_values().collect();
+            if let Err(e) = state.storage.write_ohlcv(&merged).await {
                 tracing::warn!(symbol = %symbol, error = %e, "Failed to persist fetched OHLCV bars");
             }
-            bars = fetched;
+            bars = merged;
         }
     }
 

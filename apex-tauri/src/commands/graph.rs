@@ -98,8 +98,19 @@ pub async fn compute_correlations(
         ids.insert(s.clone(), id);
     }
 
-    // Pearson correlation on overlapping return dates; upsert edges.
+    // Clear previous correlation edges for the requested pairs first — a pair
+    // that can no longer be computed (not enough overlap) must drop its stale
+    // edge rather than keep last window's coefficient.
     let syms: Vec<&String> = symbols.iter().collect();
+    for i in 0..syms.len() {
+        for j in (i + 1)..syms.len() {
+            let (a, b) = (ids[syms[i]], ids[syms[j]]);
+            graph.remove_edge(&a, &b);
+            graph.remove_edge(&b, &a);
+        }
+    }
+
+    // Pearson correlation on overlapping return dates; add computed edges.
     for i in 0..syms.len() {
         for j in (i + 1)..syms.len() {
             let (a, b) = (syms[i], syms[j]);
@@ -126,8 +137,6 @@ pub async fn compute_correlations(
             let coeff = ((n * sxy - sx * sy) / denom).clamp(-1.0, 1.0);
 
             let (from_id, to_id) = (ids[a], ids[b]);
-            graph.remove_edge(&from_id, &to_id);
-            graph.remove_edge(&to_id, &from_id);
             graph.add_edge(
                 &from_id,
                 &to_id,

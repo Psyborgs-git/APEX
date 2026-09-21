@@ -109,7 +109,7 @@ export const NewsPanel: React.FC = () => {
             <article key={item.id} className="px-3 py-2 border-b border-[var(--border-color)] hover:bg-surface-2" data-testid="news-item">
               <div className="flex items-start justify-between gap-2">
                 <a
-                  href={item.url || undefined}
+                  href={/^https?:\/\//i.test(item.url ?? '') ? item.url : undefined}
                   target="_blank"
                   rel="noreferrer"
                   className="text-sm text-text-primary leading-snug hover:text-accent"

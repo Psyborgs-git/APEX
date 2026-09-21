@@ -66,7 +66,8 @@ export const CopilotPanel: React.FC = () => {
     if (!message || busy) return;
 
     const userEntry: ChatEntry = { id: nextId.current++, role: 'user', content: message };
-    const history: CopilotMessageDto[] = [...entries, userEntry]
+    // History is prior turns only — the backend appends `message` itself.
+    const history: CopilotMessageDto[] = entries
       .filter((e) => !e.error)
       .map((e) => ({ role: e.role, content: e.content }));
 

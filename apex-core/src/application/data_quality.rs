@@ -401,6 +401,7 @@ mod tests {
         let bar = OHLCV {
             time: Utc::now(),
             symbol: Symbol("BTC/USDT".into()),
+            timeframe: Timeframe::D1,
             open: 50000.0,
             high: 50100.0,
             low: 49900.0,
@@ -417,6 +418,7 @@ mod tests {
         let mut bar = OHLCV {
             time: Utc::now(),
             symbol: Symbol("BTC/USDT".into()),
+            timeframe: Timeframe::D1,
             open: 50000.0,
             high: 49800.0, // Invalid: high < open
             low: 49900.0,

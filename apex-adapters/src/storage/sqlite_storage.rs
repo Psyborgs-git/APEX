@@ -59,13 +59,14 @@ impl SqliteStorage {
             CREATE TABLE IF NOT EXISTS ohlcv (
                 time        TEXT NOT NULL,
                 symbol      TEXT NOT NULL,
+                timeframe   TEXT NOT NULL DEFAULT 'D1',
                 open        REAL NOT NULL,
                 high        REAL NOT NULL,
                 low         REAL NOT NULL,
                 close       REAL NOT NULL,
                 volume      INTEGER NOT NULL
             );
-            CREATE INDEX IF NOT EXISTS idx_ohlcv_symbol_time ON ohlcv(symbol, time);
+            CREATE INDEX IF NOT EXISTS idx_ohlcv_symbol_time ON ohlcv(symbol, timeframe, time);
 
             CREATE TABLE IF NOT EXISTS orders (
                 id          TEXT PRIMARY KEY,
@@ -110,17 +111,33 @@ impl SqliteStorage {
             ",
         )?;
 
-        // Bars are keyed by (symbol, time); drop historical duplicates before
-        // adding the unique index, then upsert on write.
+        // Older DBs lack the timeframe column — add it before indexing.
+        let has_tf: bool = conn
+            .prepare("PRAGMA table_info(ohlcv)")?
+            .query_map([], |row| row.get::<_, String>(1))?
+            .any(|name| name.map(|n| n == "timeframe").unwrap_or(false));
+        if !has_tf {
+            conn.execute(
+                "ALTER TABLE ohlcv ADD COLUMN timeframe TEXT NOT NULL DEFAULT 'D1'",
+                [],
+            )?;
+        }
+
+        // Bars are keyed by (symbol, timeframe, time); drop historical duplicates
+        // before adding the unique index, then upsert on write.
+        conn.execute(
+            "DROP INDEX IF EXISTS idx_ohlcv_symbol_time_unique",
+            [],
+        )?;
         conn.execute(
             "DELETE FROM ohlcv WHERE rowid NOT IN (
-                 SELECT MIN(rowid) FROM ohlcv GROUP BY symbol, time
+                 SELECT MIN(rowid) FROM ohlcv GROUP BY symbol, timeframe, time
              )",
             [],
         )?;
         conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_ohlcv_symbol_time_unique
-             ON ohlcv(symbol, time)",
+             ON ohlcv(symbol, timeframe, time)",
             [],
         )?;
         Ok(())
@@ -158,13 +175,14 @@ impl StoragePort for SqliteStorage {
         let tx = conn.unchecked_transaction()?;
         {
             let mut stmt = tx.prepare_cached(
-                "INSERT OR REPLACE INTO ohlcv (time, symbol, open, high, low, close, volume)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                "INSERT OR REPLACE INTO ohlcv (time, symbol, timeframe, open, high, low, close, volume)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             )?;
             for bar in bars {
                 stmt.execute(params![
                     bar.time.to_rfc3339(),
                     bar.symbol.0,
+                    bar.timeframe.as_str(),
                     bar.open,
                     bar.high,
                     bar.low,
@@ -180,12 +198,12 @@ impl StoragePort for SqliteStorage {
     async fn query_ohlcv(&self, params_q: OHLCVQuery) -> Result<Vec<OHLCV>> {
         let conn = self.conn.lock().await;
         let mut stmt = conn.prepare(
-            "SELECT time, symbol, open, high, low, close, volume FROM (
-                 SELECT time, symbol, open, high, low, close, volume FROM ohlcv
-                 WHERE symbol = ?1 AND time >= ?2 AND time <= ?3
-                 GROUP BY symbol, time
+            "SELECT time, symbol, timeframe, open, high, low, close, volume FROM (
+                 SELECT time, symbol, timeframe, open, high, low, close, volume FROM ohlcv
+                 WHERE symbol = ?1 AND timeframe = ?2 AND time >= ?3 AND time <= ?4
+                 GROUP BY symbol, timeframe, time
                  ORDER BY time DESC
-                 LIMIT ?4
+                 LIMIT ?5
              )
              ORDER BY time ASC",
         )?;
@@ -194,6 +212,7 @@ impl StoragePort for SqliteStorage {
         let rows = stmt.query_map(
             params![
                 params_q.symbol.0,
+                params_q.timeframe.as_str(),
                 params_q.from.to_rfc3339(),
                 params_q.to.to_rfc3339(),
                 limit,
@@ -202,24 +221,26 @@ impl StoragePort for SqliteStorage {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
-                    row.get::<_, f64>(2)?,
+                    row.get::<_, String>(2)?,
                     row.get::<_, f64>(3)?,
                     row.get::<_, f64>(4)?,
                     row.get::<_, f64>(5)?,
-                    row.get::<_, i64>(6)?,
+                    row.get::<_, f64>(6)?,
+                    row.get::<_, i64>(7)?,
                 ))
             },
         )?;
 
         let mut bars = Vec::new();
         for row in rows {
-            let (time_str, symbol_str, open, high, low, close, volume) = row?;
+            let (time_str, symbol_str, tf_str, open, high, low, close, volume) = row?;
             let time = DateTime::parse_from_rfc3339(&time_str)
                 .map_err(|e| anyhow!("Failed to parse time: {}", e))?
                 .with_timezone(&Utc);
             bars.push(OHLCV {
                 time,
                 symbol: Symbol(symbol_str),
+                timeframe: Timeframe::from_str(&tf_str),
                 open,
                 high,
                 low,
@@ -467,6 +488,7 @@ mod tests {
         let bars = vec![OHLCV {
             time: now,
             symbol: Symbol("AAPL".into()),
+            timeframe: Timeframe::D1,
             open: 150.0,
             high: 155.0,
             low: 149.0,

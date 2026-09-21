@@ -313,6 +313,7 @@ impl MarketDataPort for RobinhoodMarketDataAdapter {
             bars.push(OHLCV {
                 time,
                 symbol: symbol.clone(),
+                timeframe: timeframe.clone(),
                 open: candle.open_price.parse().unwrap_or(0.0),
                 high: candle.high_price.parse().unwrap_or(0.0),
                 low: candle.low_price.parse().unwrap_or(0.0),

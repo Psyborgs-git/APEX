@@ -102,6 +102,11 @@ const CandleChartInner: React.FC<CandleChartProps> = ({ symbol, ohlcvData, heigh
   const overlaySeriesRef = useRef<Map<string, ISeriesApi<'Line'>[]>>(new Map());
   const oscContainerRef = useRef<HTMLDivElement>(null);
   const bucketSecs = TIMEFRAMES.find((t) => t.id === timeframe)?.bucketSecs ?? 86400;
+  // Live-bucket state: each new bucket opens at the first tick's price with
+  // volume counted from the day-volume delta — not the day-wide OHLC the
+  // quote carries.
+  const bucketRef = useRef<{ time: number; open: number; high: number; low: number; volume: number } | null>(null);
+  const prevVolumeRef = useRef<number | null>(null);
 
   const toSeriesData = useCallback(
     (points: { time: string; value: number }[]): { time: Time; value: number }[] => {
@@ -437,19 +442,40 @@ const CandleChartInner: React.FC<CandleChartProps> = ({ symbol, ohlcvData, heigh
       const bucketStart = Math.max(
         Math.floor(Date.now() / 1000 / bucketSecs) * bucketSecs,
         lastBarTimeRef.current,
-      ) as Time;
+      ) as number;
+
+      // New bucket → open it from this tick; existing bucket → extend h/l/c.
+      // Quote OHLC/volume are day-wide, so buckets accumulate their own.
+      // Bucket volume = sum of day-volume deltas; a session reset counts the
+      // quote's volume directly.
+      const volDelta =
+        prevVolumeRef.current !== null && q.volume >= prevVolumeRef.current
+          ? q.volume - prevVolumeRef.current
+          : q.volume;
+      prevVolumeRef.current = q.volume;
+
+      let bucket = bucketRef.current;
+      if (!bucket || bucket.time !== bucketStart) {
+        bucket = { time: bucketStart, open: q.last, high: q.last, low: q.last, volume: volDelta };
+        bucketRef.current = bucket;
+      } else {
+        bucket.high = Math.max(bucket.high, q.last);
+        bucket.low = Math.min(bucket.low, q.last);
+        bucket.volume += volDelta;
+      }
+
       candleSeriesRef.current.update({
-        time: bucketStart,
-        open: q.open,
-        high: q.high,
-        low: q.low,
+        time: bucketStart as Time,
+        open: bucket.open,
+        high: bucket.high,
+        low: bucket.low,
         close: q.last,
       });
 
       volumeSeriesRef.current.update({
-        time: bucketStart,
-        value: q.volume,
-        color: q.last >= q.open ? CHART_COLORS.volumeUp : CHART_COLORS.volumeDown,
+        time: bucketStart as Time,
+        value: bucket.volume,
+        color: q.last >= bucket.open ? CHART_COLORS.volumeUp : CHART_COLORS.volumeDown,
       });
     }, 1000);
 

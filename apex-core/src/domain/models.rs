@@ -45,11 +45,17 @@ pub struct Quote {
 pub struct OHLCV {
     pub time:    DateTime<Utc>,
     pub symbol:  Symbol,
+    #[serde(default = "default_ohlcv_timeframe")]
+    pub timeframe: Timeframe,
     pub open:    f64,
     pub high:    f64,
     pub low:     f64,
     pub close:   f64,
     pub volume:  u64,
+}
+
+fn default_ohlcv_timeframe() -> Timeframe {
+    Timeframe::D1
 }
 
 /// Order side
@@ -210,6 +216,42 @@ pub enum Timeframe {
     M1, M3, M5, M15, M30,
     H1, H4,
     D1, W1,
+}
+
+impl Timeframe {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Timeframe::S1 => "S1",
+            Timeframe::S5 => "S5",
+            Timeframe::S15 => "S15",
+            Timeframe::M1 => "M1",
+            Timeframe::M3 => "M3",
+            Timeframe::M5 => "M5",
+            Timeframe::M15 => "M15",
+            Timeframe::M30 => "M30",
+            Timeframe::H1 => "H1",
+            Timeframe::H4 => "H4",
+            Timeframe::D1 => "D1",
+            Timeframe::W1 => "W1",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Timeframe {
+        match s {
+            "S1" => Timeframe::S1,
+            "S5" => Timeframe::S5,
+            "S15" => Timeframe::S15,
+            "M1" => Timeframe::M1,
+            "M3" => Timeframe::M3,
+            "M5" => Timeframe::M5,
+            "M15" => Timeframe::M15,
+            "M30" => Timeframe::M30,
+            "H1" => Timeframe::H1,
+            "H4" => Timeframe::H4,
+            "W1" => Timeframe::W1,
+            _ => Timeframe::D1,
+        }
+    }
 }
 
 /// News filter for subscribing to news feeds

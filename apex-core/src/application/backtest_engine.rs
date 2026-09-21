@@ -877,6 +877,7 @@ mod tests {
                 OHLCV {
                     time,
                     symbol: Symbol(symbol.into()),
+                    timeframe: Timeframe::D1,
                     open: close - 1.0,
                     high: close + 2.0,
                     low: close - 2.0,
@@ -1201,6 +1202,7 @@ mod tests {
                 OHLCV {
                     time,
                     symbol: Symbol(symbol.into()),
+                    timeframe: Timeframe::D1,
                     open: close - 0.5,
                     high: close + 1.0,
                     low: close - 1.0,

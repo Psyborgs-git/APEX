@@ -351,6 +351,7 @@ impl MarketDataPort for AngelOneMarketDataAdapter {
             let bar = OHLCV {
                 time,
                 symbol: symbol.clone(),
+                timeframe: timeframe.clone(),
                 open: candle_arr[1].as_f64().unwrap_or(0.0),
                 high: candle_arr[2].as_f64().unwrap_or(0.0),
                 low: candle_arr[3].as_f64().unwrap_or(0.0),

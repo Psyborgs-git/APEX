@@ -68,6 +68,12 @@ const LinePane: React.FC<{ points: SeriesPointDto[]; color: string; height?: num
     const line = chart.addLineSeries({ color, lineWidth: 1, priceLineVisible: false });
     line.setData(data);
     chart.timeScale().fitContent();
+    // Remove this series when points/color change or the pane unmounts —
+    // otherwise every update stacks a stale line on the same chart. The chart
+    // may already be disposed by the sibling effect's cleanup.
+    return () => {
+      if (chartRef.current) chart.removeSeries(line);
+    };
   }, [points, color]);
 
   return (

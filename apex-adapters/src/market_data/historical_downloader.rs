@@ -282,6 +282,7 @@ impl HistoricalDownloader {
             bars.push(OHLCV {
                 time,
                 symbol: symbol.clone(),
+                timeframe: Timeframe::D1,
                 open: parts[1].parse().unwrap_or(0.0),
                 high: parts[2].parse().unwrap_or(0.0),
                 low: parts[3].parse().unwrap_or(0.0),

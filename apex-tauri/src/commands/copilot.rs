@@ -75,7 +75,12 @@ fn resolve_provider(state: &AppState) -> Result<ResolvedProvider, String> {
             model: provider.model.clone(),
             api_kind: provider.api_kind.clone(),
             api_key: env_key(&provider.api_key_env).unwrap_or_default(),
-            max_tokens: provider.max_tokens,
+            // 0 = "use the legacy [copilot] limit" (see LlmProviderConfig docs)
+            max_tokens: if provider.max_tokens == 0 {
+                state.copilot.max_tokens
+            } else {
+                provider.max_tokens
+            },
         });
     }
 

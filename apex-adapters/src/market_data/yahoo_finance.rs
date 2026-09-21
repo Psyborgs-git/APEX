@@ -152,7 +152,7 @@ impl YahooFinanceAdapter {
     }
 
     /// Parse historical OHLCV data from Yahoo response
-    fn parse_ohlcv_response(symbol: &Symbol, body: &str) -> Result<Vec<OHLCV>> {
+    fn parse_ohlcv_response(symbol: &Symbol, timeframe: &Timeframe, body: &str) -> Result<Vec<OHLCV>> {
         let response: YahooChartResponse = serde_json::from_str(body)
             .map_err(|e| anyhow!("Failed to parse Yahoo response: {}", e))?;
 
@@ -209,6 +209,7 @@ impl YahooFinanceAdapter {
                 bars.push(OHLCV {
                     time,
                     symbol: symbol.clone(),
+                    timeframe: timeframe.clone(),
                     open: o,
                     high: h,
                     low: l,
@@ -378,7 +379,7 @@ impl MarketDataPort for YahooFinanceAdapter {
             .await
             .map_err(|e| anyhow!("Failed to read Yahoo response body: {}", e))?;
 
-        Self::parse_ohlcv_response(symbol, &body)
+        Self::parse_ohlcv_response(symbol, &timeframe, &body)
     }
 
     fn adapter_id(&self) -> &'static str {
@@ -530,7 +531,7 @@ mod tests {
     fn test_parse_historical_response() {
         let symbol = Symbol("AAPL".into());
         let bars =
-            YahooFinanceAdapter::parse_ohlcv_response(&symbol, SAMPLE_HISTORICAL_RESPONSE)
+            YahooFinanceAdapter::parse_ohlcv_response(&symbol, &Timeframe::D1, SAMPLE_HISTORICAL_RESPONSE)
                 .unwrap();
         assert_eq!(bars.len(), 3);
         assert!((bars[0].open - 170.00).abs() < 0.01);

@@ -229,3 +229,18 @@ Verified: `config/apex.toml` unchanged post-save (still `theme = "dark"`, none o
 | **No dup sections on re-save** | **PASS.** 3 consecutive saves — config has exactly one `[appearance]`, `[acp]`, `[llm]`, `[[llm.providers]]`. | config/apex.toml tail |
 
 **Note:** `save_app_settings` writes the file but doesn't refresh `AppState.llm` — provider changes take effect on the NEXT backend start (matches the "Apply on Restart" label). Verified restart path; a live-reload of llm state would be a nice-to-have.
+
+---
+
+# Phase H — cfa5a73: Copilot docked widget verification
+Copilot moved from a center tab to a LinkedIn-chats style docked widget (`CopilotDock.tsx`, mounted in App.tsx; `copilot` removed from VALID_TABS/CENTER_TABS; `:COPILOT`/`:AI` open the dock via `copilotOpen`). Machine restarted → re-launched vite + backend fresh.
+
+| Item | Result | Evidence |
+|---|---|---|
+| **Pill → card** | **PASS.** Collapsed `Copilot` pill sits bottom-right above the status bar (`copilot-dock-toggle`). Click → `copilot-dock-panel` opens anchored bottom-right; measured `getBoundingClientRect` = **exactly 400×560** at x1184 y220 (right-anchored ~16px margin, bottom above status bar). Header `Copilot · agentic · live data` + minimize + close icons; welcome text + 4 suggestion chips + input + Send. | `ss_d813352a.png` (open card), `ss_626c9676.png` (rect 400×560) |
+| **Real message + reply + tool trace** | **PASS.** "What is RELIANCE.NS trading at?" → real reply "trading at 1,247.40, up 1.71%" (matches live quote) + provider footer `openrouter · cohere/north-mini-code:free`. This answered from context — no tool called, so no trace chip (expected: trace only renders when tools are called). A second message "Backtest the default strategy on RELIANCE.NS…" ran the agentic loop → **`copilot-tool-trace` chips: Strategies → Read file · strategies/my_strategy.py → Backtest · my_strategy.py**, then a metrics table quoting **real** results (Return −3.15%, Sharpe −0.857, 33 trades, final equity 96,850.76 — identical to the real backtest). | `ss_9bcad993.png` (quote reply+footer), `ss_7a7d23f0.png` (trace chips + metrics), `ss_zoom_467db0f2.png` (chips) |
+| **Minimize & close → pill; history preserved** | **PASS.** Minimize (chevron) and close (×) both collapse the card back to the pill; reopening shows the same conversation (tool-trace + metrics intact) — panel stays mounted, hidden. | `ss_9e9768c4.png` (collapsed pill), `ss_a6907e52.png` (reopened w/ history) |
+| **`:COPILOT` opens dock** | **PASS.** Space → `:COPILOT` → Enter → "Switched to COPILOT" toast + dock opens with history. `:AI` alias also works ("Switched to AI" toast). | `ss_203b1c21.png`, `ss_481a4d10.png` |
+| **Copilot tab gone; other tabs + clean console** | **PASS.** Tab bar no longer has COPILOT (row ends `…STORED DATA NOTEBOOK HEALTH`). Dock floats independently over whichever tab is active (verified on BACKTEST + ANALYTICS). Other tabs render fine. Webview console clean — no errors after all dock open/close/message activity. | `ss_b1c86b84.png` (analytics + floating dock), `ss_3a321e83.png` (clean console) |
+
+**Verdict:** all five items pass. The dock behaves like LinkedIn chats — collapsible pill, anchored card, floats over all tabs, history preserved. No defects found.

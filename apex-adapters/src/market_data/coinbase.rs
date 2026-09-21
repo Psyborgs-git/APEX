@@ -134,6 +134,7 @@ impl CoinbaseAdapter {
         &self,
         symbol: &Symbol,
         granularity: u32,
+        timeframe: Timeframe,
         limit: u32,
     ) -> Result<Vec<OHLCV>> {
         let coinbase_symbol = Self::format_symbol(symbol);
@@ -175,6 +176,7 @@ impl CoinbaseAdapter {
                     time: DateTime::from_timestamp(candle[0] as i64, 0)
                         .ok_or_else(|| anyhow!("Invalid candle timestamp"))?,
                     symbol: symbol.clone(),
+                    timeframe: timeframe.clone(),
                     open: candle[3],
                     high: candle[2],
                     low: candle[1],
@@ -333,7 +335,7 @@ impl MarketDataPort for CoinbaseAdapter {
     ) -> Result<Vec<OHLCV>> {
         let granularity = Self::timeframe_to_granularity(&timeframe);
         let mut all_bars = Vec::new();
-        let current_bars = self.fetch_candles(symbol, granularity, 300).await?;
+        let current_bars = self.fetch_candles(symbol, granularity, timeframe.clone(), 300).await?;
 
         // Filter by date range
         all_bars.extend(current_bars.into_iter().filter(|bar| {

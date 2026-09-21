@@ -337,6 +337,7 @@ impl MarketDataPort for ZerodhaKiteAdapter {
             let bar = OHLCV {
                 time,
                 symbol: symbol.clone(),
+                timeframe: timeframe.clone(),
                 open: candle[1].as_f64().unwrap_or(0.0),
                 high: candle[2].as_f64().unwrap_or(0.0),
                 low: candle[3].as_f64().unwrap_or(0.0),
