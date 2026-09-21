@@ -244,3 +244,25 @@ Copilot moved from a center tab to a LinkedIn-chats style docked widget (`Copilo
 | **Copilot tab gone; other tabs + clean console** | **PASS.** Tab bar no longer has COPILOT (row ends `…STORED DATA NOTEBOOK HEALTH`). Dock floats independently over whichever tab is active (verified on BACKTEST + ANALYTICS). Other tabs render fine. Webview console clean — no errors after all dock open/close/message activity. | `ss_b1c86b84.png` (analytics + floating dock), `ss_3a321e83.png` (clean console) |
 
 **Verdict:** all five items pass. The dock behaves like LinkedIn chats — collapsible pill, anchored card, floats over all tabs, history preserved. No defects found.
+
+---
+
+# Phase I — 11dfbfd: theme fixes + Automations tab + Copilot trading tools
+Rebuilt (`cargo build -p apex-tauri` — new IPC: create/list/delete/set_enabled automation, predict_model_signal) + relaunched with OPEN_ROUTER; vite served fresh modules (monitor/AutomationsPanel.tsx, workspace/Workspace.tsx).
+
+| Item | Result | Evidence |
+|---|---|---|
+| **Theme: button contrast** | **PASS.** Dark: BUY + submit `rgb(0,200,83)` fill + `rgb(6,10,19)` near-black text (readable ~8:1). Light: BUY green / SELL salmon + dark text — readable. All settings sections legible in both. | `ss_ec773049.png` (computed dark), `ss_zoom_c03c30fd.png` (light buttons) |
+| **Theme: charts repaint** | **PASS.** Candle chart + order-book depth repaint light-appropriate colors on theme toggle (dark→light applied live, no restart; saved to `[appearance]`). In dark the active CHART tab shows a blue accent underline. | `ss_4ccc6ae5.png` (light chart), `ss_d127e520.png` (light order book) |
+| **Accent tints render** | **PASS.** Active-tab accent tint + copilot user-bubble tint now render (previously `bg-accent/15`-style classes emitted no CSS). | `ss_zoom_8e9b918f.png` (tab underline), `ss_daeb27d1.png` (user bubble) |
+| **AUTOMATIONS tab** | **PASS.** Tab + `:AUTO`/`:AUTOMATIONS` command both open it. Form renders Name/Symbol/model(`— train a model first (ML Workbench) —`, correct: `list_ml_models`→`[]`)/interval/qty/threshold/broker, `Create rule` disabled without a model. Rules list shows name/kind/model/symbol/interval/qty/broker + last run. | `ss_786a1d9b.png`, `ss_zoom_f86ccbf9.png` |
+| **Automation CRUD + persist** | **PASS.** Created rules (IPC, placeholder model_id — `create_automation_inner` doesn't validate model existence). List populated; **Pause→Resume toggle + Delete work and persist** to `data/automations.json`. Engine ticks rules (~every interval): `last_run_at` set, `last_result`=`"signal error: Unknown model 'demo-model-1'`" — graceful on missing model. Deleted all → `[]`. | `ss_6240405f.png` (list+rows), `ss_37c5a877.png` (Resume toggle), `automations.json` |
+| **Copilot: place_order** | **PASS.** "buy 5 RELIANCE.NS at market" → `place_order` tool chip → "✓ Paper order placed" (Order ID PAPER-d3524faf…); Blotter shows it **Filled**, Positions "RELIANCE.NS 5 @ avg 1,247.65". | `ss_daeb27d1.png`, `ss_3393b898.png` (blotter fill) |
+| **Copilot: get_positions / list_automations** | **PASS.** "show my open positions" → `Positions` chip + real table (RELIANCE.NS 5 @ 1247.65). "List my automations" → `Automations` chip + table of both rules + smart warning that demo-model-1 doesn't exist. | `ss_cf8adf7e.png`, `ss_cefedeec.png` |
+| **Copilot: create_automation / get_model_signal** | **PASS (clean defer).** "Create an automation running my model…" → `Models` chip (`list_ml_models`→none) → "You don't have any trained ML models yet" + offers to train (random_forest/GBM/logistic/linear/svm). "get the model signal" → same clean no-models handling. No bogus rule created. | `ss_2e70a3bf.png`, `ss_dfea2f93.png` |
+| **Copilot: history persistence** | **PASS.** `localStorage.apex.copilot.history` written (2955 chars); conversation survives **collapse/reopen, webview Reload, and full app restart** (opened dock post-restart → same messages). [Feature is new in 11dfbfd — earlier empty-open was because Phase H ran cfa5a73 which didn't write it.] | `ss_e3d513ea.png` (post-restart history) |
+| **Console errors** | **PASS — clean.** No app errors; only my own console-query TypeErrors (empty selectors). | `ss_24b2d8ca.png` |
+
+**Verdict:** all four areas pass. Theme contrast/repaint/tints fixed; Automations CRUD+persistence works; Copilot trading tools execute real actions; chat history persists across restart. **No defects found.** (Note: 3 identical rules briefly appeared — self-inflicted, my console `create_automation` submitted multiple times; not an app bug. Paper position resets to 0 on backend restart — in-memory book, expected.)
+
+**Teardown:** deleted all test rules (`automations.json` → `[]`); left theme=light persisted.
