@@ -5,14 +5,31 @@
     --surface-2: #1a1a25;
     --surface-3: #222233;
 
-    /* Semantic colors */
+    /* Semantic colors (hex for direct var use + RGB triplets so Tailwind
+       color/<alpha> modifiers compile) */
     --color-bull: #00c853;
     --color-bear: #ff1744;
     --color-accent: #448aff;
+    --color-accent-soft: #82b1ff;
+    --color-accent-strong: #2962ff;
     --color-muted: #5c5c7a;
     --color-warning: #ffab00;
     --color-error: #ff1744;
     --color-success: #00c853;
+    --color-bull-rgb: 0 200 83;
+    --color-bear-rgb: 255 23 68;
+    --color-accent-rgb: 68 138 255;
+    --color-accent-soft-rgb: 130 177 255;
+    --color-accent-strong-rgb: 41 98 255;
+    --color-muted-rgb: 92 92 122;
+    --color-warning-rgb: 255 171 0;
+    --color-error-rgb: 255 23 68;
+    --color-success-rgb: 0 200 83;
+
+    /* Readable foreground on top of semantic fills */
+    --color-on-bull: #06130a;
+    --color-on-bear: #ffffff;
+    --color-on-accent: #ffffff;
 
     /* Text */
     --text-primary: #e8e8f0;
@@ -59,10 +76,25 @@
     --color-bull: #00883a;
     --color-bear: #d50000;
     --color-accent: #1a5fd0;
+    --color-accent-soft: #6f9be8;
+    --color-accent-strong: #1248a8;
     --color-muted: #8a90a6;
     --color-warning: #b26a00;
     --color-error: #d50000;
     --color-success: #00883a;
+    --color-bull-rgb: 0 136 58;
+    --color-bear-rgb: 213 0 0;
+    --color-accent-rgb: 26 95 208;
+    --color-accent-soft-rgb: 111 155 232;
+    --color-accent-strong-rgb: 18 72 168;
+    --color-muted-rgb: 138 144 166;
+    --color-warning-rgb: 178 106 0;
+    --color-error-rgb: 213 0 0;
+    --color-success-rgb: 0 136 58;
+
+    --color-on-bull: #ffffff;
+    --color-on-bear: #ffffff;
+    --color-on-accent: #ffffff;
 
     --text-primary: #17181f;
     --text-secondary: #4a4f63;

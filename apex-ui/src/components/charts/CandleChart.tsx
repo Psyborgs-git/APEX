@@ -14,6 +14,7 @@ import { useMarketStore } from '../../stores/marketStore';
 import { getHistoricalData, computeIndicator } from '../../lib/tauri';
 import type { OHLCVDto } from '../../lib/types';
 import { formatPrice, formatVolume } from '../../lib/format';
+import { chartTheme, useThemeTick, withAlpha } from '../../lib/chartTheme';
 
 interface CandleChartProps {
   symbol: string;
@@ -34,17 +35,22 @@ function toChartTime(iso: string): Time {
   return (new Date(iso).getTime() / 1000) as Time;
 }
 
-const CHART_COLORS = {
-  background: '#0a0a0f',
-  text: '#a0a0b8',
-  grid: '#1a1a25',
-  border: '#2a2a3a',
-  bull: '#00c853',
-  bear: '#ff1744',
-  volumeUp: 'rgba(0, 200, 83, 0.3)',
-  volumeDown: 'rgba(255, 23, 68, 0.3)',
-  crosshair: '#5c5c7a',
-} as const;
+/** Chart colors resolved from the active theme's CSS variables. */
+function chartColors() {
+  const t = chartTheme();
+  return {
+    background: t.background,
+    text: t.text,
+    grid: t.grid,
+    border: t.border,
+    bull: t.bull,
+    bear: t.bear,
+    volumeUp: withAlpha(t.bull, 30),
+    volumeDown: withAlpha(t.bear, 30),
+    crosshair: t.textMuted,
+  };
+}
+type ChartColors = ReturnType<typeof chartColors>;
 
 // OpenBB-style technical extension surface: price overlays + oscillator pane.
 type OverlayId = 'sma' | 'ema' | 'bbands' | 'vwap';
@@ -107,6 +113,10 @@ const CandleChartInner: React.FC<CandleChartProps> = ({ symbol, ohlcvData, heigh
   // quote carries.
   const bucketRef = useRef<{ time: number; open: number; high: number; low: number; volume: number } | null>(null);
   const prevVolumeRef = useRef<number | null>(null);
+  // Theme-resolved palette; refreshed each render so theme flips repaint.
+  const colorsRef = useRef<ChartColors>(chartColors());
+  colorsRef.current = chartColors();
+  const themeTick = useThemeTick();
 
   const toSeriesData = useCallback(
     (points: { time: string; value: number }[]): { time: Time; value: number }[] => {
@@ -133,24 +143,25 @@ const CandleChartInner: React.FC<CandleChartProps> = ({ symbol, ohlcvData, heigh
       chartRef.current = null;
     }
 
+    const C = colorsRef.current;
     const chart = createChart(container, {
       layout: {
-        background: { type: ColorType.Solid, color: CHART_COLORS.background },
-        textColor: CHART_COLORS.text,
+        background: { type: ColorType.Solid, color: C.background },
+        textColor: C.text,
         fontFamily: "'JetBrains Mono', monospace",
         fontSize: 11,
       },
       grid: {
-        vertLines: { color: CHART_COLORS.grid },
-        horzLines: { color: CHART_COLORS.grid },
+        vertLines: { color: C.grid },
+        horzLines: { color: C.grid },
       },
       crosshair: {
         mode: CrosshairMode.Normal,
-        vertLine: { color: CHART_COLORS.crosshair, labelBackgroundColor: CHART_COLORS.border },
-        horzLine: { color: CHART_COLORS.crosshair, labelBackgroundColor: CHART_COLORS.border },
+        vertLine: { color: C.crosshair, labelBackgroundColor: C.border },
+        horzLine: { color: C.crosshair, labelBackgroundColor: C.border },
       },
       rightPriceScale: {
-        borderColor: CHART_COLORS.border,
+        borderColor: C.border,
       },
       localization: {
         // System locale can be 'C' (no ICU data in some webviews) — pin a real
@@ -158,7 +169,7 @@ const CandleChartInner: React.FC<CandleChartProps> = ({ symbol, ohlcvData, heigh
         locale: 'en-US',
       },
       timeScale: {
-        borderColor: CHART_COLORS.border,
+        borderColor: C.border,
         timeVisible: true,
         secondsVisible: false,
       },
@@ -167,12 +178,12 @@ const CandleChartInner: React.FC<CandleChartProps> = ({ symbol, ohlcvData, heigh
     });
 
     const candleSeries = chart.addCandlestickSeries({
-      upColor: CHART_COLORS.bull,
-      downColor: CHART_COLORS.bear,
-      borderDownColor: CHART_COLORS.bear,
-      borderUpColor: CHART_COLORS.bull,
-      wickDownColor: CHART_COLORS.bear,
-      wickUpColor: CHART_COLORS.bull,
+      upColor: C.bull,
+      downColor: C.bear,
+      borderDownColor: C.bear,
+      borderUpColor: C.bull,
+      wickDownColor: C.bear,
+      wickUpColor: C.bull,
     });
 
     const volumeSeries = chart.addHistogramSeries({
@@ -189,9 +200,13 @@ const CandleChartInner: React.FC<CandleChartProps> = ({ symbol, ohlcvData, heigh
     volumeSeriesRef.current = volumeSeries;
 
     return chart;
-  }, [height]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- themeTick forces rebuild on theme change
+  }, [height, themeTick]);
+
+  const lastBarsRef = useRef<OHLCVDto[]>([]);
 
   const setBars = useCallback((bars: OHLCVDto[]) => {
+    lastBarsRef.current = bars;
     const candleSeries = candleSeriesRef.current;
     const volumeSeries = volumeSeriesRef.current;
     const chart = chartRef.current;
@@ -218,7 +233,7 @@ const CandleChartInner: React.FC<CandleChartProps> = ({ symbol, ohlcvData, heigh
     const volumes: HistogramData<Time>[] = uniqueBars.map((bar) => ({
       time: toChartTime(bar.time),
       value: bar.volume,
-      color: bar.close >= bar.open ? CHART_COLORS.volumeUp : CHART_COLORS.volumeDown,
+      color: bar.close >= bar.open ? colorsRef.current.volumeUp : colorsRef.current.volumeDown,
     }));
 
     candleSeries.setData(candles);
@@ -227,10 +242,11 @@ const CandleChartInner: React.FC<CandleChartProps> = ({ symbol, ohlcvData, heigh
     chart.timeScale().fitContent();
   }, []);
 
-  // Initialize chart once
+  // Initialize chart once (and repaint data after a theme-driven rebuild)
   useEffect(() => {
     const chart = initChart();
     if (!chart) return;
+    if (lastBarsRef.current.length > 0) setBars(lastBarsRef.current);
 
     const handleResize = () => {
       const container = containerRef.current;
@@ -254,7 +270,8 @@ const CandleChartInner: React.FC<CandleChartProps> = ({ symbol, ohlcvData, heigh
         chartRef.current = null;
       }
     };
-  }, [height, initChart]);
+     
+  }, [height, initChart, setBars]);
 
   // Load OHLCV bars when symbol or timeframe changes
   useEffect(() => {
@@ -341,20 +358,21 @@ const CandleChartInner: React.FC<CandleChartProps> = ({ symbol, ohlcvData, heigh
     if (!activeOscillator || !container) return;
     let cancelled = false;
 
+    const C = colorsRef.current;
     const chart = createChart(container, {
       layout: {
-        background: { type: ColorType.Solid, color: CHART_COLORS.background },
-        textColor: CHART_COLORS.text,
+        background: { type: ColorType.Solid, color: C.background },
+        textColor: C.text,
         fontFamily: "'JetBrains Mono', monospace",
         fontSize: 10,
       },
       grid: {
-        vertLines: { color: CHART_COLORS.grid },
-        horzLines: { color: CHART_COLORS.grid },
+        vertLines: { color: C.grid },
+        horzLines: { color: C.grid },
       },
-      rightPriceScale: { borderColor: CHART_COLORS.border },
+      rightPriceScale: { borderColor: C.border },
       localization: { locale: 'en-US' },
-      timeScale: { borderColor: CHART_COLORS.border, timeVisible: true, secondsVisible: false },
+      timeScale: { borderColor: C.border, timeVisible: true, secondsVisible: false },
       width: container.clientWidth,
       height: container.clientHeight,
     });
@@ -369,7 +387,7 @@ const CandleChartInner: React.FC<CandleChartProps> = ({ symbol, ohlcvData, heigh
             hist.setData(
               toSeriesData(s.points).map((p) => ({
                 ...p,
-                color: p.value >= 0 ? CHART_COLORS.volumeUp : CHART_COLORS.volumeDown,
+                color: p.value >= 0 ? C.volumeUp : C.volumeDown,
               })),
             );
           } else {
@@ -411,7 +429,8 @@ const CandleChartInner: React.FC<CandleChartProps> = ({ symbol, ohlcvData, heigh
       }
       chart.remove();
     };
-  }, [activeOscillator, symbol, timeframe, toSeriesData]);
+     
+  }, [activeOscillator, symbol, timeframe, toSeriesData, themeTick]);
 
   const toggleOverlay = (id: OverlayId) => {
     setActiveOverlays((prev) => {
@@ -475,7 +494,7 @@ const CandleChartInner: React.FC<CandleChartProps> = ({ symbol, ohlcvData, heigh
       volumeSeriesRef.current.update({
         time: bucketStart as Time,
         value: bucket.volume,
-        color: q.last >= bucket.open ? CHART_COLORS.volumeUp : CHART_COLORS.volumeDown,
+        color: q.last >= bucket.open ? colorsRef.current.volumeUp : colorsRef.current.volumeDown,
       });
     }, 1000);
 

@@ -4,6 +4,7 @@ import type { IChartApi, UTCTimestamp } from 'lightweight-charts';
 import { listStrategyFiles, runStrategyBacktest } from '../../lib/tauri';
 import type { StrategyBacktestResultDto, StrategyFileDto } from '../../lib/types';
 import { useMarketStore } from '../../stores/marketStore';
+import { chartTheme, useThemeTick, withAlpha } from '../../lib/chartTheme';
 
 const TF_OPTIONS = ['d1', '1h', '15m', '5m', '1m', 'w1'];
 
@@ -15,35 +16,41 @@ function toTs(time: string): UTCTimestamp {
   return Math.floor(new Date(time).getTime() / 1000) as UTCTimestamp;
 }
 
-const CHART_OPTS = {
-  height: 160,
-  layout: {
-    background: { color: 'transparent' },
-    textColor: 'rgb(140,147,156)',
-    fontSize: 10,
-  },
-  grid: {
-    vertLines: { color: 'rgba(128,128,128,0.08)' },
-    horzLines: { color: 'rgba(128,128,128,0.08)' },
-  },
-  timeScale: { borderColor: 'rgba(128,128,128,0.25)' },
-  rightPriceScale: { borderColor: 'rgba(128,128,128,0.25)' },
-  localization: { locale: 'en-US' },
-} as const;
+/** Chart chrome resolved from the active theme at mount. */
+function chartOpts() {
+  const t = chartTheme();
+  return {
+    height: 160,
+    layout: {
+      background: { color: 'transparent' },
+      textColor: t.textMuted,
+      fontSize: 10,
+    },
+    grid: {
+      vertLines: { color: withAlpha(t.textMuted, 10) },
+      horzLines: { color: withAlpha(t.textMuted, 10) },
+    },
+    timeScale: { borderColor: t.border },
+    rightPriceScale: { borderColor: t.border },
+    localization: { locale: 'en-US' },
+  } as const;
+}
 
 const EquityChart: React.FC<{ result: StrategyBacktestResultDto }> = ({ result }) => {
   const eqRef = useRef<HTMLDivElement>(null);
   const ddRef = useRef<HTMLDivElement>(null);
+  const themeTick = useThemeTick();
 
   useEffect(() => {
     if (!eqRef.current || !ddRef.current || result.equity_curve.length === 0) return;
-    const eqChart: IChartApi = createChart(eqRef.current, { ...CHART_OPTS, height: 170 });
-    const ddChart: IChartApi = createChart(ddRef.current, { ...CHART_OPTS, height: 90 });
-    const eq = eqChart.addLineSeries({ color: '#4fc1ff', lineWidth: 2 });
+    const t = chartTheme();
+    const eqChart: IChartApi = createChart(eqRef.current, { ...chartOpts(), height: 170 });
+    const ddChart: IChartApi = createChart(ddRef.current, { ...chartOpts(), height: 90 });
+    const eq = eqChart.addLineSeries({ color: t.accent, lineWidth: 2 });
     const dd = ddChart.addAreaSeries({
-      lineColor: '#ff5252',
-      topColor: 'rgba(255,82,82,0.15)',
-      bottomColor: 'rgba(255,82,82,0.45)',
+      lineColor: t.bear,
+      topColor: withAlpha(t.bear, 15),
+      bottomColor: withAlpha(t.bear, 45),
       lineWidth: 1,
     });
     eq.setData(result.equity_curve.map((p) => ({ time: toTs(p.time), value: p.equity })));
@@ -54,7 +61,8 @@ const EquityChart: React.FC<{ result: StrategyBacktestResultDto }> = ({ result }
       eqChart.remove();
       ddChart.remove();
     };
-  }, [result]);
+     
+  }, [result, themeTick]);
 
   return (
     <div className="space-y-1">

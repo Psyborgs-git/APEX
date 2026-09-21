@@ -6,15 +6,17 @@ import {
 } from 'lightweight-charts';
 import { getQuantStats, getRegression } from '../../lib/tauri';
 import type { QuantStatsDto, RegressionDto, SeriesPointDto } from '../../lib/types';
+import { chartTheme, useThemeTick } from '../../lib/chartTheme';
 
 interface AnalyticsPanelProps {
   defaultSymbol?: string;
 }
 
-const PANE_BG = '#0a0a0f';
-const PANE_TEXT = '#a0a0b8';
-const PANE_GRID = '#1a1a25';
-const PANE_BORDER = '#2a2a3a';
+// Pane chrome resolves from theme tokens at chart-creation time.
+function paneColors() {
+  const t = chartTheme();
+  return { bg: t.background, text: t.text, grid: t.grid, border: t.border };
+}
 
 function toTime(iso: string) {
   return (new Date(iso).getTime() / 1000) as import('lightweight-charts').Time;
@@ -29,20 +31,22 @@ const LinePane: React.FC<{ points: SeriesPointDto[]; color: string; height?: num
 }) => {
   const ref = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
+  const themeTick = useThemeTick();
 
   useEffect(() => {
     if (!ref.current) return;
+    const p = paneColors();
     const chart = createChart(ref.current, {
       layout: {
-        background: { type: ColorType.Solid, color: PANE_BG },
-        textColor: PANE_TEXT,
+        background: { type: ColorType.Solid, color: p.bg },
+        textColor: p.text,
         fontFamily: "'JetBrains Mono', monospace",
         fontSize: 10,
       },
-      grid: { vertLines: { color: PANE_GRID }, horzLines: { color: PANE_GRID } },
-      rightPriceScale: { borderColor: PANE_BORDER },
+      grid: { vertLines: { color: p.grid }, horzLines: { color: p.grid } },
+      rightPriceScale: { borderColor: p.border },
       localization: { locale: 'en-US' },
-      timeScale: { borderColor: PANE_BORDER, timeVisible: true, secondsVisible: false },
+      timeScale: { borderColor: p.border, timeVisible: true, secondsVisible: false },
       width: ref.current.clientWidth,
       height,
     });
@@ -51,7 +55,8 @@ const LinePane: React.FC<{ points: SeriesPointDto[]; color: string; height?: num
       chart.remove();
       chartRef.current = null;
     };
-  }, [height]);
+     
+  }, [height, themeTick]);
 
   useEffect(() => {
     const chart = chartRef.current;

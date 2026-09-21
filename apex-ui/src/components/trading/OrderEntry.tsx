@@ -107,7 +107,7 @@ export const OrderEntry: React.FC<OrderEntryProps> = ({ defaultSymbol }) => {
             onClick={() => setSide('BUY')}
             data-testid="order-side-buy"
             className={`px-3 py-1 text-xs font-mono rounded ${
-              side === 'BUY' ? 'bg-bull text-black font-bold' : 'bg-surface-2 text-text-muted'
+              side === 'BUY' ? 'bg-bull text-on-bull font-bold' : 'bg-surface-2 text-text-muted'
             }`}
           >
             BUY
@@ -117,7 +117,7 @@ export const OrderEntry: React.FC<OrderEntryProps> = ({ defaultSymbol }) => {
             onClick={() => setSide('SELL')}
             data-testid="order-side-sell"
             className={`px-3 py-1 text-xs font-mono rounded ${
-              side === 'SELL' ? 'bg-bear text-white font-bold' : 'bg-surface-2 text-text-muted'
+              side === 'SELL' ? 'bg-bear text-on-bear font-bold' : 'bg-surface-2 text-text-muted'
             }`}
           >
             SELL
@@ -197,8 +197,8 @@ export const OrderEntry: React.FC<OrderEntryProps> = ({ defaultSymbol }) => {
         data-testid="order-submit-button"
         className={`mt-auto py-2 rounded font-mono text-sm font-bold ${
           side === 'BUY'
-            ? 'bg-bull text-black hover:brightness-110'
-            : 'bg-bear text-white hover:brightness-110'
+            ? 'bg-bull text-on-bull hover:brightness-110'
+            : 'bg-bear text-on-bear hover:brightness-110'
         } transition-all disabled:opacity-50 disabled:cursor-not-allowed`}
         tabIndex={5}
       >
