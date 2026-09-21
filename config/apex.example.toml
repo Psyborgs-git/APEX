@@ -203,3 +203,51 @@ theme = "dark"
 
 # Command bar activation key.
 command_key = "Space"
+
+# ── News Engine ──────────────────────────────────────────────────────
+
+[news]
+# Enable RSS/Atom news polling (enabled by default when feeds are listed).
+enabled = true
+
+# How often feeds are polled, in seconds.
+poll_interval_secs = 300
+
+# Feeds are added with [[news.feeds]] tables. A few liquid, free RSS feeds
+# are enabled by default — remove or replace with preferred sources.
+[[news.feeds]]
+name = "CNBC Markets"
+url = "https://www.cnbc.com/id/100003114/device/rss/rss.html"
+feed_type = "rss"
+priority = 7
+enabled = true
+
+[[news.feeds]]
+name = "MarketWatch Top Stories"
+url = "https://feeds.marketwatch.com/marketwatch/topstories"
+feed_type = "rss"
+priority = 6
+enabled = true
+
+[[news.feeds]]
+name = "CoinDesk"
+url = "https://www.coindesk.com/arc/outboundfeeds/rss/"
+feed_type = "rss"
+priority = 5
+enabled = true
+
+# ── AI Copilot (OpenRouter) ──────────────────────────────────────────
+
+[copilot]
+# Enable the AI copilot panel. Requires the OPEN_ROUTER env var
+# (or OPENROUTER_API_KEY) to be set — see .env.example.
+enabled = true
+
+# OpenRouter model slug. "openrouter/free" auto-routes to a free model.
+model = "openrouter/free"
+
+# OpenRouter API base URL.
+base_url = "https://openrouter.ai/api/v1"
+
+# Max tokens per completion.
+max_tokens = 1024
