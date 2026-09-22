@@ -887,17 +887,26 @@ async fn exec_tool(
                         .and_then(|v| v.as_f64())
                         .ok_or("missing `threshold`")?,
                 },
-                "pct_change" => AlertRule::PctChange {
-                    symbol: symbol.clone(),
-                    pct: args
-                        .get("pct")
-                        .and_then(|v| v.as_f64())
-                        .ok_or("missing `pct`")?,
-                    window_secs: args
+                "pct_change" => {
+                    let window_secs = args
                         .get("window_secs")
                         .and_then(|v| v.as_u64())
-                        .unwrap_or(300),
-                },
+                        .unwrap_or(300);
+                    if window_secs > apex_core::application::alert_engine::MAX_WINDOW_SECS {
+                        return Err(format!(
+                            "window_secs exceeds the maximum of {} seconds (~366 days)",
+                            apex_core::application::alert_engine::MAX_WINDOW_SECS
+                        ));
+                    }
+                    AlertRule::PctChange {
+                        symbol: symbol.clone(),
+                        pct: args
+                            .get("pct")
+                            .and_then(|v| v.as_f64())
+                            .ok_or("missing `pct`")?,
+                        window_secs,
+                    }
+                }
                 "vwap_cross" => AlertRule::VwapCross {
                     symbol: symbol.clone(),
                 },

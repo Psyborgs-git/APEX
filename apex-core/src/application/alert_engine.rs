@@ -53,6 +53,14 @@ pub struct StoredAlert {
     pub enabled: bool,
 }
 
+/// Upper bound on a PctChange rule's `window_secs` (~1 year). Enforced in
+/// `add_rule` and clamped at evaluation — an out-of-range stored rule can
+/// never overflow chrono's duration range into negative retention.
+pub const MAX_WINDOW_SECS: u64 = 366 * 24 * 3600;
+
+/// Max retained tick samples per symbol before the window compacts.
+const WINDOW_SAMPLE_CAP: usize = 50_000;
+
 /// Alert Engine — evaluates rules against market data and emits alerts
 pub struct AlertEngine {
     bus: Arc<MessageBus>,
@@ -62,7 +70,7 @@ pub struct AlertEngine {
     /// sustained breach emits exactly one notification.
     triggered: Arc<dashmap::DashMap<String, bool>>,
     /// Rolling per-symbol price history for windowed PctChange rules
-    /// (pruned to the last 24h).
+    /// (pruned to max(24h, largest configured window)).
     price_windows: dashmap::DashMap<String, std::collections::VecDeque<(DateTime<Utc>, f64)>>,
 }
 
@@ -81,7 +89,8 @@ impl AlertEngine {
     /// the rolling window (`window_secs` back from `quote.time`).
     fn windowed_pct_change(&self, quote: &Quote, window_secs: u64) -> Option<f64> {
         let window = self.price_windows.get(&quote.symbol.0)?;
-        let cutoff = quote.updated_at - chrono::Duration::seconds(window_secs as i64);
+        let cutoff =
+            quote.updated_at - chrono::Duration::seconds(window_secs.min(MAX_WINDOW_SECS) as i64);
         // Reference = newest sample at-or-before the window start.
         // No sample at-or-before the window start means the rolling window
         // isn't filled yet — return None rather than anchoring to the oldest
@@ -100,6 +109,13 @@ impl AlertEngine {
     /// Add a new alert rule
     pub async fn add_rule(&self, alert: StoredAlert) {
         info!("Adding alert rule: {:?}", alert.id);
+        let mut alert = alert;
+        if let AlertRule::PctChange { window_secs, .. } = &mut alert.rule {
+            // Clamp defensively — callers validate, but rules also arrive via
+            // stored rows / hand-edited input; an overflowing window must not
+            // corrupt retention for other symbols.
+            *window_secs = (*window_secs).min(MAX_WINDOW_SECS);
+        }
         let mut rules = self.rules.write().await;
         rules.retain(|r| r.id != alert.id);
         rules.push(alert);
@@ -147,7 +163,7 @@ impl AlertEngine {
     /// Retains at least 24h of ticks per symbol, extended to the largest
     /// configured rule window so long-window alerts can always be measured.
     fn record_price_window(&self, quote: &Quote, max_rule_window_secs: u64) {
-        let retention = max_rule_window_secs.max(24 * 3600);
+        let retention = max_rule_window_secs.min(MAX_WINDOW_SECS).max(24 * 3600);
         let cutoff = quote.updated_at - chrono::Duration::seconds(retention as i64);
         let mut window = self
             .price_windows
@@ -157,9 +173,16 @@ impl AlertEngine {
         while window.front().map(|(t, _)| *t < cutoff).unwrap_or(false) {
             window.pop_front();
         }
-        // Cap pathological tick rates — per-symbol history stays bounded.
-        while window.len() > 50_000 {
-            window.pop_front();
+        if window.len() > WINDOW_SAMPLE_CAP {
+            // Compact rather than pop the front: halve the density of the
+            // oldest quarter so a sample still exists at-or-before long rule
+            // window starts (blind eviction would make them unmeasurable).
+            let quarter = window.len() / 4;
+            let mut compacted =
+                std::collections::VecDeque::with_capacity(window.len() - quarter / 2 + 1);
+            compacted.extend(window.iter().take(quarter).step_by(2).copied());
+            compacted.extend(window.iter().skip(quarter).copied());
+            *window = compacted;
         }
     }
 
@@ -486,5 +509,73 @@ mod tests {
 
         let msg = tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv()).await;
         assert!(msg.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_huge_window_clamped_not_corrupting() {
+        // A u64::MAX window must be clamped at add time — it can never panic
+        // the duration math or wipe a symbol's window via negative retention.
+        let bus = Arc::new(MessageBus::new());
+        let engine = AlertEngine::new(bus);
+
+        engine
+            .add_rule(StoredAlert {
+                id: "huge-window".into(),
+                rule: AlertRule::PctChange {
+                    symbol: "AAPL".into(),
+                    pct: 1.0,
+                    window_secs: u64::MAX,
+                },
+                delivery: vec![AlertDelivery::InApp],
+                enabled: true,
+            })
+            .await;
+
+        let stored = engine.get_rules().await;
+        let window = match &stored[0].rule {
+            AlertRule::PctChange { window_secs, .. } => *window_secs,
+            _ => panic!("wrong rule"),
+        };
+        assert_eq!(window, MAX_WINDOW_SECS);
+
+        // Recording a quote must not wipe the window (negative-retention bug).
+        engine.evaluate_quote(&test_quote("AAPL", 100.0)).await;
+        engine.evaluate_quote(&test_quote("AAPL", 101.0)).await;
+        assert!(
+            engine
+                .price_windows
+                .get("AAPL")
+                .map(|w| w.len())
+                .unwrap_or(0)
+                >= 1
+        );
+    }
+
+    #[test]
+    fn test_compaction_keeps_reference_for_long_windows() {
+        // >50k ticks inside a long window: compaction downsamples the oldest
+        // quarter instead of evicting the reference a long rule needs.
+        let bus = Arc::new(MessageBus::new());
+        let engine = AlertEngine::new(bus);
+
+        let window_secs = 100 * 3600; // 100h rule window
+        let start = Utc::now() - chrono::Duration::hours(100);
+        for i in 0..60_000i64 {
+            let mut q = test_quote("AAPL", 100.0);
+            q.updated_at = start + chrono::Duration::seconds(i * 6); // ~1 tick/6s
+            engine.record_price_window(&q, window_secs);
+        }
+
+        let len = engine
+            .price_windows
+            .get("AAPL")
+            .map(|w| w.len())
+            .unwrap_or(0);
+        assert!(len <= 60_000 && len > 0);
+        // Compaction must have left coverage at the rule's window start.
+        let mut q = test_quote("AAPL", 200.0);
+        q.updated_at = Utc::now();
+        let change = engine.windowed_pct_change(&q, window_secs);
+        assert!(change.is_some(), "long window lost its reference sample");
     }
 }

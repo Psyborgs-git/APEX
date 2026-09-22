@@ -25,6 +25,15 @@ pub async fn add_alert(
     let rule: AlertRule =
         serde_json::from_str(&rule_json).map_err(|e| format!("Invalid alert rule: {}", e))?;
 
+    if let AlertRule::PctChange { window_secs, .. } = &rule {
+        if *window_secs > apex_core::application::alert_engine::MAX_WINDOW_SECS {
+            return Err(format!(
+                "window_secs exceeds the maximum of {} seconds (~366 days)",
+                apex_core::application::alert_engine::MAX_WINDOW_SECS
+            ));
+        }
+    }
+
     state
         .alerts
         .add_rule(StoredAlert {
