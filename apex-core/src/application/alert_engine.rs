@@ -144,8 +144,11 @@ impl AlertEngine {
     }
 
     /// Record a quote into the rolling price window used by PctChange rules.
-    fn record_price_window(&self, quote: &Quote) {
-        let cutoff = quote.updated_at - chrono::Duration::hours(24);
+    /// Retains at least 24h of ticks per symbol, extended to the largest
+    /// configured rule window so long-window alerts can always be measured.
+    fn record_price_window(&self, quote: &Quote, max_rule_window_secs: u64) {
+        let retention = max_rule_window_secs.max(24 * 3600);
+        let cutoff = quote.updated_at - chrono::Duration::seconds(retention as i64);
         let mut window = self
             .price_windows
             .entry(quote.symbol.0.clone())
@@ -162,8 +165,17 @@ impl AlertEngine {
 
     /// Evaluate all rules against a quote update
     pub async fn evaluate_quote(&self, quote: &Quote) {
-        self.record_price_window(quote);
         let rules = self.rules.read().await;
+        let max_window = rules
+            .iter()
+            .filter(|a| a.enabled)
+            .filter_map(|a| match &a.rule {
+                AlertRule::PctChange { window_secs, .. } => Some(*window_secs),
+                _ => None,
+            })
+            .max()
+            .unwrap_or(0);
+        self.record_price_window(quote, max_window);
         for stored_alert in rules.iter() {
             if !stored_alert.enabled {
                 continue;
