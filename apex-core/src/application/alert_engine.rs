@@ -193,10 +193,16 @@ impl AlertEngine {
                 AlertRule::PctChange {
                     pct, window_secs, ..
                 } => {
-                    self.windowed_pct_change(quote, *window_secs)
-                        .unwrap_or(quote.change_pct)
-                        .abs()
-                        >= *pct
+                    if *window_secs == 0 {
+                        // Degenerate zero window = provider's session change.
+                        quote.change_pct.abs() >= *pct
+                    } else {
+                        // A configured window that can't be measured yet must
+                        // not fire — never substitute the daily change.
+                        self.windowed_pct_change(quote, *window_secs)
+                            .map(|change| change.abs() >= *pct)
+                            .unwrap_or(false)
+                    }
                 }
                 _ => false,
             };
