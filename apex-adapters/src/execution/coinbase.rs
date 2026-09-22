@@ -91,7 +91,10 @@ impl CoinbaseExecutionAdapter {
     }
 
     /// Place a new order on Coinbase Pro
-    async fn place_coinbase_order(&self, request: &NewOrderRequest) -> Result<CoinbaseOrderResponse> {
+    async fn place_coinbase_order(
+        &self,
+        request: &NewOrderRequest,
+    ) -> Result<CoinbaseOrderResponse> {
         let symbol = Self::format_symbol(&request.symbol);
         let side = Self::format_side(&request.side);
         let order_type = Self::format_order_type(&request.order_type);
@@ -135,7 +138,11 @@ impl CoinbaseExecutionAdapter {
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
-            return Err(anyhow!("Coinbase returned status {}: {}", status, error_text));
+            return Err(anyhow!(
+                "Coinbase returned status {}: {}",
+                status,
+                error_text
+            ));
         }
 
         let order_response: CoinbaseOrderResponse = response
@@ -287,7 +294,9 @@ impl ExecutionPort for CoinbaseExecutionAdapter {
         self.cancel_order(order_id).await?;
 
         // For production, need to fetch original order and place new one with modified params
-        Err(anyhow!("Order modification not implemented - requires cancel and replace"))
+        Err(anyhow!(
+            "Order modification not implemented - requires cancel and replace"
+        ))
     }
 
     async fn get_order_status(&self, order_id: &OrderId) -> Result<Order> {
@@ -305,7 +314,7 @@ impl ExecutionPort for CoinbaseExecutionAdapter {
                 positions.push(Position {
                     symbol: Symbol(account.currency.clone()),
                     quantity: balance,
-                    avg_price: 0.0, // Coinbase doesn't provide avg price
+                    avg_price: 0.0,       // Coinbase doesn't provide avg price
                     side: OrderSide::Buy, // Simplified - all positions are long
                     pnl: 0.0,
                     pnl_pct: 0.0,
@@ -320,7 +329,8 @@ impl ExecutionPort for CoinbaseExecutionAdapter {
     async fn get_account_balance(&self) -> Result<AccountBalance> {
         let accounts = self.get_accounts().await?;
 
-        let total_value: f64 = accounts.iter()
+        let total_value: f64 = accounts
+            .iter()
             .map(|a| a.balance.parse().unwrap_or(0.0))
             .sum();
 
@@ -340,11 +350,7 @@ impl ExecutionPort for CoinbaseExecutionAdapter {
     }
 
     fn supported_order_types(&self) -> &[OrderType] {
-        &[
-            OrderType::Market,
-            OrderType::Limit,
-            OrderType::Stop,
-        ]
+        &[OrderType::Market, OrderType::Limit, OrderType::Stop]
     }
 
     fn health(&self) -> AdapterHealth {
@@ -402,26 +408,53 @@ mod tests {
 
     #[test]
     fn test_format_symbol() {
-        assert_eq!(CoinbaseExecutionAdapter::format_symbol(&Symbol("BTC/USD".into())), "BTC-USD");
-        assert_eq!(CoinbaseExecutionAdapter::format_symbol(&Symbol("ETH/USDT".into())), "ETH-USDT");
+        assert_eq!(
+            CoinbaseExecutionAdapter::format_symbol(&Symbol("BTC/USD".into())),
+            "BTC-USD"
+        );
+        assert_eq!(
+            CoinbaseExecutionAdapter::format_symbol(&Symbol("ETH/USDT".into())),
+            "ETH-USDT"
+        );
     }
 
     #[test]
     fn test_format_side() {
-        assert_eq!(CoinbaseExecutionAdapter::format_side(&OrderSide::Buy), "buy");
-        assert_eq!(CoinbaseExecutionAdapter::format_side(&OrderSide::Sell), "sell");
+        assert_eq!(
+            CoinbaseExecutionAdapter::format_side(&OrderSide::Buy),
+            "buy"
+        );
+        assert_eq!(
+            CoinbaseExecutionAdapter::format_side(&OrderSide::Sell),
+            "sell"
+        );
     }
 
     #[test]
     fn test_format_order_type() {
-        assert_eq!(CoinbaseExecutionAdapter::format_order_type(&OrderType::Market), "market");
-        assert_eq!(CoinbaseExecutionAdapter::format_order_type(&OrderType::Limit), "limit");
+        assert_eq!(
+            CoinbaseExecutionAdapter::format_order_type(&OrderType::Market),
+            "market"
+        );
+        assert_eq!(
+            CoinbaseExecutionAdapter::format_order_type(&OrderType::Limit),
+            "limit"
+        );
     }
 
     #[test]
     fn test_parse_order_status() {
-        assert_eq!(CoinbaseExecutionAdapter::parse_order_status("pending"), OrderStatus::Pending);
-        assert_eq!(CoinbaseExecutionAdapter::parse_order_status("done"), OrderStatus::Filled);
-        assert_eq!(CoinbaseExecutionAdapter::parse_order_status("rejected"), OrderStatus::Rejected);
+        assert_eq!(
+            CoinbaseExecutionAdapter::parse_order_status("pending"),
+            OrderStatus::Pending
+        );
+        assert_eq!(
+            CoinbaseExecutionAdapter::parse_order_status("done"),
+            OrderStatus::Filled
+        );
+        assert_eq!(
+            CoinbaseExecutionAdapter::parse_order_status("rejected"),
+            OrderStatus::Rejected
+        );
     }
 }

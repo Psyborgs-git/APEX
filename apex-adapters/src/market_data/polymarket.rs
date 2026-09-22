@@ -55,7 +55,7 @@ impl PolymarketAdapter {
     }
 
     /// Fetch market data from Polymarket GraphQL API
-    async fn fetch_markets(&self) -> Result<Vec<PolymarketMarket>> {
+    pub async fn fetch_markets(&self) -> Result<Vec<PolymarketMarket>> {
         let query = r#"
             query {
                 markets(orderBy: volumeDesc) {
@@ -102,7 +102,10 @@ impl PolymarketAdapter {
             .await
             .map_err(|e| anyhow!("Failed to parse Polymarket response: {}", e))?;
 
-        Ok(body.data.ok_or_else(|| anyhow!("No data in response"))?.markets)
+        Ok(body
+            .data
+            .ok_or_else(|| anyhow!("No data in response"))?
+            .markets)
     }
 
     /// Convert Polymarket market to APEX Quote
@@ -110,12 +113,16 @@ impl PolymarketAdapter {
         let mut quotes = Vec::new();
 
         for outcome in &market.outcomes {
-            let bid = outcome.order_book.as_ref()
+            let bid = outcome
+                .order_book
+                .as_ref()
                 .and_then(|ob| ob.best_bid.as_ref())
                 .map(|b| b.price)
                 .unwrap_or(0.0);
 
-            let ask = outcome.order_book.as_ref()
+            let ask = outcome
+                .order_book
+                .as_ref()
                 .and_then(|ob| ob.best_ask.as_ref())
                 .map(|a| a.price)
                 .unwrap_or(0.0);
@@ -132,7 +139,7 @@ impl PolymarketAdapter {
                 low: last,  // Polymarket doesn't provide low
                 volume: market.volume as u64,
                 change_pct: 0.0, // Polymarket doesn't provide change
-                vwap: 0.0, // Polymarket doesn't provide VWAP
+                vwap: 0.0,       // Polymarket doesn't provide VWAP
                 updated_at: Utc::now(),
             });
         }
@@ -155,6 +162,8 @@ impl PolymarketAdapter {
                         last: price,
                         volume: 0,
                         source: "polymarket".into(),
+                        open: None,
+                        change_pct: None,
                     }));
                 }
             }
@@ -203,9 +212,13 @@ impl MarketDataPort for PolymarketAdapter {
                             "type": "subscribe",
                             "id": symbol.0
                         });
-                        if ws_stream.send(tokio_tungstenite::tungstenite::Message::Text(
-                            subscribe_msg.to_string()
-                        )).await.is_err() {
+                        if ws_stream
+                            .send(tokio_tungstenite::tungstenite::Message::Text(
+                                subscribe_msg.to_string(),
+                            ))
+                            .await
+                            .is_err()
+                        {
                             break;
                         }
                     }
@@ -256,7 +269,8 @@ impl MarketDataPort for PolymarketAdapter {
                 }
                 Err(e) => {
                     error!("Failed to connect to Polymarket WebSocket: {}", e);
-                    *status.write().await = AdapterHealth::Unhealthy(format!("Connection failed: {}", e));
+                    *status.write().await =
+                        AdapterHealth::Unhealthy(format!("Connection failed: {}", e));
                 }
             }
         });
@@ -333,7 +347,7 @@ struct MarketsResponse {
 }
 
 #[derive(Debug, Deserialize)]
-struct PolymarketMarket {
+pub struct PolymarketMarket {
     id: String,
     question: String,
     #[serde(rename = "outcomeAssetCount")]

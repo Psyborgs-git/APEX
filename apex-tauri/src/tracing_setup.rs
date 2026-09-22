@@ -16,12 +16,7 @@
 
 use std::fs;
 use std::io;
-use tracing_subscriber::{
-    fmt,
-    layer::SubscriberExt,
-    util::SubscriberInitExt,
-    EnvFilter,
-};
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 /// Initialise the global tracing subscriber.
 ///
@@ -32,13 +27,11 @@ pub fn init() {
 
     // Base env filter — defaults to `apex=info` unless overridden.
     let default_filter = "apex=info";
-    let env_filter = EnvFilter::try_from_env("APEX_LOG")
-        .unwrap_or_else(|_| EnvFilter::new(default_filter));
+    let env_filter =
+        EnvFilter::try_from_env("APEX_LOG").unwrap_or_else(|_| EnvFilter::new(default_filter));
 
     // Always present: pretty console layer.
-    let console_layer = fmt::layer()
-        .with_target(true)
-        .with_ansi(true);
+    let console_layer = fmt::layer().with_target(true).with_ansi(true);
 
     // Optionally: structured JSON layer writing to logs/apex_trace.ndjson.
     let json_enabled = std::env::var("APEX_JSON_TRACE")

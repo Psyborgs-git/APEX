@@ -8,7 +8,8 @@ import { useEffect, useRef } from 'react';
 import { useMarketStore } from '../stores/marketStore';
 import { useOrderStore } from '../stores/orderStore';
 import { useHealthStore } from '../stores/healthStore';
-import type { QuoteDto, OrderDto, PositionDto, SystemHealthDto } from '../lib/types';
+import { useNewsStore } from '../stores/newsStore';
+import type { QuoteDto, OrderDto, PositionDto, SystemHealthDto, NewsItemDto, AlertDto } from '../lib/types';
 
 const IS_TAURI = typeof window !== 'undefined' && '__TAURI__' in window;
 
@@ -53,7 +54,6 @@ export function useQuoteStream() {
  */
 export function useOrderStream() {
   const setOrders = useOrderStore((s) => s.setOrders);
-  const ordersRef = useRef<OrderDto[]>([]);
   const unlistenRef = useRef<UnlistenFn | null>(null);
 
   useEffect(() => {
@@ -66,13 +66,17 @@ export function useOrderStream() {
         const { listen } = await import('@tauri-apps/api/event');
         const unlisten = await listen<OrderDto>('order-update', (event) => {
           if (!mounted || !event.payload?.id) return;
-          const idx = ordersRef.current.findIndex((o) => o.id === event.payload.id);
+          // Merge into the live store — event payloads must not clobber rows
+          // seeded by the orders poller/initial fetch.
+          const current = useOrderStore.getState().openOrders;
+          const idx = current.findIndex((o) => o.id === event.payload.id);
+          const next = [...current];
           if (idx >= 0) {
-            ordersRef.current[idx] = event.payload;
+            next[idx] = event.payload;
           } else {
-            ordersRef.current.push(event.payload);
+            next.push(event.payload);
           }
-          setOrders([...ordersRef.current]);
+          setOrders(next);
         });
         unlistenRef.current = unlisten;
       } catch {
@@ -92,7 +96,6 @@ export function useOrderStream() {
  */
 export function usePositionStream() {
   const setPositions = useOrderStore((s) => s.setPositions);
-  const positionsRef = useRef<PositionDto[]>([]);
   const unlistenRef = useRef<UnlistenFn | null>(null);
 
   useEffect(() => {
@@ -105,13 +108,15 @@ export function usePositionStream() {
         const { listen } = await import('@tauri-apps/api/event');
         const unlisten = await listen<PositionDto>('position-update', (event) => {
           if (!mounted || !event.payload?.symbol) return;
-          const idx = positionsRef.current.findIndex((p) => p.symbol === event.payload.symbol);
+          const current = useOrderStore.getState().positions;
+          const idx = current.findIndex((p) => p.symbol === event.payload.symbol);
+          const next = [...current];
           if (idx >= 0) {
-            positionsRef.current[idx] = event.payload;
+            next[idx] = event.payload;
           } else {
-            positionsRef.current.push(event.payload);
+            next.push(event.payload);
           }
-          setPositions([...positionsRef.current]);
+          setPositions(next);
         });
         unlistenRef.current = unlisten;
       } catch {
@@ -160,6 +165,72 @@ export function useHealthStream() {
 }
 
 /**
+ * Subscribe to news items pushed from the Rust news engine.
+ */
+export function useNewsStream() {
+  const addItem = useNewsStore((s) => s.addItem);
+  const unlistenRef = useRef<UnlistenFn | null>(null);
+
+  useEffect(() => {
+    if (!IS_TAURI) return;
+
+    let mounted = true;
+
+    (async () => {
+      try {
+        const { listen } = await import('@tauri-apps/api/event');
+        const unlisten = await listen<NewsItemDto>('news-item', (event) => {
+          if (mounted && event.payload?.id) {
+            addItem(event.payload);
+          }
+        });
+        unlistenRef.current = unlisten;
+      } catch {
+        // Tauri event API not available
+      }
+    })();
+
+    return () => {
+      mounted = false;
+      unlistenRef.current?.();
+    };
+  }, [addItem]);
+}
+
+/**
+ * Subscribe to fired-alert events pushed by the alert engine.
+ */
+export function useAlertStream() {
+  const addFiredAlert = useNewsStore((s) => s.addFiredAlert);
+  const unlistenRef = useRef<UnlistenFn | null>(null);
+
+  useEffect(() => {
+    if (!IS_TAURI) return;
+
+    let mounted = true;
+
+    (async () => {
+      try {
+        const { listen } = await import('@tauri-apps/api/event');
+        const unlisten = await listen<AlertDto>('alert-fired', (event) => {
+          if (mounted && event.payload?.rule_id) {
+            addFiredAlert(event.payload);
+          }
+        });
+        unlistenRef.current = unlisten;
+      } catch {
+        // Tauri event API not available
+      }
+    })();
+
+    return () => {
+      mounted = false;
+      unlistenRef.current?.();
+    };
+  }, [addFiredAlert]);
+}
+
+/**
  * Master hook that sets up all Tauri event streams.
  * Call once from the app root to initialize all real-time subscriptions.
  */
@@ -168,4 +239,6 @@ export function useTauriEventBridge() {
   useOrderStream();
   usePositionStream();
   useHealthStream();
+  useNewsStream();
+  useAlertStream();
 }

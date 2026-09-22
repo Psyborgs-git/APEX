@@ -7,15 +7,37 @@ import type { CenterTab } from './workspaceTabs';
 /** Delay in ms before deactivating command bar on blur, to allow click events */
 const BLUR_DELAY_MS = 200;
 
-/** Map from command keywords to tab identifiers */
-const PANEL_MAP: Record<string, CenterTab> = {
+/** Map from command keywords to tab identifiers ('copilot' opens the dock, not a tab) */
+const PANEL_MAP: Record<string, CenterTab | 'copilot'> = {
   CHART: 'chart',
   STRATEGY: 'strategy',
   ML: 'ml',
   DATA: 'data',
   NOTEBOOK: 'notebook',
   HEALTH: 'health',
-  ORDERS: 'chart',
+  NEWS: 'news',
+  BLOTTER: 'blotter',
+  ORDERS: 'blotter',
+  ORDER_BOOK: 'book',
+  BOOK: 'book',
+  SCANNER: 'scanner',
+  SCAN: 'scanner',
+  GRAPH: 'graph',
+  VECTOR: 'graph',
+  ANALYTICS: 'analytics',
+  QUANT: 'analytics',
+  STATS: 'analytics',
+  BACKTEST: 'backtest',
+  BT: 'backtest',
+  OPTIMIZE: 'backtest',
+  COPILOT: 'copilot',
+  AI: 'copilot',
+  MARKET: 'market',
+  MOST: 'market',
+  OVERVIEW: 'market',
+  AUTOMATIONS: 'automations',
+  AUTOMATION: 'automations',
+  AUTO: 'automations',
   POSITIONS: 'chart',
 };
 
@@ -172,7 +194,16 @@ export const CommandBar: React.FC<CommandBarProps> = ({ onSelectSymbol, onSwitch
   }, [input, executeCommand]);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (e.key === ' ' && !isActive && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) {
+    const el = e.target as HTMLElement | null;
+    const tag = el?.tagName;
+    const isEditable =
+      el instanceof HTMLInputElement ||
+      el instanceof HTMLTextAreaElement ||
+      tag === 'BUTTON' ||
+      tag === 'SELECT' ||
+      tag === 'A' ||
+      el?.isContentEditable === true;
+    if (e.key === ' ' && !isActive && !isEditable) {
       e.preventDefault();
       setIsActive(true);
       setTimeout(() => inputRef.current?.focus(), 0);
@@ -212,6 +243,10 @@ export const CommandBar: React.FC<CommandBarProps> = ({ onSelectSymbol, onSwitch
           {feedback.message}
         </span>
       )}
+      <div className="hidden md:flex items-center gap-1.5 text-text-muted">
+        <kbd className="px-1.5 py-0.5 bg-surface-2 border border-[var(--border-color)] rounded font-mono text-[9px]">SPACE</kbd>
+        <kbd className="px-1.5 py-0.5 bg-surface-2 border border-[var(--border-color)] rounded font-mono text-[9px]" title="Keyboard shortcuts">?</kbd>
+      </div>
       <div className="flex items-center gap-2 text-xs text-text-muted font-mono">
         <span>{brokerBadgeLabel}</span>
         <span className={`w-2 h-2 rounded-full ${brokerDotClass}`}></span>

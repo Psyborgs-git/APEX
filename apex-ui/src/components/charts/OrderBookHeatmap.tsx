@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useCallback } from 'react';
 import { formatPrice, formatVolume } from '../../lib/format';
+import { chartTheme, useThemeTick, withAlpha, type ChartTheme } from '../../lib/chartTheme';
 
 interface OrderBookLevel {
   price: number;
@@ -13,17 +14,21 @@ interface OrderBookHeatmapProps {
   maxDepth?: number;
 }
 
-const COLORS = {
-  bidFill: 'rgba(0, 200, 83, 0.35)',
-  bidStroke: 'rgba(0, 200, 83, 0.7)',
-  askFill: 'rgba(255, 23, 68, 0.35)',
-  askStroke: 'rgba(255, 23, 68, 0.7)',
-  background: '#0a0a0f',
-  gridLine: '#1a1a25',
-  text: '#a0a0b8',
-  textMuted: '#5c5c7a',
-  midLine: '#448aff',
-} as const;
+/** Depth-chart colors derived from the active theme tokens. */
+function heatmapColors(t: ChartTheme) {
+  return {
+    bidFill: withAlpha(t.bull, 35),
+    bidStroke: withAlpha(t.bull, 70),
+    askFill: withAlpha(t.bear, 35),
+    askStroke: withAlpha(t.bear, 70),
+    background: t.background,
+    gridLine: t.grid,
+    text: t.text,
+    textMuted: t.textMuted,
+    midLine: t.accent,
+  };
+}
+type HeatmapColors = ReturnType<typeof heatmapColors>;
 
 const TARGET_FPS = 30;
 const FRAME_INTERVAL = 1000 / TARGET_FPS;
@@ -35,6 +40,7 @@ function drawOrderBook(
   bids: OrderBookLevel[],
   asks: OrderBookLevel[],
   dpr: number,
+  C: HeatmapColors,
 ): void {
   ctx.save();
   ctx.scale(dpr, dpr);
@@ -46,12 +52,12 @@ function drawOrderBook(
   const chartH = logicalH - padding.top - padding.bottom;
 
   // Clear
-  ctx.fillStyle = COLORS.background;
+  ctx.fillStyle = C.background;
   ctx.fillRect(0, 0, logicalW, logicalH);
 
   if (bids.length === 0 && asks.length === 0) {
     ctx.font = '11px "JetBrains Mono", monospace';
-    ctx.fillStyle = COLORS.textMuted;
+    ctx.fillStyle = C.textMuted;
     ctx.textAlign = 'center';
     ctx.fillText('No order book data', midX, logicalH / 2);
     ctx.restore();
@@ -76,7 +82,7 @@ function drawOrderBook(
   const maxCum = Math.max(bidCum[bidCum.length - 1] ?? 0, askCum[askCum.length - 1] ?? 0, 1);
 
   // Draw center line
-  ctx.strokeStyle = COLORS.midLine;
+  ctx.strokeStyle = C.midLine;
   ctx.lineWidth = 1;
   ctx.setLineDash([4, 4]);
   ctx.beginPath();
@@ -87,7 +93,7 @@ function drawOrderBook(
 
   // Header
   ctx.font = '10px "JetBrains Mono", monospace';
-  ctx.fillStyle = COLORS.text;
+  ctx.fillStyle = C.text;
   ctx.textAlign = 'left';
   ctx.fillText('BIDS', 8, 14);
   ctx.textAlign = 'right';
@@ -97,7 +103,7 @@ function drawOrderBook(
   if (bids.length > 0 && asks.length > 0) {
     const spreadVal = asks[0].price - bids[0].price;
     ctx.textAlign = 'center';
-    ctx.fillStyle = COLORS.textMuted;
+    ctx.fillStyle = C.textMuted;
     ctx.fillText(`Spread: ${formatPrice(spreadVal)}`, midX, 14);
   }
 
@@ -108,8 +114,8 @@ function drawOrderBook(
     y: padding.top,
     width: bidBarWidth,
     height: chartH,
-    fillStyle: COLORS.bidFill,
-    strokeStyle: COLORS.bidStroke,
+    fillStyle: C.bidFill,
+    strokeStyle: C.bidStroke,
     direction: 'left',
   });
 
@@ -120,14 +126,14 @@ function drawOrderBook(
     y: padding.top,
     width: askBarWidth,
     height: chartH,
-    fillStyle: COLORS.askFill,
-    strokeStyle: COLORS.askStroke,
+    fillStyle: C.askFill,
+    strokeStyle: C.askStroke,
     direction: 'right',
   });
 
   // Price labels
   ctx.font = '9px "JetBrains Mono", monospace';
-  ctx.fillStyle = COLORS.textMuted;
+  ctx.fillStyle = C.textMuted;
 
   const maxLevels = Math.min(bids.length, Math.floor(chartH / 14));
   const bidStep = Math.max(1, Math.floor(bids.length / maxLevels));
@@ -148,10 +154,10 @@ function drawOrderBook(
   // Bottom summary
   ctx.font = '9px "JetBrains Mono", monospace';
   ctx.textAlign = 'left';
-  ctx.fillStyle = COLORS.bidStroke;
+  ctx.fillStyle = C.bidStroke;
   ctx.fillText(`Σ ${formatVolume(bidCum[bidCum.length - 1] ?? 0)}`, 8, logicalH - 6);
   ctx.textAlign = 'right';
-  ctx.fillStyle = COLORS.askStroke;
+  ctx.fillStyle = C.askStroke;
   ctx.fillText(`Σ ${formatVolume(askCum[askCum.length - 1] ?? 0)}`, logicalW - 8, logicalH - 6);
 
   ctx.restore();
@@ -221,6 +227,11 @@ const OrderBookHeatmapInner: React.FC<OrderBookHeatmapProps> = ({
   const lastDrawRef = useRef<number>(0);
   const bidsRef = useRef(bids);
   const asksRef = useRef(asks);
+  // Recomputed every render — theme flips re-render via useThemeTick and the
+  // next animation frame picks the new palette up from the ref.
+  const colorsRef = useRef<HeatmapColors>(heatmapColors(chartTheme()));
+  colorsRef.current = heatmapColors(chartTheme());
+  useThemeTick();
 
   bidsRef.current = bids;
   asksRef.current = asks;
@@ -232,7 +243,7 @@ const OrderBookHeatmapInner: React.FC<OrderBookHeatmapProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    drawOrderBook(ctx, canvas.width, canvas.height, bidsRef.current, asksRef.current, window.devicePixelRatio || 1);
+    drawOrderBook(ctx, canvas.width, canvas.height, bidsRef.current, asksRef.current, window.devicePixelRatio || 1, colorsRef.current);
   }, []);
 
   const animate = useCallback(() => {

@@ -90,6 +90,47 @@ export interface StorageSettingsDto {
   available_backends: string[];
 }
 
+export interface AppearanceSettingsDto {
+  theme: string;
+  density: string;
+}
+
+export interface LlmProviderDto {
+  id: string;
+  name: string;
+  base_url: string;
+  model: string;
+  api_kind: string;
+  api_key_env: string;
+  max_tokens: number;
+  key_configured: boolean;
+}
+
+export interface LlmProviderWriteDto {
+  id: string;
+  name: string;
+  base_url: string;
+  model: string;
+  api_kind: string;
+  api_key_env: string;
+  max_tokens: number;
+}
+
+export interface LlmSettingsDto {
+  active: string;
+  providers: LlmProviderDto[];
+}
+
+export interface LlmSettingsWriteDto {
+  active: string;
+  providers: LlmProviderWriteDto[];
+}
+
+export interface AcpSettingsDto {
+  command: string;
+  cwd: string;
+}
+
 export interface AppSettingsDto {
   config_path: string;
   runtime_storage_backend: string;
@@ -99,6 +140,9 @@ export interface AppSettingsDto {
   execution: AdapterPreferenceDto;
   risk: RiskSettingsDto;
   storage: StorageSettingsDto;
+  appearance: AppearanceSettingsDto;
+  llm: LlmSettingsDto;
+  acp: AcpSettingsDto;
 }
 
 export interface AppSettingsUpdateDto {
@@ -107,6 +151,9 @@ export interface AppSettingsUpdateDto {
   execution: Pick<AdapterPreferenceDto, 'adapter'>;
   risk: RiskSettingsDto;
   storage: Omit<StorageSettingsDto, 'available_backends'>;
+  appearance: AppearanceSettingsDto;
+  llm: LlmSettingsWriteDto;
+  acp: AcpSettingsDto;
 }
 
 export interface NewOrderRequestDto {
@@ -254,6 +301,42 @@ export interface MLModelDto {
   target_column: string;
 }
 
+export interface ModelSignalDto {
+  model_id: string;
+  symbol: string;
+  signal: number;
+  probability: number | null;
+  features_used: string[];
+}
+
+export interface AutomationDto {
+  id: string;
+  name: string;
+  kind: string;
+  symbol: string;
+  model_id: string;
+  interval_secs: number;
+  quantity: number;
+  threshold: number;
+  broker_id: string;
+  enabled: boolean;
+  created_at: string;
+  last_run_at: string | null;
+  last_result: string | null;
+  orders_today: number;
+}
+
+export interface CreateAutomationDto {
+  name: string;
+  kind: string;
+  symbol: string;
+  model_id: string;
+  interval_secs?: number;
+  quantity?: number;
+  threshold?: number;
+  broker_id?: string;
+}
+
 export interface MLTrainingRequestDto {
   algorithm: string;
   data_path: string;
@@ -300,4 +383,174 @@ export interface BrokerConnectionDto {
   market_data_available: boolean;
   token_field_label: string;
   message: string;
+}
+
+// News
+export interface NewsItemDto {
+  id: string;
+  headline: string;
+  summary: string;
+  source: string;
+  url: string;
+  published: string;
+  symbols: string[];
+  sentiment: number | null;
+}
+
+export interface NewsFeedDto {
+  name: string;
+  url: string;
+  enabled: boolean;
+}
+
+// Order book
+export interface OrderBookLevelDto {
+  price: number;
+  quantity: number;
+}
+
+export interface OrderBookDto {
+  symbol: string;
+  source: 'binance' | 'synthetic' | string;
+  bids: OrderBookLevelDto[];
+  asks: OrderBookLevelDto[];
+}
+
+// Graph
+export interface GraphNodeDto {
+  id: string;
+  node_type: 'Instrument' | 'Sector' | 'MacroVariable' | 'NewsEvent' | 'CustomVariable' | string;
+  label: string;
+  symbol: string | null;
+  properties: Record<string, unknown>;
+}
+
+export interface GraphEdgeDto {
+  source: string;
+  target: string;
+  data: {
+    edge_type: unknown;
+    weight: number;
+    metadata: Record<string, unknown>;
+  };
+}
+
+export interface GraphDto {
+  nodes: GraphNodeDto[];
+  edges: GraphEdgeDto[];
+}
+
+// Scanner
+export interface ScanCriterionDto {
+  kind: string;
+  value?: number;
+  value2?: number;
+  period?: number;
+}
+
+export interface ScanRequestDto {
+  name?: string;
+  symbols: string[];
+  criteria: ScanCriterionDto[];
+  timeframe?: string;
+  lookback_bars?: number;
+}
+
+export interface ScanResultDto {
+  symbol: string;
+  last_price: number;
+  change_pct: number;
+  volume: number;
+  matched_at: string;
+}
+
+export interface ScanOutputDto {
+  config_name: string;
+  scanned_count: number;
+  matched_count: number;
+  results: ScanResultDto[];
+  completed_at: string;
+}
+
+// AI Copilot
+export interface CopilotMessageDto {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface ToolCallTraceDto {
+  name: string;
+  detail: string;
+  ok: boolean;
+}
+
+export interface PendingApprovalDto {
+  key: string;
+  name: string;
+  detail: string;
+}
+
+export interface CopilotReplyDto {
+  reply: string;
+  model: string;
+  provider: string;
+  tool_calls: ToolCallTraceDto[];
+  pending_approvals: PendingApprovalDto[];
+}
+
+// Quant / indicators (OpenBB-style analytics)
+export interface SeriesPointDto {
+  time: string;
+  value: number;
+}
+
+export interface NamedSeriesDto {
+  name: string;
+  points: SeriesPointDto[];
+}
+
+export interface IndicatorResultDto {
+  symbol: string;
+  indicator: string;
+  overlay: boolean;
+  series: NamedSeriesDto[];
+}
+
+export interface QuantStatsDto {
+  symbol: string;
+  n: number;
+  mean: number;
+  std_dev: number;
+  variance: number;
+  skewness: number;
+  kurtosis: number;
+  min: number;
+  q05: number;
+  q25: number;
+  median: number;
+  q75: number;
+  q95: number;
+  max: number;
+  jarque_bera: number;
+  normal: boolean;
+  sharpe: number;
+  sortino: number;
+  omega: number;
+  max_drawdown: number;
+  ann_volatility: number;
+  autocorr: number[];
+  rolling_vol: SeriesPointDto[];
+  rolling_sharpe: SeriesPointDto[];
+}
+
+export interface RegressionDto {
+  x_symbol: string;
+  y_symbol: string;
+  n: number;
+  alpha: number;
+  beta: number;
+  r_squared: number;
+  residuals: SeriesPointDto[];
+  scatter: [number, number][];
+  fit_line: [number, number][];
 }

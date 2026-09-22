@@ -24,6 +24,7 @@ pub struct YahooFinanceAdapter {
     client: reqwest::Client,
     status: Arc<RwLock<AdapterHealth>>,
     subscribed_symbols: Arc<RwLock<Vec<Symbol>>>,
+    poll_started: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl YahooFinanceAdapter {
@@ -39,6 +40,7 @@ impl YahooFinanceAdapter {
             client,
             status: Arc::new(RwLock::new(AdapterHealth::Healthy)),
             subscribed_symbols: Arc::new(RwLock::new(Vec::new())),
+            poll_started: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
 
@@ -46,6 +48,16 @@ impl YahooFinanceAdapter {
     /// Symbols with a suffix (`.NS`, `.BO`, `/`) are passed through as-is.
     /// Plain symbols (e.g. "AAPL") are assumed to be US stocks and need no suffix.
     fn format_symbol(symbol: &Symbol) -> String {
+        let s = symbol.0.to_uppercase();
+        // Normalise exchange-style crypto pairs (BTCUSDT, ETHUSDC) to Yahoo's
+        // dash convention (BTC-USD, ETH-USD).
+        for quote_ccy in ["USDT", "USDC"] {
+            if let Some(base) = s.strip_suffix(quote_ccy) {
+                if base.len() >= 2 && base.chars().all(|c| c.is_ascii_alphabetic()) {
+                    return format!("{}-USD", base);
+                }
+            }
+        }
         symbol.0.clone()
     }
 
@@ -140,7 +152,11 @@ impl YahooFinanceAdapter {
     }
 
     /// Parse historical OHLCV data from Yahoo response
-    fn parse_ohlcv_response(symbol: &Symbol, body: &str) -> Result<Vec<OHLCV>> {
+    fn parse_ohlcv_response(
+        symbol: &Symbol,
+        timeframe: &Timeframe,
+        body: &str,
+    ) -> Result<Vec<OHLCV>> {
         let response: YahooChartResponse = serde_json::from_str(body)
             .map_err(|e| anyhow!("Failed to parse Yahoo response: {}", e))?;
 
@@ -166,8 +182,14 @@ impl YahooFinanceAdapter {
             .and_then(|q| q.first())
             .ok_or_else(|| anyhow!("No quote data in response"))?;
 
-        let opens = quotes.open.as_ref().ok_or_else(|| anyhow!("No open data"))?;
-        let highs = quotes.high.as_ref().ok_or_else(|| anyhow!("No high data"))?;
+        let opens = quotes
+            .open
+            .as_ref()
+            .ok_or_else(|| anyhow!("No open data"))?;
+        let highs = quotes
+            .high
+            .as_ref()
+            .ok_or_else(|| anyhow!("No high data"))?;
         let lows = quotes.low.as_ref().ok_or_else(|| anyhow!("No low data"))?;
         let closes = quotes
             .close
@@ -191,12 +213,12 @@ impl YahooFinanceAdapter {
             let volume = volumes.get(i).copied().flatten();
 
             // Skip bars with missing data
-            if let (Some(o), Some(h), Some(l), Some(c), Some(v)) =
-                (open, high, low, close, volume)
+            if let (Some(o), Some(h), Some(l), Some(c), Some(v)) = (open, high, low, close, volume)
             {
                 bars.push(OHLCV {
                     time,
                     symbol: symbol.clone(),
+                    timeframe: timeframe.clone(),
                     open: o,
                     high: h,
                     low: l,
@@ -260,13 +282,23 @@ impl MarketDataPort for YahooFinanceAdapter {
             }
         }
 
-        // Polling loop: fetch quotes and emit ticks every POLL_INTERVAL
+        // Polling loop: fetch quotes and emit ticks every POLL_INTERVAL.
+        // Spawned once — subsequent subscribe() calls only extend the shared
+        // symbol set, which the loop re-reads each pass. The extra receiver
+        // handed back to the caller simply stays idle.
+        if self
+            .poll_started
+            .swap(true, std::sync::atomic::Ordering::SeqCst)
+        {
+            return Ok(rx);
+        }
+        let subscribed = self.subscribed_symbols.clone();
         tokio::spawn(async move {
             loop {
+                let symbols: Vec<Symbol> = subscribed.read().await.clone();
                 for symbol in &symbols {
                     let yahoo_symbol = YahooFinanceAdapter::format_symbol(symbol);
-                    let url =
-                        format!("{}/{}?interval=1d&range=1d", YAHOO_API_BASE, yahoo_symbol);
+                    let url = format!("{}/{}?interval=1d&range=1d", YAHOO_API_BASE, yahoo_symbol);
 
                     match client.get(&url).send().await {
                         Ok(response) => {
@@ -282,6 +314,8 @@ impl MarketDataPort for YahooFinanceAdapter {
                                         last: quote.last,
                                         volume: quote.volume,
                                         source: "yahoo".into(),
+                                        open: Some(quote.open),
+                                        change_pct: Some(quote.change_pct),
                                     };
 
                                     if tx.send(tick).await.is_err() {
@@ -353,7 +387,7 @@ impl MarketDataPort for YahooFinanceAdapter {
             .await
             .map_err(|e| anyhow!("Failed to read Yahoo response body: {}", e))?;
 
-        Self::parse_ohlcv_response(symbol, &body)
+        Self::parse_ohlcv_response(symbol, &timeframe, &body)
     }
 
     fn adapter_id(&self) -> &'static str {
@@ -480,10 +514,7 @@ mod tests {
     #[test]
     fn test_format_symbol_nse() {
         let symbol = Symbol("RELIANCE.NS".into());
-        assert_eq!(
-            YahooFinanceAdapter::format_symbol(&symbol),
-            "RELIANCE.NS"
-        );
+        assert_eq!(YahooFinanceAdapter::format_symbol(&symbol), "RELIANCE.NS");
     }
 
     #[test]
@@ -504,9 +535,12 @@ mod tests {
     #[test]
     fn test_parse_historical_response() {
         let symbol = Symbol("AAPL".into());
-        let bars =
-            YahooFinanceAdapter::parse_ohlcv_response(&symbol, SAMPLE_HISTORICAL_RESPONSE)
-                .unwrap();
+        let bars = YahooFinanceAdapter::parse_ohlcv_response(
+            &symbol,
+            &Timeframe::D1,
+            SAMPLE_HISTORICAL_RESPONSE,
+        )
+        .unwrap();
         assert_eq!(bars.len(), 3);
         assert!((bars[0].open - 170.00).abs() < 0.01);
         assert!((bars[0].close - 172.00).abs() < 0.01);
@@ -544,10 +578,8 @@ mod tests {
     #[test]
     fn test_parse_empty_results() {
         let symbol = Symbol("AAPL".into());
-        let result = YahooFinanceAdapter::parse_quote_response(
-            &symbol,
-            r#"{"chart": {"result": []}}"#,
-        );
+        let result =
+            YahooFinanceAdapter::parse_quote_response(&symbol, r#"{"chart": {"result": []}}"#);
         assert!(result.is_err());
     }
 }

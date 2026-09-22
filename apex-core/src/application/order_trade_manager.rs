@@ -23,10 +23,7 @@ pub struct OrderTradeManager {
 
 impl OrderTradeManager {
     /// Create a new Order & Trade Manager
-    pub fn new(
-        risk_engine: Arc<RiskEngine>,
-        bus: Arc<MessageBus>,
-    ) -> Self {
+    pub fn new(risk_engine: Arc<RiskEngine>, bus: Arc<MessageBus>) -> Self {
         Self {
             risk_engine,
             execution: HashMap::new(),
@@ -44,11 +41,7 @@ impl OrderTradeManager {
 
     /// Submit a new order — risk check → journal → dispatch → update
     #[tracing::instrument(skip(self, request), fields(symbol = %request.symbol.0, side = ?request.side))]
-    pub async fn submit_order(
-        &self,
-        request: NewOrderRequest,
-        broker_id: &str,
-    ) -> Result<OrderId> {
+    pub async fn submit_order(&self, request: NewOrderRequest, broker_id: &str) -> Result<OrderId> {
         // 1. Risk check (sync, no I/O) — halt check is FIRST inside check()
         let account = self.get_account_balance(broker_id).await?;
         let verdict = self.risk_engine.check(&request, &account);
@@ -61,7 +54,9 @@ impl OrderTradeManager {
         }
 
         // 2. Get the execution adapter
-        let adapter = self.execution.get(broker_id)
+        let adapter = self
+            .execution
+            .get(broker_id)
             .ok_or_else(|| anyhow!("No execution adapter found for broker: {}", broker_id))?;
 
         // 3. Dispatch to broker adapter
@@ -84,7 +79,9 @@ impl OrderTradeManager {
     /// Cancel an order
     #[tracing::instrument(skip(self, order_id), fields(order_id = %order_id.0))]
     pub async fn cancel_order(&self, order_id: &OrderId, broker_id: &str) -> Result<()> {
-        let adapter = self.execution.get(broker_id)
+        let adapter = self
+            .execution
+            .get(broker_id)
             .ok_or_else(|| anyhow!("No execution adapter found for broker: {}", broker_id))?;
 
         adapter.cancel_order(order_id).await?;
@@ -97,7 +94,8 @@ impl OrderTradeManager {
         self.bus.publish(
             Topic::OrderUpdate(order_id.0.clone()),
             BusMessage::OrderData(
-                self.open_orders.get(&order_id.0)
+                self.open_orders
+                    .get(&order_id.0)
                     .map(|o| o.clone())
                     .unwrap_or_else(|| Order {
                         id: order_id.clone(),
@@ -114,7 +112,7 @@ impl OrderTradeManager {
                         updated_at: chrono::Utc::now(),
                         broker_id: broker_id.to_string(),
                         source: "manual".into(),
-                    })
+                    }),
             ),
         );
 
@@ -129,7 +127,9 @@ impl OrderTradeManager {
         broker_id: &str,
         params: &ModifyParams,
     ) -> Result<()> {
-        let adapter = self.execution.get(broker_id)
+        let adapter = self
+            .execution
+            .get(broker_id)
             .ok_or_else(|| anyhow!("No execution adapter found for broker: {}", broker_id))?;
 
         adapter.modify_order(order_id, params).await?;
@@ -170,27 +170,26 @@ impl OrderTradeManager {
         let pnl = if let Some(mut pos) = self.positions.get_mut(&symbol_key) {
             // Existing position — calculate P&L
             let pnl = match (&pos.side, &fill.side) {
-                (OrderSide::Buy, OrderSide::Sell) => {
-                    (fill.price - pos.avg_price) * fill.quantity
-                }
-                (OrderSide::Sell, OrderSide::Buy) => {
-                    (pos.avg_price - fill.price) * fill.quantity
-                }
+                (OrderSide::Buy, OrderSide::Sell) => (fill.price - pos.avg_price) * fill.quantity,
+                (OrderSide::Sell, OrderSide::Buy) => (pos.avg_price - fill.price) * fill.quantity,
                 _ => 0.0, // Adding to position
             };
             pos.pnl += pnl;
             pnl
         } else {
             // New position
-            self.positions.insert(symbol_key.clone(), Position {
-                symbol: fill.symbol.clone(),
-                quantity: fill.quantity,
-                avg_price: fill.price,
-                side: fill.side,
-                pnl: 0.0,
-                pnl_pct: 0.0,
-                broker_id: fill.broker_id,
-            });
+            self.positions.insert(
+                symbol_key.clone(),
+                Position {
+                    symbol: fill.symbol.clone(),
+                    quantity: fill.quantity,
+                    avg_price: fill.price,
+                    side: fill.side,
+                    pnl: 0.0,
+                    pnl_pct: 0.0,
+                    broker_id: fill.broker_id,
+                },
+            );
             0.0
         };
 
@@ -200,25 +199,31 @@ impl OrderTradeManager {
         }
 
         // 4. Publish position update
-        self.bus.publish(Topic::PositionUpdate, BusMessage::PositionData(
-            self.positions.get(&fill.symbol.0)
-                .map(|p| p.clone())
-                .unwrap_or_else(|| Position {
-                    symbol: fill.symbol,
-                    quantity: 0.0,
-                    avg_price: 0.0,
-                    side: OrderSide::Buy,
-                    pnl: 0.0,
-                    pnl_pct: 0.0,
-                    broker_id: String::new(),
-                })
-        ));
+        self.bus.publish(
+            Topic::PositionUpdate,
+            BusMessage::PositionData(
+                self.positions
+                    .get(&fill.symbol.0)
+                    .map(|p| p.clone())
+                    .unwrap_or_else(|| Position {
+                        symbol: fill.symbol,
+                        quantity: 0.0,
+                        avg_price: 0.0,
+                        side: OrderSide::Buy,
+                        pnl: 0.0,
+                        pnl_pct: 0.0,
+                        broker_id: String::new(),
+                    }),
+            ),
+        );
     }
 
     /// Reconcile positions with broker
     #[tracing::instrument(skip(self), fields(broker = %broker_id))]
     pub async fn reconcile_positions(&self, broker_id: &str) -> Result<()> {
-        let adapter = self.execution.get(broker_id)
+        let adapter = self
+            .execution
+            .get(broker_id)
             .ok_or_else(|| anyhow!("No execution adapter found for broker: {}", broker_id))?;
 
         let broker_positions = adapter.get_positions().await?;
@@ -234,7 +239,10 @@ impl OrderTradeManager {
                     *local_pos = broker_pos;
                 }
             } else {
-                info!("New position from broker reconciliation: {} qty={}", key, broker_pos.quantity);
+                info!(
+                    "New position from broker reconciliation: {} qty={}",
+                    key, broker_pos.quantity
+                );
                 self.positions.insert(key, broker_pos);
             }
         }
@@ -244,7 +252,9 @@ impl OrderTradeManager {
 
     /// Get account balance from a broker
     pub async fn get_account_balance(&self, broker_id: &str) -> Result<AccountBalance> {
-        let adapter = self.execution.get(broker_id)
+        let adapter = self
+            .execution
+            .get(broker_id)
             .ok_or_else(|| anyhow!("No execution adapter found for broker: {}", broker_id))?;
         adapter.get_account_balance().await
     }
@@ -281,7 +291,9 @@ impl OrderTradeManager {
     pub fn authenticated_broker_ids(&self) -> Vec<String> {
         self.execution
             .iter()
-            .filter_map(|(broker_id, adapter)| adapter.is_authenticated().then(|| broker_id.clone()))
+            .filter_map(|(broker_id, adapter)| {
+                adapter.is_authenticated().then(|| broker_id.clone())
+            })
             .collect()
     }
 
@@ -290,12 +302,12 @@ impl OrderTradeManager {
     /// Every `interval` seconds, reconcile positions with all registered
     /// brokers. This runs as a background Tokio task and logs any
     /// discrepancies.
-    pub fn start_reconciliation_loop(
-        otm: Arc<Self>,
-        interval: std::time::Duration,
-    ) {
+    pub fn start_reconciliation_loop(otm: Arc<Self>, interval: std::time::Duration) {
         tokio::spawn(async move {
-            info!("Starting position reconciliation loop (interval: {:?})", interval);
+            info!(
+                "Starting position reconciliation loop (interval: {:?})",
+                interval
+            );
             loop {
                 tokio::time::sleep(interval).await;
 

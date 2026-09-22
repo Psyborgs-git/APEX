@@ -7,6 +7,35 @@ The format is based on "Keep a Changelog" and this project adheres to [Semantic 
 ## [Unreleased]
 
 ### Added
+- **AI Copilot**: OpenRouter-backed assistant panel with live terminal context (positions, watchlist quotes, session P&L injected into the system prompt). `copilot_chat` IPC command, `OPEN_ROUTER` / `OPENROUTER_API_KEY` env var, `[copilot]` config section, default model `openrouter/free`
+- **News Panel**: Center-tab news feed backed by the previously dormant NewsEngine — RSS polling wired into `AppState`, `news-item` Tauri event stream, `get_news` / `search_news` / `list_news_feeds` commands, symbol filter + keyword search UI
+- **Order Blotter**: `get_orders` command merging persisted order history with in-memory open orders; blotter tab with cancel support for working orders
+- **Order Book Panel**: `get_order_book` command — real Binance L2 depth for crypto pairs, deterministic synthetic book estimated from cached quotes for equities; OrderBookHeatmap wired live
+- **Correlation Graph Panel**: `compute_correlations` command — daily-return Pearson correlations across the watchlist upserted into the GraphEngine; VectorGraph force layout rendered live with coefficient edge labels; `get_graph` snapshot command
+- **Market Scanner Panel**: `run_scan` command over watchlist or ad-hoc universes — price/volume/%change/RSI/SMA criteria builder UI with results table and chart navigation
+- **Alert Engine Live Evaluation**: `AlertEngine::start` subscribes to the quote wildcard topic and evaluates rules continuously; PositionUpdate-driven `evaluate_pnl` task for DailyPnl rules; `alert-fired` events surface in the news panel
+- **Message Bus Wildcard Fan-out**: Parameterized topics (`Quote("AAPL")`) now also deliver to `Topic::*("*")` wildcard subscribers — fixes real-time quote/order/signal push events never reaching the frontend
+- **Config Sections**: `[news]` (feeds, poll interval) and `[copilot]` (model, base URL, max tokens) in `config/apex.toml`
+- **Market Overview Tab**: Index cards (S&P, NASDAQ, DOW, NIFTY, BTC, ETH, gold, WTI, EURUSD, USDINR), watchlist breadth meter, top gainers/losers, and latest headlines — a Bloomberg MOST-page equivalent
+- **Ticker Tape**: Scrolling marquee of major index quotes under the command bar (pauses on hover)
+- **Keyboard HUD**: `?` key overlay listing shortcuts and command-bar syntax
+- **Watchlist Upgrades**: Price flash on tick changes (green/red), sortable Symbol/Last/Chg% columns
+- **Status Bar**: Feed liveness indicator (LIVE/STALE by last quote arrival) and subscribed-symbol count
+- **Chart Timeframes**: 5m/15m/1H/1D selector on the candle chart with live ticks bucketed into the active timeframe
+- **Quant Analytics Tab**: OpenBB-style analytics — `compute_indicator` (10 indicators, chart overlays + synced oscillator pane), `get_quant_stats` (returns/skew/kurtosis/Jarque-Bera/Sharpe/Sortino/Omega/max-DD/ACF + rolling vol & Sharpe), `get_regression` (date-aligned cross-market OLS with scatter/fit/residuals); `apex-core::application::quant` pure-Rust stats module
+- **Light/Dark Theme + Compact Density**: `[appearance]` config section, full light palette + compact spacing/density overrides in `tokens.css`, live-applied via `html[data-theme]`/`data-density]`, persisted through settings
+- **Backtest Tab**: dedicated UX — strategy file picker, params (symbol/timeframe/date range/quantity/capital), equity-curve + drawdown charts, metrics grid, full trade log; `:BACKTEST` command
+- **Agentic Copilot**: tool-call loop (≤10 rounds) over live terminal state — quotes, OHLCV, quant stats, regression, scans, news, strategy read/write, backtests, CSV export, ML model list/train — so the model can build→test→optimise iteratively; tool trace rendered inline in the chat
+- **LLM Provider Registry**: `[[llm.providers]]` config + Settings CRUD — OpenAI-compatible endpoints with `api_kind` chat (`/chat/completions`), responses (`/responses`), or acp; keys referenced by env-var name only; active-provider picker with key-configured badges
+- **ACP Connector**: newline JSON-RPC stdio bridge to external agents/IDEs (initialize → session/new → session/prompt, streamed `agent_message_chunk` collection); `[acp]` command config, `api_kind: acp` routes copilot to it
+- **Zerodha Kite Login**: `zerodha_login` command exchanges the Kite `request_token` for a daily `access_token` (sha256 `api_key+request_token+api_secret` checksum) and installs it on both Zerodha adapters; Settings broker card gets a Kite login row
+
+### Fixed
+- **Blank Candle Chart**: `CandleChart` never fetched OHLCV data and `get_historical_data` only read sqlite — the backend now falls back to the market data adapter on a storage miss and persists fetched bars
+- **Silent Mock Mode in Desktop App**: `tauri.conf.json` lacked `withGlobalTauri`, so `window.__TAURI__` was never injected and the desktop build silently ran browser-mode mock data (every symbol showed 150.20). CSP `connect-src` now also allows `ipc:` / `ipc.localhost` for Tauri IPC
+- **Settings save panic**: `ensure_table` used immutable `doc[section]` indexing which panics on missing sections — probes with `doc.get()` first so `[appearance]`/`[llm]`/`[acp]` are created on first save
+- `PolymarketAdapter::fetch_markets` and `PolymarketMarket` made public (test compile error on `main`)
+- Live-network crypto adapter integration tests marked `#[ignore]` — they hit real exchange APIs and broke offline `cargo test`
 - **VADER-Style NLP Sentiment Pipeline**: Financial-domain lexicon-based sentiment analysis with 80+ terms, negation handling, degree modifiers, capitalisation boost, and VADER-normalised compound scoring (−1.0 to +1.0)
 - **IPC Input Validation**: Comprehensive security validation for all 20 Tauri IPC commands — symbol format, quantity bounds, price validation, broker ID whitelist, algorithm whitelist, path traversal prevention, JSON payload size limits
 - **Structured JSON Trace Exporter**: Optional NDJSON trace output (`APEX_JSON_TRACE=1`) with dual-layer tracing (console + file), suitable for Jaeger/Grafana/Datadog ingestion

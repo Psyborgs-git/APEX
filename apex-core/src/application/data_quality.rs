@@ -29,10 +29,10 @@ impl DataQualityChecker {
     /// Create a new data quality checker with default thresholds
     pub fn new() -> Self {
         Self {
-            max_price: 1_000_000_000.0, // 1 billion
-            min_price: 0.00000001,      // 1 satoshi
+            max_price: 1_000_000_000.0,        // 1 billion
+            min_price: 0.00000001,             // 1 satoshi
             max_volume: 1_000_000_000_000_000, // 1 quadrillion
-            max_timestamp_drift: 3600,   // 1 hour
+            max_timestamp_drift: 3600,         // 1 hour
         }
     }
 
@@ -246,14 +246,22 @@ impl DataQualityChecker {
         }
 
         if rejected_count > 0 {
-            debug!("Rejected {} out of {} OHLCV bars", rejected_count, bars.len());
+            debug!(
+                "Rejected {} out of {} OHLCV bars",
+                rejected_count,
+                bars.len()
+            );
         }
 
         Ok(valid_bars)
     }
 
     /// Check for gaps in tick timestamps
-    pub fn detect_tick_gaps(&self, ticks: &[Tick], max_gap_seconds: i64) -> Vec<(DateTime<Utc>, DateTime<Utc>, i64)> {
+    pub fn detect_tick_gaps(
+        &self,
+        ticks: &[Tick],
+        max_gap_seconds: i64,
+    ) -> Vec<(DateTime<Utc>, DateTime<Utc>, i64)> {
         let mut gaps = Vec::new();
 
         if ticks.len() < 2 {
@@ -293,11 +301,7 @@ impl DataQualityChecker {
     }
 
     /// Check for price anomalies (sudden large changes)
-    pub fn detect_price_anomalies(
-        &self,
-        ticks: &[Tick],
-        max_change_pct: f64,
-    ) -> Vec<(Tick, f64)> {
+    pub fn detect_price_anomalies(&self, ticks: &[Tick], max_change_pct: f64) -> Vec<(Tick, f64)> {
         let mut anomalies = Vec::new();
 
         if ticks.len() < 2 {
@@ -340,6 +344,10 @@ mod tests {
             last: 50000.5,
             volume: 1000,
             source: "binance".into(),
+
+            open: None,
+
+            change_pct: None,
         };
 
         assert!(checker.validate_tick(&tick).is_ok());
@@ -356,6 +364,10 @@ mod tests {
             last: -1.0,
             volume: 1000,
             source: "binance".into(),
+
+            open: None,
+
+            change_pct: None,
         };
 
         assert!(checker.validate_tick(&tick).is_err());
@@ -375,6 +387,10 @@ mod tests {
             last: 50000.5,
             volume: 1000,
             source: "binance".into(),
+
+            open: None,
+
+            change_pct: None,
         };
 
         assert!(checker.validate_tick(&tick).is_err());
@@ -386,6 +402,7 @@ mod tests {
         let bar = OHLCV {
             time: Utc::now(),
             symbol: Symbol("BTC/USDT".into()),
+            timeframe: Timeframe::D1,
             open: 50000.0,
             high: 50100.0,
             low: 49900.0,
@@ -402,6 +419,7 @@ mod tests {
         let mut bar = OHLCV {
             time: Utc::now(),
             symbol: Symbol("BTC/USDT".into()),
+            timeframe: Timeframe::D1,
             open: 50000.0,
             high: 49800.0, // Invalid: high < open
             low: 49900.0,
@@ -428,6 +446,8 @@ mod tests {
                 last: 50000.5,
                 volume: 1000,
                 source: "binance".into(),
+                open: None,
+                change_pct: None,
             },
             Tick {
                 time: Utc::now() + chrono::Duration::seconds(100),
@@ -437,6 +457,8 @@ mod tests {
                 last: 50001.5,
                 volume: 1000,
                 source: "binance".into(),
+                open: None,
+                change_pct: None,
             },
         ];
 
@@ -457,6 +479,8 @@ mod tests {
                 last: 50000.5,
                 volume: 1000,
                 source: "binance".into(),
+                open: None,
+                change_pct: None,
             },
             Tick {
                 time,
@@ -466,6 +490,8 @@ mod tests {
                 last: 50000.5,
                 volume: 1000,
                 source: "binance".into(),
+                open: None,
+                change_pct: None,
             },
         ];
 
@@ -485,6 +511,8 @@ mod tests {
                 last: 50000.0,
                 volume: 1000,
                 source: "binance".into(),
+                open: None,
+                change_pct: None,
             },
             Tick {
                 time: Utc::now() + chrono::Duration::seconds(1),
@@ -494,6 +522,8 @@ mod tests {
                 last: 60000.0,
                 volume: 1000,
                 source: "binance".into(),
+                open: None,
+                change_pct: None,
             },
         ];
 

@@ -20,6 +20,18 @@ pub struct AppConfig {
     pub risk: RiskSection,
     #[serde(default)]
     pub storage: StorageConfig,
+    #[serde(default)]
+    pub news: NewsConfig,
+    #[serde(default)]
+    pub copilot: CopilotConfig,
+    #[serde(default)]
+    pub appearance: AppearanceConfig,
+    #[serde(default)]
+    pub llm: LlmConfig,
+    #[serde(default)]
+    pub acp: AcpConfig,
+    #[serde(default)]
+    pub automations: AutomationsConfig,
 }
 
 impl AppConfig {
@@ -85,9 +97,8 @@ fn ensure_config_file(runtime_paths: &RuntimePaths) -> Result<()> {
     }
 
     if let Some(parent) = config_path.parent() {
-        fs::create_dir_all(parent).with_context(|| {
-            format!("Failed to create config directory {}", parent.display())
-        })?;
+        fs::create_dir_all(parent)
+            .with_context(|| format!("Failed to create config directory {}", parent.display()))?;
     }
 
     fs::write(config_path, DEFAULT_CONFIG_TEMPLATE).with_context(|| {
@@ -115,6 +126,112 @@ fn resolve_runtime_dir(
         .with_context(|| format!("Failed to create runtime directory {}", path.display()))?;
 
     Ok(path)
+}
+
+/// UI appearance: theme + density.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppearanceConfig {
+    /// "dark" or "light".
+    #[serde(default = "default_theme")]
+    pub theme: String,
+    /// "comfortable" or "compact".
+    #[serde(default = "default_density")]
+    pub density: String,
+}
+
+impl Default for AppearanceConfig {
+    fn default() -> Self {
+        Self {
+            theme: default_theme(),
+            density: default_density(),
+        }
+    }
+}
+
+/// One OpenAI-compatible inference provider (chat completions or responses API).
+/// API keys are never stored in config — `api_key_env` names the env var / OS
+/// keychain entry to read at call time.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LlmProviderConfig {
+    /// Stable identifier, e.g. "openrouter", "ollama", "acp:claude".
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    /// Base URL (e.g. https://api.openai.com/v1) — empty for ACP providers.
+    #[serde(default)]
+    pub base_url: String,
+    #[serde(default)]
+    pub model: String,
+    /// "chat" (OpenAI /chat/completions), "responses" (/responses), or "acp"
+    /// (spawn an ACP agent process — see [acp]).
+    #[serde(default = "default_api_kind")]
+    pub api_kind: String,
+    /// Env var holding the API key (no secrets in config).
+    #[serde(default)]
+    pub api_key_env: String,
+    /// Optional per-provider token cap; 0 = use copilot.max_tokens.
+    #[serde(default)]
+    pub max_tokens: u32,
+}
+
+/// Inference provider registry + selection.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct LlmConfig {
+    /// id of the active provider; empty = legacy [copilot] config.
+    #[serde(default)]
+    pub active: String,
+    #[serde(default)]
+    pub providers: Vec<LlmProviderConfig>,
+}
+
+/// Agent Client Protocol connector — spawn an external agent (IDE/CLI) and
+/// talk to it over stdio JSON-RPC.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcpConfig {
+    /// Command to spawn, e.g. "npx @zed-industries/claude-code-acp".
+    #[serde(default)]
+    pub command: String,
+    /// Working directory for the agent; empty = repo root at runtime.
+    #[serde(default)]
+    pub cwd: String,
+}
+
+impl Default for AcpConfig {
+    fn default() -> Self {
+        Self {
+            command: String::new(),
+            cwd: String::new(),
+        }
+    }
+}
+
+/// Scheduled automations (model-signal trading rules etc.).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AutomationsConfig {
+    /// Master switch — false disables the scheduler entirely.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// When false, automations and copilot order tools may only target the
+    /// paper adapter; live broker ids are rejected.
+    #[serde(default)]
+    pub allow_live_trading: bool,
+    /// Cap on orders a single rule may place per UTC day.
+    #[serde(default = "default_max_orders_per_day")]
+    pub max_orders_per_day: u32,
+}
+
+impl Default for AutomationsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            allow_live_trading: false,
+            max_orders_per_day: default_max_orders_per_day(),
+        }
+    }
+}
+
+fn default_max_orders_per_day() -> u32 {
+    100
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -220,7 +337,81 @@ impl StorageConfig {
     pub fn postgres_url(&self) -> Option<String> {
         preferred_env_var("APEX_POSTGRES_URL")
             .or_else(|| preferred_env_var("DATABASE_URL"))
-            .or_else(|| self.postgres_url.clone().and_then(normalize_optional_string))
+            .or_else(|| {
+                self.postgres_url
+                    .clone()
+                    .and_then(normalize_optional_string)
+            })
+    }
+}
+
+/// RSS/Atom feed source configuration for the news engine.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewsFeedConfig {
+    pub name: String,
+    pub url: String,
+    /// "rss" or "atom"
+    #[serde(default = "default_feed_type")]
+    pub feed_type: String,
+    /// 1-10, higher = more important
+    #[serde(default = "default_feed_priority")]
+    pub priority: u8,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+
+/// News engine configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewsConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// How often feeds are polled, in seconds.
+    #[serde(default = "default_news_poll_secs")]
+    pub poll_interval_secs: u64,
+    #[serde(default)]
+    pub feeds: Vec<NewsFeedConfig>,
+}
+
+impl Default for NewsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            poll_interval_secs: default_news_poll_secs(),
+            feeds: Vec::new(),
+        }
+    }
+}
+
+/// AI copilot (OpenRouter) configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CopilotConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// OpenRouter model slug. "openrouter/free" auto-routes to a free model.
+    #[serde(default = "default_copilot_model")]
+    pub model: String,
+    /// OpenRouter API base URL.
+    #[serde(default = "default_copilot_base_url")]
+    pub base_url: String,
+    /// Max tokens per response.
+    #[serde(default = "default_copilot_max_tokens")]
+    pub max_tokens: u32,
+    /// When true (default), write-class copilot tool calls (orders,
+    /// automations, strategy writes, training) pause for explicit user
+    /// approval in the chat UI before executing.
+    #[serde(default = "default_true")]
+    pub require_approval: bool,
+}
+
+impl Default for CopilotConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            model: default_copilot_model(),
+            base_url: default_copilot_base_url(),
+            max_tokens: default_copilot_max_tokens(),
+            require_approval: true,
+        }
     }
 }
 
@@ -249,8 +440,48 @@ fn default_data_dir() -> String {
     "data".to_string()
 }
 
+fn default_true() -> bool {
+    true
+}
+
+fn default_feed_type() -> String {
+    "rss".to_string()
+}
+
+fn default_feed_priority() -> u8 {
+    5
+}
+
+fn default_news_poll_secs() -> u64 {
+    300
+}
+
+fn default_copilot_model() -> String {
+    "openrouter/free".to_string()
+}
+
+fn default_copilot_base_url() -> String {
+    "https://openrouter.ai/api/v1".to_string()
+}
+
+fn default_copilot_max_tokens() -> u32 {
+    1024
+}
+
 fn default_max_daily_loss() -> f64 {
     50_000.0
+}
+
+fn default_theme() -> String {
+    "dark".to_string()
+}
+
+fn default_density() -> String {
+    "comfortable".to_string()
+}
+
+fn default_api_kind() -> String {
+    "chat".to_string()
 }
 
 fn default_market_data_adapter() -> String {

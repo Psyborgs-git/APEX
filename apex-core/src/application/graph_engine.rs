@@ -129,7 +129,9 @@ impl GraphEngine {
 
     /// Get a reference to a node by UUID.
     pub fn get_node(&self, id: &Uuid) -> Option<&NodeData> {
-        self.index_map.get(id).and_then(|idx| self.graph.node_weight(*idx))
+        self.index_map
+            .get(id)
+            .and_then(|idx| self.graph.node_weight(*idx))
     }
 
     /// Total number of nodes in the graph.

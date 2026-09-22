@@ -23,10 +23,10 @@ impl RedisStateAdapter {
     /// # Arguments
     /// * `redis_url` - Redis connection string (e.g. "redis://127.0.0.1:6379")
     pub async fn new(redis_url: &str) -> Result<Self> {
-        let client = Client::open(redis_url)
-            .context("Failed to create Redis client")?;
+        let client = Client::open(redis_url).context("Failed to create Redis client")?;
 
-        let conn = ConnectionManager::new(client).await
+        let conn = ConnectionManager::new(client)
+            .await
             .context("Failed to create Redis connection manager")?;
 
         info!("Redis state adapter initialized successfully");
@@ -41,21 +41,25 @@ impl RedisStateAdapter {
     pub async fn set_quote(&mut self, quote: &Quote) -> Result<()> {
         let key = format!("QUOTE:{}", quote.symbol.0);
 
-        let _: () = self.conn.hset_multiple(
-            &key,
-            &[
-                ("bid", quote.bid.to_string()),
-                ("ask", quote.ask.to_string()),
-                ("last", quote.last.to_string()),
-                ("open", quote.open.to_string()),
-                ("high", quote.high.to_string()),
-                ("low", quote.low.to_string()),
-                ("volume", quote.volume.to_string()),
-                ("change_pct", quote.change_pct.to_string()),
-                ("vwap", quote.vwap.to_string()),
-                ("updated_at", quote.updated_at.to_rfc3339()),
-            ],
-        ).await.context("Failed to set quote in Redis")?;
+        let _: () = self
+            .conn
+            .hset_multiple(
+                &key,
+                &[
+                    ("bid", quote.bid.to_string()),
+                    ("ask", quote.ask.to_string()),
+                    ("last", quote.last.to_string()),
+                    ("open", quote.open.to_string()),
+                    ("high", quote.high.to_string()),
+                    ("low", quote.low.to_string()),
+                    ("volume", quote.volume.to_string()),
+                    ("change_pct", quote.change_pct.to_string()),
+                    ("vwap", quote.vwap.to_string()),
+                    ("updated_at", quote.updated_at.to_rfc3339()),
+                ],
+            )
+            .await
+            .context("Failed to set quote in Redis")?;
 
         // Set expiry to 1 hour
         let _: () = self.conn.expire(&key, 3600).await?;
@@ -73,10 +77,25 @@ impl RedisStateAdapter {
             return Ok(None);
         }
 
-        let values: Vec<String> = self.conn.hget(
-            &key,
-            &["bid", "ask", "last", "open", "high", "low", "volume", "change_pct", "vwap", "updated_at"],
-        ).await.context("Failed to get quote from Redis")?;
+        let values: Vec<String> = self
+            .conn
+            .hget(
+                &key,
+                &[
+                    "bid",
+                    "ask",
+                    "last",
+                    "open",
+                    "high",
+                    "low",
+                    "volume",
+                    "change_pct",
+                    "vwap",
+                    "updated_at",
+                ],
+            )
+            .await
+            .context("Failed to get quote from Redis")?;
 
         if values.len() != 10 {
             return Ok(None);
@@ -112,23 +131,31 @@ impl RedisStateAdapter {
             OrderSide::Sell => "Sell",
         };
 
-        let _: () = self.conn.hset_multiple(
-            &key,
-            &[
-                ("quantity", pos.quantity.to_string()),
-                ("avg_price", pos.avg_price.to_string()),
-                ("side", side_str.to_string()),
-                ("pnl", pos.pnl.to_string()),
-                ("pnl_pct", pos.pnl_pct.to_string()),
-            ],
-        ).await.context("Failed to set position in Redis")?;
+        let _: () = self
+            .conn
+            .hset_multiple(
+                &key,
+                &[
+                    ("quantity", pos.quantity.to_string()),
+                    ("avg_price", pos.avg_price.to_string()),
+                    ("side", side_str.to_string()),
+                    ("pnl", pos.pnl.to_string()),
+                    ("pnl_pct", pos.pnl_pct.to_string()),
+                ],
+            )
+            .await
+            .context("Failed to set position in Redis")?;
 
         debug!("Cached position for {} @ {}", pos.symbol.0, pos.broker_id);
         Ok(())
     }
 
     /// Retrieve a position from Redis
-    pub async fn get_position(&mut self, broker_id: &str, symbol: &Symbol) -> Result<Option<Position>> {
+    pub async fn get_position(
+        &mut self,
+        broker_id: &str,
+        symbol: &Symbol,
+    ) -> Result<Option<Position>> {
         let key = format!("POSITION:{}:{}", broker_id, symbol.0);
 
         let exists: bool = self.conn.exists(&key).await?;
@@ -136,10 +163,11 @@ impl RedisStateAdapter {
             return Ok(None);
         }
 
-        let values: Vec<String> = self.conn.hget(
-            &key,
-            &["quantity", "avg_price", "side", "pnl", "pnl_pct"],
-        ).await.context("Failed to get position from Redis")?;
+        let values: Vec<String> = self
+            .conn
+            .hget(&key, &["quantity", "avg_price", "side", "pnl", "pnl_pct"])
+            .await
+            .context("Failed to get position from Redis")?;
 
         if values.len() != 5 {
             return Ok(None);
@@ -192,10 +220,12 @@ impl RedisStateAdapter {
     /// Stores full order JSON with 5-minute TTL
     pub async fn set_order(&mut self, order: &Order) -> Result<()> {
         let key = format!("ORDER:{}", order.id.0);
-        let order_json = serde_json::to_string(order)
-            .context("Failed to serialize order")?;
+        let order_json = serde_json::to_string(order).context("Failed to serialize order")?;
 
-        let _: () = self.conn.set_ex(&key, order_json, 300).await
+        let _: () = self
+            .conn
+            .set_ex(&key, order_json, 300)
+            .await
             .context("Failed to set order in Redis")?;
 
         debug!("Cached order {}", order.id.0);
@@ -210,8 +240,8 @@ impl RedisStateAdapter {
 
         match order_json {
             Some(json) => {
-                let order: Order = serde_json::from_str(&json)
-                    .context("Failed to deserialize order")?;
+                let order: Order =
+                    serde_json::from_str(&json).context("Failed to deserialize order")?;
                 Ok(Some(order))
             }
             None => Ok(None),
@@ -230,12 +260,19 @@ impl RedisStateAdapter {
     ///
     /// Key: STRATEGY:{ID}:state
     /// Stores: status, last_signal, pnl, metrics
-    pub async fn set_strategy_state(&mut self, strategy_id: &str, state: &serde_json::Value) -> Result<()> {
+    pub async fn set_strategy_state(
+        &mut self,
+        strategy_id: &str,
+        state: &serde_json::Value,
+    ) -> Result<()> {
         let key = format!("STRATEGY:{}:state", strategy_id);
-        let state_json = serde_json::to_string(state)
-            .context("Failed to serialize strategy state")?;
+        let state_json =
+            serde_json::to_string(state).context("Failed to serialize strategy state")?;
 
-        let _: () = self.conn.set(&key, state_json).await
+        let _: () = self
+            .conn
+            .set(&key, state_json)
+            .await
             .context("Failed to set strategy state")?;
 
         debug!("Cached strategy state for {}", strategy_id);
@@ -243,15 +280,18 @@ impl RedisStateAdapter {
     }
 
     /// Retrieve strategy state
-    pub async fn get_strategy_state(&mut self, strategy_id: &str) -> Result<Option<serde_json::Value>> {
+    pub async fn get_strategy_state(
+        &mut self,
+        strategy_id: &str,
+    ) -> Result<Option<serde_json::Value>> {
         let key = format!("STRATEGY:{}:state", strategy_id);
 
         let state_json: Option<String> = self.conn.get(&key).await?;
 
         match state_json {
             Some(json) => {
-                let state: serde_json::Value = serde_json::from_str(&json)
-                    .context("Failed to deserialize strategy state")?;
+                let state: serde_json::Value =
+                    serde_json::from_str(&json).context("Failed to deserialize strategy state")?;
                 Ok(Some(state))
             }
             None => Ok(None),
@@ -260,7 +300,10 @@ impl RedisStateAdapter {
 
     /// Increment a counter (for metrics, trade counts, etc.)
     pub async fn incr_counter(&mut self, key: &str) -> Result<i64> {
-        let count: i64 = self.conn.incr(key, 1).await
+        let count: i64 = self
+            .conn
+            .incr(key, 1)
+            .await
             .context("Failed to increment counter")?;
         Ok(count)
     }

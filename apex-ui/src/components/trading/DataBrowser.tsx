@@ -41,7 +41,7 @@ export const DataBrowser: React.FC<DataBrowserProps> = ({ defaultSymbol }) => {
       setRows(Array.isArray(bars) ? bars : []);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to query stored data');
+      setError(typeof err === 'string' ? err : err instanceof Error ? err.message : 'Unable to query stored data');
       setRows([]);
     } finally {
       setLoading(false);

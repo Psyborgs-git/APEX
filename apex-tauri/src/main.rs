@@ -5,8 +5,11 @@ mod state;
 mod tracing_setup;
 mod validation;
 
-use commands::{alerts, brokers, data, health, market, ml, notebook, orders, risk, settings};
 use commands::strategy;
+use commands::{
+    alerts, automation, brokers, copilot, data, graph, health, market, ml, news, notebook,
+    orderbook, orders, quant, risk, scanner, settings,
+};
 use tauri::Manager;
 
 fn load_env_file() {
@@ -35,10 +38,12 @@ fn main() {
             let runtime_paths = commands::python_runtime::RuntimePaths::resolve(&app_handle)
                 .expect("Runtime path resolution failed");
             let app_state_paths = runtime_paths.clone();
-            
+
             tauri::async_runtime::block_on(async move {
-                let app_state = state::AppState::init(app_state_paths).await.expect("App state initialization failed");
-                
+                let app_state = state::AppState::init(app_state_paths)
+                    .await
+                    .expect("App state initialization failed");
+
                 tracing::info!("App state initialized successfully");
                 tracing::info!(
                     "Risk engine: max_daily_loss = {}, halted = {}",
@@ -48,7 +53,7 @@ fn main() {
 
                 // Start real-time event push from message bus → frontend
                 app_state.start_event_push(app_handle.clone());
-                
+
                 app_handle.manage(app_state);
             });
 
@@ -56,6 +61,9 @@ fn main() {
 
             // Register ML model registry state
             app.manage(ml::ModelRegistry::new(&runtime_paths));
+
+            // Background scheduler for automation rules
+            automation::spawn_automation_loop(&app.handle());
 
             Ok(())
         })
@@ -68,6 +76,7 @@ fn main() {
             orders::modify_order,
             orders::get_positions,
             orders::get_open_orders,
+            orders::get_orders,
             orders::get_account_balance,
             alerts::add_alert,
             alerts::remove_alert,
@@ -76,6 +85,18 @@ fn main() {
             risk::reset_halt,
             data::get_historical_data,
             data::get_watchlist_symbols,
+            quant::compute_indicator,
+            quant::get_quant_stats,
+            quant::get_regression,
+            news::get_news,
+            news::search_news,
+            news::list_news_feeds,
+            scanner::run_scan,
+            graph::get_graph,
+            graph::compute_correlations,
+            orderbook::get_order_book,
+            copilot::copilot_chat,
+            copilot::approve_copilot_tools,
             strategy::list_strategy_files,
             strategy::create_strategy_file,
             strategy::save_strategy_file,
@@ -85,9 +106,15 @@ fn main() {
             ml::list_ml_models,
             ml::train_ml_model,
             ml::delete_ml_model,
+            ml::predict_model_signal,
+            automation::create_automation,
+            automation::list_automations,
+            automation::delete_automation,
+            automation::set_automation_enabled,
             brokers::list_broker_connections,
             brokers::set_broker_session,
             brokers::clear_broker_session,
+            brokers::zerodha_login,
             health::get_system_health,
             settings::get_app_settings,
             settings::save_app_settings,

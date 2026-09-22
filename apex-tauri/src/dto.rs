@@ -254,6 +254,46 @@ pub struct StorageSettingsDto {
     pub available_backends: Vec<String>,
 }
 
+/// Appearance settings DTO (theme + density).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppearanceSettingsDto {
+    /// "dark" | "light"
+    pub theme: String,
+    /// "comfortable" | "compact"
+    pub density: String,
+}
+
+/// One configured OpenAI-compatible / ACP inference provider.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LlmProviderDto {
+    pub id: String,
+    pub name: String,
+    pub base_url: String,
+    pub model: String,
+    /// "chat" | "responses" | "acp"
+    pub api_kind: String,
+    /// Env var name holding the API key (never the key itself).
+    pub api_key_env: String,
+    pub max_tokens: u32,
+    /// True when the referenced env var currently resolves to a non-empty value.
+    pub key_configured: bool,
+}
+
+/// LLM provider registry settings DTO.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LlmSettingsDto {
+    /// Active provider id; empty = legacy [copilot] config.
+    pub active: String,
+    pub providers: Vec<LlmProviderDto>,
+}
+
+/// ACP connector settings DTO.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcpSettingsDto {
+    pub command: String,
+    pub cwd: String,
+}
+
 /// App settings DTO for frontend settings panel.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettingsDto {
@@ -265,6 +305,9 @@ pub struct AppSettingsDto {
     pub execution: AdapterPreferenceDto,
     pub risk: RiskSettingsDto,
     pub storage: StorageSettingsDto,
+    pub appearance: AppearanceSettingsDto,
+    pub llm: LlmSettingsDto,
+    pub acp: AcpSettingsDto,
 }
 
 /// App settings update request DTO from frontend.
@@ -275,6 +318,59 @@ pub struct AppSettingsUpdateDto {
     pub execution: AdapterPreferenceDto,
     pub risk: RiskSettingsDto,
     pub storage: StorageSettingsDto,
+    #[serde(default)]
+    pub appearance: AppearanceSettingsDto,
+    #[serde(default)]
+    pub llm: LlmSettingsUpdateDto,
+    #[serde(default)]
+    pub acp: AcpSettingsDto,
+}
+
+/// LLM update payload — providers written without key_configured.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct LlmSettingsUpdateDto {
+    pub active: String,
+    #[serde(default)]
+    pub providers: Vec<LlmProviderWriteDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LlmProviderWriteDto {
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub base_url: String,
+    #[serde(default)]
+    pub model: String,
+    #[serde(default = "default_write_api_kind")]
+    pub api_kind: String,
+    #[serde(default)]
+    pub api_key_env: String,
+    #[serde(default)]
+    pub max_tokens: u32,
+}
+
+fn default_write_api_kind() -> String {
+    "chat".to_string()
+}
+
+impl Default for AppearanceSettingsDto {
+    fn default() -> Self {
+        Self {
+            theme: "dark".to_string(),
+            density: "comfortable".to_string(),
+        }
+    }
+}
+
+impl Default for AcpSettingsDto {
+    fn default() -> Self {
+        Self {
+            command: String::new(),
+            cwd: String::new(),
+        }
+    }
 }
 
 /// Research notebook cell DTO for frontend.
@@ -389,6 +485,78 @@ pub struct BrokerConnectionDto {
     pub market_data_available: bool,
     pub token_field_label: String,
     pub message: String,
+}
+
+/// One point of an indicator/quant series, aligned to a bar time (RFC3339).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeriesPointDto {
+    pub time: String,
+    pub value: f64,
+}
+
+/// A named series of aligned points (e.g. "upper" band, "macd" line).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NamedSeriesDto {
+    pub name: String,
+    pub points: Vec<SeriesPointDto>,
+}
+
+/// Result of a `compute_indicator` call.
+/// `overlay` = draw on the price pane; false = dedicated oscillator pane.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IndicatorResultDto {
+    pub symbol: String,
+    pub indicator: String,
+    pub overlay: bool,
+    pub series: Vec<NamedSeriesDto>,
+}
+
+/// Quant summary over a symbol's return series (OpenBB quantitative.summary).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuantStatsDto {
+    pub symbol: String,
+    pub n: usize,
+    pub mean: f64,
+    pub std_dev: f64,
+    pub variance: f64,
+    pub skewness: f64,
+    pub kurtosis: f64,
+    pub min: f64,
+    pub q05: f64,
+    pub q25: f64,
+    pub median: f64,
+    pub q75: f64,
+    pub q95: f64,
+    pub max: f64,
+    pub jarque_bera: f64,
+    pub normal: bool,
+    pub sharpe: f64,
+    pub sortino: f64,
+    pub omega: f64,
+    pub max_drawdown: f64,
+    pub ann_volatility: f64,
+    /// ACF at lags 1..=10
+    pub autocorr: Vec<f64>,
+    /// Rolling stats series aligned to bar times
+    pub rolling_vol: Vec<SeriesPointDto>,
+    pub rolling_sharpe: Vec<SeriesPointDto>,
+}
+
+/// OLS regression y = alpha + beta*x over aligned return series.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegressionDto {
+    pub x_symbol: String,
+    pub y_symbol: String,
+    pub n: usize,
+    pub alpha: f64,
+    pub beta: f64,
+    pub r_squared: f64,
+    /// Per-observation residuals aligned to the shared timestamps
+    pub residuals: Vec<SeriesPointDto>,
+    /// Scatter of (x, y) return pairs for the regression plot
+    pub scatter: Vec<[f64; 2]>,
+    /// Fitted line endpoints for charting: [x_min, x_max] → [y_min, y_max]
+    pub fit_line: Vec<[f64; 2]>,
 }
 
 #[cfg(test)]

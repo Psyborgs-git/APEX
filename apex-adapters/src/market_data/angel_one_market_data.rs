@@ -1,8 +1,8 @@
+use anyhow::{Context, Result};
 use apex_core::{
     domain::models::*,
     ports::market_data::{AdapterHealth, MarketDataPort, TickStream},
 };
-use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use reqwest::Client;
@@ -164,6 +164,8 @@ impl MarketDataPort for AngelOneMarketDataAdapter {
                                 last: quote.last,
                                 volume: quote.volume,
                                 source: "angel_one".to_string(),
+                                open: Some(quote.open),
+                                change_pct: Some(quote.change_pct),
                             };
 
                             if tx.send(tick).await.is_err() {
@@ -211,8 +213,10 @@ impl MarketDataPort for AngelOneMarketDataAdapter {
 
         let headers = self.get_auth_headers()?;
 
-        let mut request = self.client
-            .post(format!("{}/rest/secure/angelbroking/market/v1/quote", BASE_URL));
+        let mut request = self.client.post(format!(
+            "{}/rest/secure/angelbroking/market/v1/quote",
+            BASE_URL
+        ));
 
         for (key, value) in &headers {
             request = request.header(*key, value);
@@ -228,10 +232,16 @@ impl MarketDataPort for AngelOneMarketDataAdapter {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
             self.set_health(AdapterHealth::Degraded(format!("HTTP {}", status)));
-            return Err(anyhow::anyhow!("Angel One API error {}: {}", status, error_text));
+            return Err(anyhow::anyhow!(
+                "Angel One API error {}: {}",
+                status,
+                error_text
+            ));
         }
 
-        let data: serde_json::Value = response.json().await
+        let data: serde_json::Value = response
+            .json()
+            .await
             .context("Failed to parse Angel One response")?;
 
         let fetched = data
@@ -300,8 +310,10 @@ impl MarketDataPort for AngelOneMarketDataAdapter {
 
         let headers = self.get_auth_headers()?;
 
-        let mut request = self.client
-            .post(format!("{}/rest/secure/angelbroking/historical/v1/getCandleData", BASE_URL));
+        let mut request = self.client.post(format!(
+            "{}/rest/secure/angelbroking/historical/v1/getCandleData",
+            BASE_URL
+        ));
 
         for (key, value) in &headers {
             request = request.header(*key, value);
@@ -314,10 +326,15 @@ impl MarketDataPort for AngelOneMarketDataAdapter {
             .context("Failed to fetch historical data from Angel One")?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("Angel One API error: {}", response.status()));
+            return Err(anyhow::anyhow!(
+                "Angel One API error: {}",
+                response.status()
+            ));
         }
 
-        let data: serde_json::Value = response.json().await
+        let data: serde_json::Value = response
+            .json()
+            .await
             .context("Failed to parse historical data")?;
 
         let candles = data
@@ -349,6 +366,7 @@ impl MarketDataPort for AngelOneMarketDataAdapter {
             let bar = OHLCV {
                 time,
                 symbol: symbol.clone(),
+                timeframe: timeframe.clone(),
                 open: candle_arr[1].as_f64().unwrap_or(0.0),
                 high: candle_arr[2].as_f64().unwrap_or(0.0),
                 low: candle_arr[3].as_f64().unwrap_or(0.0),
@@ -359,7 +377,11 @@ impl MarketDataPort for AngelOneMarketDataAdapter {
             bars.push(bar);
         }
 
-        debug!("Fetched {} historical bars for {} from Angel One", bars.len(), symbol.0);
+        debug!(
+            "Fetched {} historical bars for {} from Angel One",
+            bars.len(),
+            symbol.0
+        );
         Ok(bars)
     }
 
@@ -381,8 +403,14 @@ mod tests {
         let adapter = AngelOneMarketDataAdapter::new("test_key".to_string(), None).unwrap();
         assert_eq!(adapter.timeframe_to_interval(&Timeframe::M1), "ONE_MINUTE");
         assert_eq!(adapter.timeframe_to_interval(&Timeframe::M5), "FIVE_MINUTE");
-        assert_eq!(adapter.timeframe_to_interval(&Timeframe::M15), "FIFTEEN_MINUTE");
-        assert_eq!(adapter.timeframe_to_interval(&Timeframe::M30), "THIRTY_MINUTE");
+        assert_eq!(
+            adapter.timeframe_to_interval(&Timeframe::M15),
+            "FIFTEEN_MINUTE"
+        );
+        assert_eq!(
+            adapter.timeframe_to_interval(&Timeframe::M30),
+            "THIRTY_MINUTE"
+        );
         assert_eq!(adapter.timeframe_to_interval(&Timeframe::H1), "ONE_HOUR");
         assert_eq!(adapter.timeframe_to_interval(&Timeframe::D1), "ONE_DAY");
     }

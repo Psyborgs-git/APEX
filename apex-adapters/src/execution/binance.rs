@@ -140,7 +140,11 @@ impl BinanceExecutionAdapter {
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
-            return Err(anyhow!("Binance returned status {}: {}", status, error_text));
+            return Err(anyhow!(
+                "Binance returned status {}: {}",
+                status,
+                error_text
+            ));
         }
 
         let order_response: BinanceOrderResponse = response
@@ -212,9 +216,8 @@ impl BinanceExecutionAdapter {
 
     /// Get open orders from Binance
     async fn get_open_orders(&self, symbol: Option<&str>) -> Result<Vec<BinanceOrder>> {
-        let mut params = vec![
-            "timestamp=".to_string() + &Utc::now().timestamp_millis().to_string(),
-        ];
+        let mut params =
+            vec!["timestamp=".to_string() + &Utc::now().timestamp_millis().to_string()];
 
         if let Some(sym) = symbol {
             params.push(format!("symbol={}", sym));
@@ -224,7 +227,11 @@ impl BinanceExecutionAdapter {
         let signature = self.sign(&query_string);
         let signed_query = format!("{}&signature={}", query_string, signature);
 
-        let url = format!("{}/api/v3/openOrders?{}", self.rest_base_url(), signed_query);
+        let url = format!(
+            "{}/api/v3/openOrders?{}",
+            self.rest_base_url(),
+            signed_query
+        );
 
         let response = self
             .client
@@ -269,15 +276,24 @@ impl BinanceExecutionAdapter {
             stop_price: bin_order.stop_price.parse().ok(),
             status: Self::parse_order_status(&bin_order.status),
             filled_qty: bin_order.executed_qty.parse().unwrap_or(0.0),
-            avg_price: if bin_order.cummulative_quote_qty.parse::<f64>().unwrap_or(0.0) > 0.0
-                && bin_order.executed_qty.parse::<f64>().unwrap_or(0.0) > 0.0 {
-                bin_order.cummulative_quote_qty.parse::<f64>().unwrap_or(0.0)
+            avg_price: if bin_order
+                .cummulative_quote_qty
+                .parse::<f64>()
+                .unwrap_or(0.0)
+                > 0.0
+                && bin_order.executed_qty.parse::<f64>().unwrap_or(0.0) > 0.0
+            {
+                bin_order
+                    .cummulative_quote_qty
+                    .parse::<f64>()
+                    .unwrap_or(0.0)
                     / bin_order.executed_qty.parse::<f64>().unwrap_or(1.0)
             } else {
                 0.0
             },
             created_at: DateTime::from_timestamp_millis(bin_order.time).unwrap_or_else(Utc::now),
-            updated_at: DateTime::from_timestamp_millis(bin_order.update_time).unwrap_or_else(Utc::now),
+            updated_at: DateTime::from_timestamp_millis(bin_order.update_time)
+                .unwrap_or_else(Utc::now),
             broker_id: broker_id.to_string(),
             source: "binance".into(),
         }
@@ -294,11 +310,13 @@ impl ExecutionPort for BinanceExecutionAdapter {
     async fn cancel_order(&self, order_id: &OrderId) -> Result<()> {
         // Need to fetch order first to get symbol
         let orders = self.get_open_orders(None).await?;
-        let order = orders.iter()
+        let order = orders
+            .iter()
             .find(|o| o.order_id.to_string() == order_id.0)
             .ok_or_else(|| anyhow!("Order not found: {}", order_id.0))?;
 
-        self.cancel_binance_order(&order.symbol, &order.order_id.to_string()).await
+        self.cancel_binance_order(&order.symbol, &order.order_id.to_string())
+            .await
     }
 
     async fn modify_order(&self, order_id: &OrderId, _params: &ModifyParams) -> Result<()> {
@@ -307,12 +325,15 @@ impl ExecutionPort for BinanceExecutionAdapter {
 
         // For production, need to fetch original order and place new one with modified params
         // This is a simplified version
-        Err(anyhow!("Order modification not implemented - requires cancel and replace"))
+        Err(anyhow!(
+            "Order modification not implemented - requires cancel and replace"
+        ))
     }
 
     async fn get_order_status(&self, order_id: &OrderId) -> Result<Order> {
         let orders = self.get_open_orders(None).await?;
-        let bin_order = orders.iter()
+        let bin_order = orders
+            .iter()
             .find(|o| o.order_id.to_string() == order_id.0)
             .ok_or_else(|| anyhow!("Order not found: {}", order_id.0))?;
 
@@ -347,7 +368,9 @@ impl ExecutionPort for BinanceExecutionAdapter {
     async fn get_account_balance(&self) -> Result<AccountBalance> {
         let account = self.get_account().await?;
 
-        let total_value: f64 = account.balances.iter()
+        let total_value: f64 = account
+            .balances
+            .iter()
             .map(|b| {
                 let free: f64 = b.free.parse().unwrap_or(0.0);
                 let locked: f64 = b.locked.parse().unwrap_or(0.0);
@@ -460,26 +483,50 @@ mod tests {
 
     #[test]
     fn test_format_symbol() {
-        assert_eq!(BinanceExecutionAdapter::format_symbol(&Symbol("BTC/USDT".into())), "BTCUSDT");
-        assert_eq!(BinanceExecutionAdapter::format_symbol(&Symbol("ETH/BTC".into())), "ETHBTC");
+        assert_eq!(
+            BinanceExecutionAdapter::format_symbol(&Symbol("BTC/USDT".into())),
+            "BTCUSDT"
+        );
+        assert_eq!(
+            BinanceExecutionAdapter::format_symbol(&Symbol("ETH/BTC".into())),
+            "ETHBTC"
+        );
     }
 
     #[test]
     fn test_format_side() {
         assert_eq!(BinanceExecutionAdapter::format_side(&OrderSide::Buy), "BUY");
-        assert_eq!(BinanceExecutionAdapter::format_side(&OrderSide::Sell), "SELL");
+        assert_eq!(
+            BinanceExecutionAdapter::format_side(&OrderSide::Sell),
+            "SELL"
+        );
     }
 
     #[test]
     fn test_format_order_type() {
-        assert_eq!(BinanceExecutionAdapter::format_order_type(&OrderType::Market), "MARKET");
-        assert_eq!(BinanceExecutionAdapter::format_order_type(&OrderType::Limit), "LIMIT");
+        assert_eq!(
+            BinanceExecutionAdapter::format_order_type(&OrderType::Market),
+            "MARKET"
+        );
+        assert_eq!(
+            BinanceExecutionAdapter::format_order_type(&OrderType::Limit),
+            "LIMIT"
+        );
     }
 
     #[test]
     fn test_parse_order_status() {
-        assert_eq!(BinanceExecutionAdapter::parse_order_status("NEW"), OrderStatus::Pending);
-        assert_eq!(BinanceExecutionAdapter::parse_order_status("FILLED"), OrderStatus::Filled);
-        assert_eq!(BinanceExecutionAdapter::parse_order_status("CANCELED"), OrderStatus::Cancelled);
+        assert_eq!(
+            BinanceExecutionAdapter::parse_order_status("NEW"),
+            OrderStatus::Pending
+        );
+        assert_eq!(
+            BinanceExecutionAdapter::parse_order_status("FILLED"),
+            OrderStatus::Filled
+        );
+        assert_eq!(
+            BinanceExecutionAdapter::parse_order_status("CANCELED"),
+            OrderStatus::Cancelled
+        );
     }
 }

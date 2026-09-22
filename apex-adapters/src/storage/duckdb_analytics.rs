@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use duckdb::{Connection, params};
+use duckdb::{params, Connection};
 use std::sync::{Arc, Mutex};
 use tracing::{debug, info};
 
@@ -23,8 +23,7 @@ impl DuckDBAdapter {
     /// # Arguments
     /// * `db_path` - Path to DuckDB file (use `:memory:` for in-memory database)
     pub fn new(db_path: &str) -> Result<Self> {
-        let conn = Connection::open(db_path)
-            .context("Failed to open DuckDB connection")?;
+        let conn = Connection::open(db_path).context("Failed to open DuckDB connection")?;
 
         let adapter = Self {
             conn: Arc::new(Mutex::new(conn)),
@@ -41,7 +40,8 @@ impl DuckDBAdapter {
         let conn = self.conn.lock().unwrap();
 
         // Create OHLCV table optimized for analytical queries
-        conn.execute_batch(r#"
+        conn.execute_batch(
+            r#"
             CREATE TABLE IF NOT EXISTS ohlcv_analytics (
                 time        TIMESTAMP NOT NULL,
                 symbol      VARCHAR NOT NULL,
@@ -57,10 +57,12 @@ impl DuckDBAdapter {
 
             CREATE INDEX IF NOT EXISTS idx_ohlcv_symbol_time
                 ON ohlcv_analytics (symbol, timeframe, time);
-        "#)?;
+        "#,
+        )?;
 
         // Create trades table for performance analysis
-        conn.execute_batch(r#"
+        conn.execute_batch(
+            r#"
             CREATE TABLE IF NOT EXISTS trades_analytics (
                 id          VARCHAR PRIMARY KEY,
                 symbol      VARCHAR NOT NULL,
@@ -75,7 +77,8 @@ impl DuckDBAdapter {
                 strategy_id VARCHAR,
                 tags        VARCHAR
             );
-        "#)?;
+        "#,
+        )?;
 
         debug!("DuckDB schema initialized");
         Ok(())
@@ -88,7 +91,7 @@ impl DuckDBAdapter {
         let mut stmt = conn.prepare(
             "INSERT INTO ohlcv_analytics
              (time, symbol, timeframe, open, high, low, close, volume, returns, log_returns)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )?;
 
         for (i, bar) in bars.iter().enumerate() {
@@ -133,7 +136,8 @@ impl DuckDBAdapter {
     ) -> Result<Vec<(chrono::DateTime<chrono::Utc>, f64)>> {
         let conn = self.conn.lock().unwrap();
 
-        let query = format!(r#"
+        let query = format!(
+            r#"
             WITH returns AS (
                 SELECT
                     time,
@@ -161,7 +165,9 @@ impl DuckDBAdapter {
             FROM pivoted
             WHERE ret1 IS NOT NULL AND ret2 IS NOT NULL
             ORDER BY time
-        "#, window_days - 1);
+        "#,
+            window_days - 1
+        );
 
         let mut stmt = conn.prepare(&query)?;
 
@@ -185,7 +191,10 @@ impl DuckDBAdapter {
             results.push(row_result?);
         }
 
-        debug!("Calculated rolling correlation for {} vs {} over {} days", symbol1.0, symbol2.0, window_days);
+        debug!(
+            "Calculated rolling correlation for {} vs {} over {} days",
+            symbol1.0, symbol2.0, window_days
+        );
         Ok(results)
     }
 
@@ -197,7 +206,8 @@ impl DuckDBAdapter {
     ) -> Result<Vec<(chrono::DateTime<chrono::Utc>, f64)>> {
         let conn = self.conn.lock().unwrap();
 
-        let query = format!(r#"
+        let query = format!(
+            r#"
             SELECT
                 time,
                 STDDEV(log_returns) OVER (
@@ -207,7 +217,9 @@ impl DuckDBAdapter {
             FROM ohlcv_analytics
             WHERE symbol = ? AND timeframe = 'D1'
             ORDER BY time
-        "#, window_days - 1);
+        "#,
+            window_days - 1
+        );
 
         let mut stmt = conn.prepare(&query)?;
 
@@ -228,7 +240,10 @@ impl DuckDBAdapter {
             results.push(row_result?);
         }
 
-        debug!("Calculated rolling volatility for {} over {} days", symbol.0, window_days);
+        debug!(
+            "Calculated rolling volatility for {} over {} days",
+            symbol.0, window_days
+        );
         Ok(results)
     }
 
@@ -266,14 +281,16 @@ impl DuckDBAdapter {
     pub fn calculate_sharpe_ratio(&self, symbol: &Symbol, risk_free_rate: f64) -> Result<f64> {
         let conn = self.conn.lock().unwrap();
 
-        let mut stmt = conn.prepare(r#"
+        let mut stmt = conn.prepare(
+            r#"
             SELECT
                 AVG(log_returns) AS mean_return,
                 STDDEV(log_returns) AS std_return
             FROM ohlcv_analytics
             WHERE symbol = ? AND timeframe = 'D1'
               AND log_returns IS NOT NULL
-        "#)?;
+        "#,
+        )?;
 
         let row = stmt.query_row(params![&symbol.0], |row| {
             let mean: f64 = row.get(0)?;
@@ -301,7 +318,8 @@ impl DuckDBAdapter {
     pub fn calculate_max_drawdown(&self, symbol: &Symbol) -> Result<f64> {
         let conn = self.conn.lock().unwrap();
 
-        let mut stmt = conn.prepare(r#"
+        let mut stmt = conn.prepare(
+            r#"
             WITH cumulative AS (
                 SELECT
                     time,
@@ -314,11 +332,16 @@ impl DuckDBAdapter {
             SELECT
                 MIN((close - running_max) / running_max) AS max_drawdown
             FROM cumulative
-        "#)?;
+        "#,
+        )?;
 
         let max_dd: f64 = stmt.query_row(params![&symbol.0], |row| row.get(0))?;
 
-        debug!("Calculated max drawdown for {}: {:.2}%", symbol.0, max_dd * 100.0);
+        debug!(
+            "Calculated max drawdown for {}: {:.2}%",
+            symbol.0,
+            max_dd * 100.0
+        );
         Ok(max_dd)
     }
 
@@ -326,7 +349,8 @@ impl DuckDBAdapter {
     pub fn get_statistics(&self, symbol: &Symbol) -> Result<SymbolStats> {
         let conn = self.conn.lock().unwrap();
 
-        let mut stmt = conn.prepare(r#"
+        let mut stmt = conn.prepare(
+            r#"
             SELECT
                 COUNT(*) AS count,
                 AVG(close) AS mean_price,
@@ -338,7 +362,8 @@ impl DuckDBAdapter {
                 STDDEV(returns) AS std_return
             FROM ohlcv_analytics
             WHERE symbol = ? AND timeframe = 'D1'
-        "#)?;
+        "#,
+        )?;
 
         let stats = stmt.query_row(params![&symbol.0], |row| {
             Ok(SymbolStats {

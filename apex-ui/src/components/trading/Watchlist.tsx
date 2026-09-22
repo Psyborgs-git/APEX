@@ -1,7 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useMarketStore } from '../../stores/marketStore';
 import { PnlValue } from '../common/PnlValue';
 import { formatPrice } from '../../lib/format';
+import type { QuoteDto } from '../../lib/types';
+
+type SortKey = 'symbol' | 'last' | 'chg';
 
 interface WatchlistRowProps {
   symbol: string;
@@ -12,6 +15,21 @@ interface WatchlistRowProps {
 
 const WatchlistRow: React.FC<WatchlistRowProps> = React.memo(({ symbol, selected, onSelect, onRemove }) => {
   const quote = useMarketStore((s) => s.quotes.get(symbol));
+  const prevLast = useRef<number | null>(null);
+  const [flash, setFlash] = useState<'up' | 'down' | null>(null);
+
+  useEffect(() => {
+    if (!quote) return;
+    const prev = prevLast.current;
+    prevLast.current = quote.last;
+    if (prev !== null && quote.last !== prev) {
+      setFlash(quote.last > prev ? 'up' : 'down');
+      const t = setTimeout(() => setFlash(null), 700);
+      return () => clearTimeout(t);
+    }
+  }, [quote]);
+
+  const flashClass = flash === 'up' ? 'price-flash-up' : flash === 'down' ? 'price-flash-down' : '';
 
   if (!quote) {
     return (
@@ -43,7 +61,7 @@ const WatchlistRow: React.FC<WatchlistRowProps> = React.memo(({ symbol, selected
       data-testid={`watchlist-item-${symbol}`}
     >
       <td className="px-3 py-1.5 font-mono text-sm font-medium" onClick={() => onSelect(symbol)}>{symbol}</td>
-      <td className="px-3 py-1.5 font-mono text-sm text-right" data-testid={`watchlist-price-${symbol}`} data-numeric onClick={() => onSelect(symbol)}>{formatPrice(quote.last)}</td>
+      <td className={`px-3 py-1.5 font-mono text-sm text-right ${flashClass}`} data-testid={`watchlist-price-${symbol}`} data-numeric onClick={() => onSelect(symbol)}>{formatPrice(quote.last)}</td>
       <td className="px-3 py-1.5 text-right" onClick={() => onSelect(symbol)}>
         <PnlValue value={quote.change_pct} type="percent" className="text-xs" />
       </td>
@@ -72,10 +90,13 @@ interface WatchlistProps {
 
 export const Watchlist: React.FC<WatchlistProps> = ({ onSelectSymbol, selectedSymbol }) => {
   const watchlist = useMarketStore((s) => s.watchlist);
+  const quotes = useMarketStore((s) => s.quotes);
   const addToWatchlist = useMarketStore((s) => s.addToWatchlist);
   const removeFromWatchlist = useMarketStore((s) => s.removeFromWatchlist);
   const [isAdding, setIsAdding] = useState(false);
   const [newSymbol, setNewSymbol] = useState('');
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
+  const [sortAsc, setSortAsc] = useState(true);
 
   const handleAdd = () => {
     if (newSymbol.trim()) {
@@ -84,6 +105,45 @@ export const Watchlist: React.FC<WatchlistProps> = ({ onSelectSymbol, selectedSy
       setIsAdding(false);
     }
   };
+
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      if (sortAsc) {
+        setSortAsc(false);
+      } else {
+        setSortKey(null);
+      }
+    } else {
+      setSortKey(key);
+      setSortAsc(key === 'symbol');
+    }
+  };
+
+  const sortedWatchlist = useMemo(() => {
+    if (!sortKey) return watchlist;
+    const dir = sortAsc ? 1 : -1;
+    const value = (symbol: string): [number, number | string] => {
+      const quote: QuoteDto | undefined = quotes.get(symbol);
+      if (!quote) return [1, 0];
+      if (sortKey === 'symbol') return [0, symbol];
+      if (sortKey === 'last') return [0, quote.last];
+      return [0, quote.change_pct];
+    };
+    return [...watchlist].sort((a, b) => {
+      const [aMissing, av] = value(a);
+      const [bMissing, bv] = value(b);
+      if (aMissing !== bMissing) return aMissing - bMissing;
+      if (typeof av === 'string' || typeof bv === 'string') {
+        return String(av).localeCompare(String(bv)) * dir;
+      }
+      return (av - bv) * dir;
+    });
+  }, [watchlist, quotes, sortKey, sortAsc]);
+
+  const sortIndicator = (key: SortKey) =>
+    sortKey === key ? (sortAsc ? ' ▲' : ' ▼') : '';
+
+  const headerClass = 'px-3 py-1.5 font-normal cursor-pointer select-none hover:text-text-secondary uppercase tracking-wider';
 
   return (
     <div className="flex flex-col h-full" data-testid="watchlist-panel">
@@ -127,14 +187,20 @@ export const Watchlist: React.FC<WatchlistProps> = ({ onSelectSymbol, selectedSy
         <table className="w-full">
           <thead>
             <tr className="text-xs text-text-muted border-b border-[var(--border-color)]">
-              <th className="px-3 py-1.5 text-left font-normal">Symbol</th>
-              <th className="px-3 py-1.5 text-right font-normal">Last</th>
-              <th className="px-3 py-1.5 text-right font-normal">Chg%</th>
+              <th className={`${headerClass} text-left`} onClick={() => toggleSort('symbol')} data-testid="watchlist-sort-symbol">
+                Symbol{sortIndicator('symbol')}
+              </th>
+              <th className={`${headerClass} text-right`} onClick={() => toggleSort('last')} data-testid="watchlist-sort-last">
+                Last{sortIndicator('last')}
+              </th>
+              <th className={`${headerClass} text-right`} onClick={() => toggleSort('chg')} data-testid="watchlist-sort-chg">
+                Chg%{sortIndicator('chg')}
+              </th>
               <th className="px-3 py-1.5 text-right font-normal w-12"></th>
             </tr>
           </thead>
           <tbody>
-            {watchlist.map((symbol) => (
+            {sortedWatchlist.map((symbol) => (
               <WatchlistRow
                 key={symbol}
                 symbol={symbol}

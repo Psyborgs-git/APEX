@@ -1,12 +1,12 @@
 use super::python_runtime;
-use crate::validation;
 use crate::state::AppState;
+use crate::validation;
 use apex_adapters::market_data::yahoo_finance::YahooFinanceAdapter;
 use apex_core::application::backtest_engine::{
     BacktestConfig, BacktestEngine, BacktestMetrics, BacktestSignal, BacktestTrade, EquityPoint,
     SimPosition,
 };
-use apex_core::domain::models::{OHLCV, OHLCVQuery, Symbol, Timeframe};
+use apex_core::domain::models::{OHLCVQuery, Symbol, Timeframe, OHLCV};
 use apex_core::ports::market_data::MarketDataPort;
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
@@ -236,13 +236,15 @@ impl StrategyBacktestContext {
     }
 }
 
-fn strategy_root(runtime_paths: &python_runtime::RuntimePaths) -> Result<PathBuf, String> {
+pub(crate) fn strategy_root(
+    runtime_paths: &python_runtime::RuntimePaths,
+) -> Result<PathBuf, String> {
     let root = runtime_paths.strategies_dir().to_path_buf();
     fs::create_dir_all(&root).map_err(|e| format!("Failed to create strategies directory: {e}"))?;
     Ok(root)
 }
 
-fn make_strategy_path(root: &Path, full_path: &Path) -> String {
+pub(crate) fn make_strategy_path(root: &Path, full_path: &Path) -> String {
     let relative = full_path
         .strip_prefix(root)
         .unwrap_or(full_path)
@@ -251,7 +253,7 @@ fn make_strategy_path(root: &Path, full_path: &Path) -> String {
     format!("strategies/{relative}")
 }
 
-fn strategy_name(full_path: &Path) -> Result<String, String> {
+pub(crate) fn strategy_name(full_path: &Path) -> Result<String, String> {
     full_path
         .file_name()
         .and_then(|name| name.to_str())
@@ -303,7 +305,7 @@ fn ensure_default_strategy(root: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn normalize_strategy_path(
+pub(crate) fn normalize_strategy_path(
     path: &str,
     runtime_paths: &python_runtime::RuntimePaths,
 ) -> Result<PathBuf, String> {
@@ -313,7 +315,16 @@ fn normalize_strategy_path(
     if trimmed.is_empty() {
         return Err("Strategy path must not be empty".into());
     }
-    if Path::new(trimmed).extension() != Some(OsStr::new("py")) {
+    // Containment: every component must be a plain name — no `..`, `.`,
+    // absolute roots, or drive prefixes can escape the strategy root.
+    let rel = Path::new(trimmed);
+    if !rel
+        .components()
+        .all(|c| matches!(c, std::path::Component::Normal(_)))
+    {
+        return Err("Strategy path must stay inside the strategies directory".into());
+    }
+    if rel.extension() != Some(OsStr::new("py")) {
         return Err("Strategy files must end in .py".into());
     }
 
@@ -453,11 +464,17 @@ async fn load_backtest_bars(
 
     match state.storage.query_ohlcv(query).await {
         Ok(bars) if !bars.is_empty() => {
-            return Ok((bars, "Loaded historical bars from local storage cache.".to_string()));
+            return Ok((
+                bars,
+                "Loaded historical bars from local storage cache.".to_string(),
+            ));
         }
         Ok(_) => {}
         Err(error) => {
-            tracing::warn!(?error, "Local historical cache lookup failed; falling back to Yahoo Finance");
+            tracing::warn!(
+                ?error,
+                "Local historical cache lookup failed; falling back to Yahoo Finance"
+            );
         }
     }
 
@@ -484,7 +501,13 @@ async fn load_backtest_bars(
 pub async fn list_strategy_files(
     runtime_paths: State<'_, python_runtime::RuntimePaths>,
 ) -> Result<Vec<StrategyFileDto>, String> {
-    let root = strategy_root(runtime_paths.inner())?;
+    list_strategy_files_inner(runtime_paths.inner())
+}
+
+pub(crate) fn list_strategy_files_inner(
+    runtime_paths: &python_runtime::RuntimePaths,
+) -> Result<Vec<StrategyFileDto>, String> {
+    let root = strategy_root(runtime_paths)?;
     ensure_default_strategy(&root)?;
 
     let mut files = Vec::new();
@@ -586,17 +609,18 @@ pub async fn run_strategy_file(
         return Err("Strategy params must be a JSON object".into());
     }
 
-    let python = python_runtime::resolve_python_executable(
-        runtime_paths,
-        "APEX_STRATEGY_PYTHON_PATH",
-        &[],
-    )?;
-    let socket = std::env::var("APEX_SIDECAR_SOCKET").unwrap_or_else(|_| "/tmp/apex_strategy.sock".into());
+    let python =
+        python_runtime::resolve_python_executable(runtime_paths, "APEX_STRATEGY_PYTHON_PATH", &[])?;
+    let socket =
+        std::env::var("APEX_SIDECAR_SOCKET").unwrap_or_else(|_| "/tmp/apex_strategy.sock".into());
     let started_at = Utc::now();
     let output = Command::new(&python)
         .current_dir(runtime_paths.work_root())
         .env("APEX_SIDECAR_SOCKET", &socket)
-        .env("PYTHONPATH", python_runtime::build_python_path(runtime_paths)?)
+        .env(
+            "PYTHONPATH",
+            python_runtime::build_python_path(runtime_paths)?,
+        )
         .env("PYTHONIOENCODING", "utf-8")
         .arg("-m")
         .arg("runtime.strategy_runner")
@@ -605,7 +629,10 @@ pub async fn run_strategy_file(
         .arg("--script")
         .arg(full_path.to_string_lossy().to_string())
         .arg("--params")
-        .arg(serde_json::to_string(&params_value).map_err(|e| format!("Failed to encode strategy params: {e}"))?)
+        .arg(
+            serde_json::to_string(&params_value)
+                .map_err(|e| format!("Failed to encode strategy params: {e}"))?,
+        )
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -638,21 +665,13 @@ pub async fn run_strategy_file(
     } else {
         let stderr_text = stderr.trim();
         let stdout_text = stdout.trim();
-        Some(
-            if !stderr_text.is_empty() {
-                python_runtime::enrich_python_error(
-                    stderr_text,
-                    &["APEX_STRATEGY_PYTHON_PATH"],
-                )
-            } else if !stdout_text.is_empty() {
-                python_runtime::enrich_python_error(
-                    stdout_text,
-                    &["APEX_STRATEGY_PYTHON_PATH"],
-                )
-            } else {
-                "Strategy execution failed without a captured error message.".into()
-            },
-        )
+        Some(if !stderr_text.is_empty() {
+            python_runtime::enrich_python_error(stderr_text, &["APEX_STRATEGY_PYTHON_PATH"])
+        } else if !stdout_text.is_empty() {
+            python_runtime::enrich_python_error(stdout_text, &["APEX_STRATEGY_PYTHON_PATH"])
+        } else {
+            "Strategy execution failed without a captured error message.".into()
+        })
     };
 
     Ok(StrategyExecutionResultDto {
@@ -671,10 +690,19 @@ pub async fn run_strategy_backtest(
     state: State<'_, AppState>,
     runtime_paths: State<'_, python_runtime::RuntimePaths>,
 ) -> Result<StrategyBacktestResultDto, String> {
+    run_backtest_inner(request, state.inner(), runtime_paths.inner()).await
+}
+
+/// Shared backtest implementation — also used by the copilot agent loop.
+pub(crate) async fn run_backtest_inner(
+    request: StrategyBacktestRequestDto,
+    state: &AppState,
+    runtime_paths: &python_runtime::RuntimePaths,
+) -> Result<StrategyBacktestResultDto, String> {
     validation::validate_symbol(&request.symbol)?;
     validation::validate_path(&request.path)?;
 
-    let full_path = normalize_strategy_path(&request.path, runtime_paths.inner())?;
+    let full_path = normalize_strategy_path(&request.path, runtime_paths)?;
     if !full_path.exists() {
         return Err(format!("Strategy file not found: {}", request.path));
     }
@@ -710,7 +738,8 @@ pub async fn run_strategy_backtest(
         .map_err(|e| format!("Failed to read strategy file {:?}: {e}", full_path))?;
     let (strategy, mut notes) = infer_backtest_strategy(&content);
 
-    let (bars, data_source_note) = load_backtest_bars(&state, &symbol, timeframe.clone(), from, to).await?;
+    let (bars, data_source_note) =
+        load_backtest_bars(state, &symbol, timeframe.clone(), from, to).await?;
     let bars_analyzed = bars.len();
     if bars_analyzed < 2 {
         return Err("Backtest requires at least two historical bars".into());

@@ -2,6 +2,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
+use crate::commands::python_runtime::RuntimePaths;
+use crate::config::CopilotConfig;
+use crate::config::{AppConfig, StorageBackendKind};
 use anyhow::{anyhow, Result};
 use apex_adapters::execution::angel_one_execution::AngelOneExecutionAdapter;
 use apex_adapters::execution::binance::BinanceExecutionAdapter;
@@ -20,16 +23,19 @@ use apex_adapters::market_data::yahoo_finance::YahooFinanceAdapter;
 use apex_adapters::market_data::zerodha_kite::ZerodhaKiteAdapter;
 use apex_adapters::storage::sqlite_storage::SqliteStorage;
 use apex_adapters::storage::timescale::TimescaleAdapter;
-use crate::commands::python_runtime::RuntimePaths;
-use crate::config::{AppConfig, StorageBackendKind};
 use apex_core::application::alert_engine::AlertEngine;
+use apex_core::application::automation::AutomationEngine;
 use apex_core::application::circuit_breaker::reconcile_on_startup;
+use apex_core::application::graph_engine::GraphEngine;
 use apex_core::application::market_data_aggregator::MarketDataAggregator;
 use apex_core::application::metrics::Metrics;
+use apex_core::application::news_engine::{FeedType, NewsEngine, NewsFeed};
 use apex_core::application::order_trade_manager::OrderTradeManager;
 use apex_core::application::risk_engine::{RiskConfig, RiskEngine};
+use apex_core::application::scanner::MarketScanner;
 use apex_core::bus::message_bus::{BusMessage, MessageBus, Topic};
 use apex_core::ports::execution::ExecutionPort;
+use apex_core::ports::market_data::MarketDataPort;
 use apex_core::ports::storage::StoragePort;
 
 fn env_var(name: &str) -> Option<String> {
@@ -245,7 +251,10 @@ impl BrokerRuntimeEntry {
         }
 
         if !applied {
-            return Err(anyhow!("{} does not expose a live session surface", self.display_name));
+            return Err(anyhow!(
+                "{} does not expose a live session surface",
+                self.display_name
+            ));
         }
 
         Ok(())
@@ -308,6 +317,24 @@ pub struct AppState {
     pub storage_backend: String,
     pub storage_target: String,
     pub metrics: Arc<Metrics>,
+    pub news: Arc<NewsEngine>,
+    pub graph: Arc<tokio::sync::RwLock<GraphEngine>>,
+    pub scanner: Arc<MarketScanner>,
+    pub history_source: Arc<dyn MarketDataPort>,
+    pub copilot: CopilotConfig,
+    pub llm: crate::config::LlmConfig,
+    pub acp: crate::config::AcpConfig,
+    pub automations_cfg: crate::config::AutomationsConfig,
+    pub automations: Arc<AutomationEngine>,
+    /// Copilot tool approvals: keys of `name:{canonical args}` the user has
+    /// approved this session. Guarded by [copilot] require_approval.
+    pub copilot_approvals: std::sync::Mutex<std::collections::HashSet<String>>,
+    /// Results of approved write-tool executions, keyed like approvals —
+    /// replays return the cached result so an approved call can't double-fire
+    /// when the UI re-sends the turn after an approval.
+    pub copilot_tool_cache: std::sync::Mutex<HashMap<String, String>>,
+    pub http: reqwest::Client,
+    pub paper: Arc<PaperTradingAdapter>,
     brokers: HashMap<String, BrokerRuntimeEntry>,
     pub started_at: Instant,
 }
@@ -348,11 +375,12 @@ impl AppState {
         let mut brokers = HashMap::new();
 
         let yahoo_adapter = Arc::new(YahooFinanceAdapter::new());
-        aggregator_inner.add_adapter(yahoo_adapter);
+        aggregator_inner.add_adapter(yahoo_adapter.clone());
+        let scanner_source: Arc<dyn MarketDataPort> = yahoo_adapter;
 
         // Register paper trading adapter — always available as default execution.
         let paper = Arc::new(PaperTradingAdapter::new());
-        otm_inner.register_execution("paper".to_string(), paper);
+        otm_inner.register_execution("paper".to_string(), paper.clone());
         brokers.insert(
             "paper".to_string(),
             BrokerRuntimeEntry {
@@ -423,7 +451,11 @@ impl AppState {
         let mut angel_market_data_available = false;
 
         if let (Some(api_key), Some(client_code)) = (angel_api_key, angel_client_code) {
-            match AngelOneExecutionAdapter::new(api_key.clone(), client_code, angel_jwt_token.clone()) {
+            match AngelOneExecutionAdapter::new(
+                api_key.clone(),
+                client_code,
+                angel_jwt_token.clone(),
+            ) {
                 Ok(adapter) => {
                     let adapter = Arc::new(adapter);
                     otm_inner.register_execution("angel_one".to_string(), adapter.clone());
@@ -548,7 +580,8 @@ impl AppState {
                 display_name: "Robinhood",
                 mode: "live",
                 token_label: Some("Access Token"),
-                config_hint: "ROBINHOOD_ACCESS_TOKEN (market data) and ROBINHOOD_CLIENT_ID (execution)",
+                config_hint:
+                    "ROBINHOOD_ACCESS_TOKEN (market data) and ROBINHOOD_CLIENT_ID (execution)",
                 execution_available: robinhood_execution_available,
                 market_data_available: robinhood_market_data_available,
                 execution: robinhood_execution,
@@ -600,8 +633,12 @@ impl AppState {
         let mut coinbase_execution_available = false;
         let mut coinbase_market_data_available = false;
 
-        if let (Some(api_key), Some(api_secret), Some(passphrase)) = (coinbase_api_key, coinbase_api_secret, coinbase_passphrase) {
-            let adapter = Arc::new(CoinbaseExecutionAdapter::new(api_key, api_secret, passphrase));
+        if let (Some(api_key), Some(api_secret), Some(passphrase)) =
+            (coinbase_api_key, coinbase_api_secret, coinbase_passphrase)
+        {
+            let adapter = Arc::new(CoinbaseExecutionAdapter::new(
+                api_key, api_secret, passphrase,
+            ));
             otm_inner.register_execution("coinbase".to_string(), adapter.clone());
             coinbase_execution = Some(ExecutionHandle::Coinbase(adapter));
             coinbase_execution_available = true;
@@ -650,6 +687,86 @@ impl AppState {
         let otm = Arc::new(otm_inner);
 
         let alerts = Arc::new(AlertEngine::new(bus.clone()));
+        alerts.start();
+
+        // Evaluate DailyPnl alert rules against the live session P&L whenever a
+        // position update lands on the bus.
+        {
+            let alerts = alerts.clone();
+            let risk = risk.clone();
+            let bus = bus.clone();
+            tokio::spawn(async move {
+                let mut rx = bus.subscribe(Topic::PositionUpdate);
+                loop {
+                    match rx.recv().await {
+                        Ok(_) => alerts.evaluate_pnl(risk.session_pnl()).await,
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    }
+                }
+            });
+        }
+
+        // News engine — publishes items onto the bus for the `news-item` push.
+        let (news_tx, mut news_rx) = tokio::sync::mpsc::unbounded_channel();
+        let news_engine = Arc::new(NewsEngine::new(news_tx));
+        if config.news.enabled {
+            for feed in &config.news.feeds {
+                if !feed.enabled {
+                    continue;
+                }
+                news_engine.add_feed(NewsFeed {
+                    name: feed.name.clone(),
+                    url: feed.url.clone(),
+                    feed_type: if feed.feed_type.eq_ignore_ascii_case("atom") {
+                        FeedType::Atom
+                    } else {
+                        FeedType::Rss
+                    },
+                    priority: feed.priority,
+                    enabled: feed.enabled,
+                });
+            }
+            news_engine
+                .clone()
+                .start_polling_loop(config.news.poll_interval_secs)
+                .await;
+        }
+        {
+            let bus = bus.clone();
+            let alerts = alerts.clone();
+            tokio::spawn(async move {
+                while let Some(item) = news_rx.recv().await {
+                    alerts.evaluate_news(&item).await;
+                    bus.publish(Topic::NewsItem, BusMessage::News(item));
+                }
+            });
+        }
+
+        // Order journal — persist every order update so the blotter survives
+        // restarts (the storage write is an upsert keyed on order id).
+        {
+            let storage = storage.storage.clone();
+            let bus = bus.clone();
+            tokio::spawn(async move {
+                let mut rx = bus.subscribe(Topic::OrderUpdate("*".into()));
+                loop {
+                    match rx.recv().await {
+                        Ok(BusMessage::OrderData(order)) => {
+                            if let Err(e) = storage.write_order(&order).await {
+                                tracing::warn!(error = %e, order = %order.id.0, "Failed to journal order");
+                            }
+                        }
+                        Ok(_) => {}
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    }
+                }
+            });
+        }
+
+        let graph = Arc::new(tokio::sync::RwLock::new(GraphEngine::new()));
+        let scanner = Arc::new(MarketScanner::new(scanner_source.clone()));
 
         // Crash recovery — reconcile stale orders and positions on startup
         let broker_ids = otm.authenticated_broker_ids();
@@ -689,6 +806,22 @@ impl AppState {
             storage_backend: storage.backend.to_string(),
             storage_target: storage.target,
             metrics,
+            news: news_engine,
+            graph,
+            scanner,
+            history_source: scanner_source,
+            copilot: config.copilot.clone(),
+            llm: config.llm.clone(),
+            acp: config.acp.clone(),
+            automations_cfg: config.automations.clone(),
+            automations: crate::commands::automation::new_engine(&resolved_data_dir),
+            copilot_approvals: std::sync::Mutex::new(std::collections::HashSet::new()),
+            copilot_tool_cache: std::sync::Mutex::new(HashMap::new()),
+            http: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .unwrap_or_default(),
+            paper,
             brokers,
             started_at: Instant::now(),
         })
@@ -712,7 +845,9 @@ impl AppState {
     }
 
     pub fn broker_connection(&self, broker_id: &str) -> Option<crate::dto::BrokerConnectionDto> {
-        self.brokers.get(broker_id).map(|broker| broker.to_dto(broker_id))
+        self.brokers
+            .get(broker_id)
+            .map(|broker| broker.to_dto(broker_id))
     }
 
     pub fn set_broker_session(&self, broker_id: &str, session_token: &str) -> Result<()> {
@@ -741,10 +876,14 @@ impl AppState {
         // Forward quote updates
         let bus = self.bus.clone();
         let handle = app_handle.clone();
+        let paper = self.paper.clone();
         tokio::spawn(async move {
             let mut rx = bus.subscribe(Topic::Quote("*".into()));
             while let Ok(msg) = rx.recv().await {
                 if let BusMessage::QuoteData(quote) = msg {
+                    // Feed every streamed quote to the paper adapter so market
+                    // orders can fill; emit to the UI at the same time.
+                    paper.update_quote(&quote);
                     let dto = crate::dto::QuoteDto::from(&quote);
                     let _ = handle.emit("quote-update", &dto);
                 }
@@ -833,12 +972,16 @@ impl AppState {
     }
 }
 
-async fn build_storage(runtime_paths: &RuntimePaths, config: &AppConfig) -> Result<StorageBootstrap> {
+async fn build_storage(
+    runtime_paths: &RuntimePaths,
+    config: &AppConfig,
+) -> Result<StorageBootstrap> {
     match config.storage.backend_kind()? {
         StorageBackendKind::Sqlite => {
             let sqlite_path = config.resolved_sqlite_path(runtime_paths)?;
             let sqlite_path_text = sqlite_path.to_string_lossy().to_string();
-            let sqlite = SqliteStorage::new_with_options(&sqlite_path_text, config.storage.wal_mode)?;
+            let sqlite =
+                SqliteStorage::new_with_options(&sqlite_path_text, config.storage.wal_mode)?;
             sqlite.init_schema().await?;
 
             Ok(StorageBootstrap {

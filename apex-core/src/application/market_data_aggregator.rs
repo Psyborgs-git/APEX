@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -23,7 +23,9 @@ pub struct MarketDataAggregator {
     quote_cache: Arc<DashMap<String, Quote>>,
     tick_buffer: Arc<Mutex<Vec<Tick>>>,
     symbol_map: HashMap<String, String>,
-    started_adapters: Arc<DashMap<String, bool>>,
+    /// Symbols each adapter is already streaming — repeat `start` calls only
+    /// forward the delta so adapters don't stack duplicate sockets/pollers.
+    subscribed_symbols: Arc<DashMap<String, HashSet<String>>>,
     flush_task_started: Arc<AtomicBool>,
     data_quality_checker: Arc<DataQualityChecker>,
 }
@@ -38,7 +40,7 @@ impl MarketDataAggregator {
             quote_cache: Arc::new(DashMap::new()),
             tick_buffer: Arc::new(Mutex::new(Vec::new())),
             symbol_map: HashMap::new(),
-            started_adapters: Arc::new(DashMap::new()),
+            subscribed_symbols: Arc::new(DashMap::new()),
             flush_task_started: Arc::new(AtomicBool::new(false)),
             data_quality_checker: Arc::new(DataQualityChecker::new()),
         }
@@ -67,7 +69,10 @@ impl MarketDataAggregator {
 
     /// Resolve a symbol to its canonical form
     pub fn resolve_symbol(&self, symbol: &str) -> String {
-        self.symbol_map.get(symbol).cloned().unwrap_or_else(|| symbol.to_string())
+        self.symbol_map
+            .get(symbol)
+            .cloned()
+            .unwrap_or_else(|| symbol.to_string())
     }
 
     /// Subscribe to symbols across all adapters and start processing
@@ -79,20 +84,41 @@ impl MarketDataAggregator {
         for adapter in &self.adapters {
             let adapter_id = adapter.adapter_id().to_string();
 
-            if self.started_adapters.contains_key(&adapter_id) {
+            // Forward only symbols this adapter hasn't seen yet — polling
+            // adapters extend their shared set, WS adapters get one stream per
+            // distinct call; resubscribing the same universe would leak tasks.
+            let new_symbols: Vec<Symbol> = {
+                let mut known = self
+                    .subscribed_symbols
+                    .entry(adapter_id.clone())
+                    .or_default();
+                symbols
+                    .iter()
+                    .filter(|s| known.insert(s.0.clone()))
+                    .cloned()
+                    .collect()
+            };
+            if new_symbols.is_empty() {
                 continue;
             }
 
-            let mut tick_stream = match adapter.subscribe(symbols).await {
+            let mut tick_stream = match adapter.subscribe(&new_symbols).await {
                 Ok(stream) => stream,
                 Err(err) => {
                     warn!(adapter = %adapter_id, error = %err, "Market data adapter subscription failed");
+                    // Unmark so a later `start` can retry this adapter.
+                    let mut known = self
+                        .subscribed_symbols
+                        .entry(adapter_id.clone())
+                        .or_default();
+                    for s in &new_symbols {
+                        known.remove(&s.0);
+                    }
                     last_error = Some(err);
                     continue;
                 }
             };
 
-            self.started_adapters.insert(adapter_id.clone(), true);
             subscribed_any = true;
             let bus = self.bus.clone();
             let quote_cache = self.quote_cache.clone();
@@ -103,7 +129,8 @@ impl MarketDataAggregator {
             tokio::spawn(async move {
                 while let Some(tick) = tick_stream.recv().await {
                     let symbol_key = tick.symbol.0.clone();
-                    let span = info_span!("tick_pipeline", symbol = %symbol_key, source = %adapter_id);
+                    let span =
+                        info_span!("tick_pipeline", symbol = %symbol_key, source = %adapter_id);
 
                     // Validate tick with data quality checker
                     if data_quality_checker.validate_tick(&tick).is_err() {
@@ -112,17 +139,32 @@ impl MarketDataAggregator {
                     }
 
                     let tick_clone = span.in_scope(|| {
-                        // Update quote cache
+                        // Update quote cache; accumulate day OHLC across ticks so
+                        // WS feeds that only report last-trades still show a real
+                        // open/high/low and the change % reported by poll adapters.
+                        let prev = quote_cache.get(&symbol_key).map(|q| q.clone());
                         let quote = Quote {
                             symbol: tick.symbol.clone(),
                             bid: tick.bid,
                             ask: tick.ask,
                             last: tick.last,
-                            open: tick.last,
-                            high: tick.last,
-                            low: tick.last,
+                            open: tick
+                                .open
+                                .or_else(|| prev.as_ref().map(|p| p.open))
+                                .unwrap_or(tick.last),
+                            high: prev
+                                .as_ref()
+                                .map(|p| p.high.max(tick.last))
+                                .unwrap_or(tick.last),
+                            low: prev
+                                .as_ref()
+                                .map(|p| p.low.min(tick.last))
+                                .unwrap_or(tick.last),
                             volume: tick.volume,
-                            change_pct: 0.0,
+                            change_pct: tick
+                                .change_pct
+                                .or_else(|| prev.as_ref().map(|p| p.change_pct))
+                                .unwrap_or(0.0),
                             vwap: tick.last,
                             updated_at: tick.time,
                         };
@@ -133,10 +175,7 @@ impl MarketDataAggregator {
                             Topic::Tick(symbol_key.clone()),
                             BusMessage::TickData(tick.clone()),
                         );
-                        bus.publish(
-                            Topic::Quote(symbol_key),
-                            BusMessage::QuoteData(quote),
-                        );
+                        bus.publish(Topic::Quote(symbol_key), BusMessage::QuoteData(quote));
 
                         tick
                     });
@@ -236,19 +275,22 @@ mod tests {
         assert!(agg.get_cached_quote("AAPL").is_none());
 
         // Manually insert a quote
-        agg.quote_cache.insert("AAPL".into(), Quote {
-            symbol: Symbol("AAPL".into()),
-            bid: 150.0,
-            ask: 150.05,
-            last: 150.02,
-            open: 149.0,
-            high: 151.0,
-            low: 148.5,
-            volume: 10000,
-            change_pct: 0.5,
-            vwap: 149.8,
-            updated_at: Utc::now(),
-        });
+        agg.quote_cache.insert(
+            "AAPL".into(),
+            Quote {
+                symbol: Symbol("AAPL".into()),
+                bid: 150.0,
+                ask: 150.05,
+                last: 150.02,
+                open: 149.0,
+                high: 151.0,
+                low: 148.5,
+                volume: 10000,
+                change_pct: 0.5,
+                vwap: 149.8,
+                updated_at: Utc::now(),
+            },
+        );
 
         let quote = agg.get_cached_quote("AAPL").unwrap();
         assert_eq!(quote.symbol.0, "AAPL");

@@ -43,3 +43,36 @@ html, body, #root {
 ::-webkit-scrollbar-thumb:hover {
     background: var(--color-muted);
 }
+
+/* Ticker tape marquee — 3x duplicated content, translate one third for a seamless loop */
+@keyframes ticker-tape-scroll {
+    from { transform: translateX(0); }
+    to { transform: translateX(-33.333%); }
+}
+
+.ticker-tape-track {
+    animation: ticker-tape-scroll 45s linear infinite;
+}
+
+.ticker-tape-track:hover {
+    animation-play-state: paused;
+}
+
+/* Price tick flash on watchlist/quote cells */
+@keyframes price-flash-up {
+    0% { background-color: rgba(0, 200, 83, 0.25); }
+    100% { background-color: transparent; }
+}
+
+@keyframes price-flash-down {
+    0% { background-color: rgba(255, 23, 68, 0.25); }
+    100% { background-color: transparent; }
+}
+
+.price-flash-up {
+    animation: price-flash-up 700ms ease-out;
+}
+
+.price-flash-down {
+    animation: price-flash-down 700ms ease-out;
+}

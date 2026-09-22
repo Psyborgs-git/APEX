@@ -14,12 +14,15 @@ interface WorkspaceState {
   commandSymbol: string | null;
   /** Tab requested by CommandBar — Workspace picks this up */
   commandTab: string | null;
+  /** Copilot dock visibility — toggled by pill, :COPILOT command, or header controls */
+  copilotOpen: boolean;
   saveLayout: (name: string, config: Record<string, unknown>) => void;
   loadLayout: (name: string) => WorkspaceLayout | undefined;
   deleteLayout: (name: string) => void;
   getLayouts: () => WorkspaceLayout[];
   setCommandSymbol: (symbol: string | null) => void;
   setCommandTab: (tab: string | null) => void;
+  setCopilotOpen: (open: boolean) => void;
 }
 
 export const useWorkspaceStore = create<WorkspaceState>()(
@@ -29,6 +32,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       currentLayout: null,
       commandSymbol: null,
       commandTab: null,
+      copilotOpen: false,
 
       saveLayout: (name: string, config: Record<string, unknown>) => {
         set((state) => {
@@ -71,6 +75,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
       setCommandSymbol: (symbol) => set({ commandSymbol: symbol }),
       setCommandTab: (tab) => set({ commandTab: tab }),
+      setCopilotOpen: (open) => set({ copilotOpen: open }),
     }),
     {
       name: 'workspace-storage',

@@ -377,7 +377,11 @@ impl BacktestEngine {
         };
 
         // Count wins/losses from closed trades
-        let closed: Vec<&BacktestTrade> = self.trades.iter().filter(|t| t.exit_time.is_some()).collect();
+        let closed: Vec<&BacktestTrade> = self
+            .trades
+            .iter()
+            .filter(|t| t.exit_time.is_some())
+            .collect();
         let total_trades = closed.len() as u64;
         let winning: Vec<&&BacktestTrade> = closed.iter().filter(|t| t.pnl > 0.0).collect();
         let losing: Vec<&&BacktestTrade> = closed.iter().filter(|t| t.pnl <= 0.0).collect();
@@ -608,14 +612,15 @@ impl WalkForwardEngine {
         signal_fn: F,
     ) -> Result<WalkForwardResult>
     where
-        F: Fn(&str, &OHLCV, &HashMap<String, SimPosition>, f64) -> Option<BacktestSignal>
-            + Clone,
+        F: Fn(&str, &OHLCV, &HashMap<String, SimPosition>, f64) -> Option<BacktestSignal> + Clone,
     {
         if config.n_windows == 0 {
             return Err(anyhow!("walk-forward n_windows must be > 0"));
         }
         if !(0.1..=0.9).contains(&config.train_pct) {
-            return Err(anyhow!("walk-forward train_pct must be between 0.1 and 0.9"));
+            return Err(anyhow!(
+                "walk-forward train_pct must be between 0.1 and 0.9"
+            ));
         }
 
         // Determine overall time range from data
@@ -633,13 +638,12 @@ impl WalkForwardEngine {
         let mut windows: Vec<WalkForwardWindow> = Vec::with_capacity(config.n_windows);
 
         for i in 0..config.n_windows {
-            let win_start = global_start
-                + chrono::Duration::seconds((i as f64 * window_secs) as i64);
+            let win_start =
+                global_start + chrono::Duration::seconds((i as f64 * window_secs) as i64);
             let win_end = if i == config.n_windows - 1 {
                 global_end
             } else {
-                global_start
-                    + chrono::Duration::seconds(((i + 1) as f64 * window_secs) as i64)
+                global_start + chrono::Duration::seconds(((i + 1) as f64 * window_secs) as i64)
             };
 
             let split = win_start
@@ -780,8 +784,7 @@ impl WalkForwardEngine {
         }
 
         let n = windows.len() as f64;
-        let test_metrics: Vec<&BacktestMetrics> =
-            windows.iter().map(|w| &w.test_metrics).collect();
+        let test_metrics: Vec<&BacktestMetrics> = windows.iter().map(|w| &w.test_metrics).collect();
 
         BacktestMetrics {
             total_return: test_metrics.iter().map(|m| m.total_return).sum(),
@@ -813,9 +816,19 @@ impl WalkForwardEngine {
                 }
             },
             profit_factor: {
-                let total_wins: f64 = test_metrics.iter().map(|m| m.avg_win * m.winning_trades as f64).sum();
-                let total_losses: f64 = test_metrics.iter().map(|m| m.avg_loss * m.losing_trades as f64).sum();
-                if total_losses > 0.0 { total_wins / total_losses } else { 0.0 }
+                let total_wins: f64 = test_metrics
+                    .iter()
+                    .map(|m| m.avg_win * m.winning_trades as f64)
+                    .sum();
+                let total_losses: f64 = test_metrics
+                    .iter()
+                    .map(|m| m.avg_loss * m.losing_trades as f64)
+                    .sum();
+                if total_losses > 0.0 {
+                    total_wins / total_losses
+                } else {
+                    0.0
+                }
             },
             avg_trade_pnl: test_metrics.iter().map(|m| m.avg_trade_pnl).sum::<f64>() / n,
             avg_win: test_metrics.iter().map(|m| m.avg_win).sum::<f64>() / n,
@@ -877,6 +890,7 @@ mod tests {
                 OHLCV {
                     time,
                     symbol: Symbol(symbol.into()),
+                    timeframe: Timeframe::D1,
                     open: close - 1.0,
                     high: close + 2.0,
                     low: close - 2.0,
@@ -904,7 +918,10 @@ mod tests {
         };
         let mut engine = BacktestEngine::new(config);
         let mut data = HashMap::new();
-        data.insert("AAPL".into(), make_bars("AAPL", &[(0, 100.0), (1, 101.0), (2, 102.0)]));
+        data.insert(
+            "AAPL".into(),
+            make_bars("AAPL", &[(0, 100.0), (1, 101.0), (2, 102.0)]),
+        );
 
         let result = engine.run(&data, |_, _, _, _| None).unwrap();
         assert_eq!(result.metrics.total_trades, 0);
@@ -964,10 +981,7 @@ mod tests {
         };
         let mut engine = BacktestEngine::new(config);
         let mut data = HashMap::new();
-        data.insert(
-            "AAPL".into(),
-            make_bars("AAPL", &[(0, 100.0), (1, 110.0)]),
-        );
+        data.insert("AAPL".into(), make_bars("AAPL", &[(0, 100.0), (1, 110.0)]));
 
         let result = engine
             .run(&data, |symbol, bar, _positions, _cash| {
@@ -998,10 +1012,7 @@ mod tests {
         };
         let mut engine = BacktestEngine::new(config);
         let mut data = HashMap::new();
-        data.insert(
-            "AAPL".into(),
-            make_bars("AAPL", &[(0, 100.0), (1, 110.0)]),
-        );
+        data.insert("AAPL".into(), make_bars("AAPL", &[(0, 100.0), (1, 110.0)]));
 
         let result = engine
             .run(&data, |symbol, bar, positions, _cash| {
@@ -1035,10 +1046,7 @@ mod tests {
         };
         let mut engine = BacktestEngine::new(config);
         let mut data = HashMap::new();
-        data.insert(
-            "AAPL".into(),
-            make_bars("AAPL", &[(0, 100.0), (1, 90.0)]),
-        );
+        data.insert("AAPL".into(), make_bars("AAPL", &[(0, 100.0), (1, 90.0)]));
 
         let result = engine
             .run(&data, |symbol, bar, positions, _cash| {
@@ -1201,6 +1209,7 @@ mod tests {
                 OHLCV {
                     time,
                     symbol: Symbol(symbol.into()),
+                    timeframe: Timeframe::D1,
                     open: close - 0.5,
                     high: close + 1.0,
                     low: close - 1.0,
@@ -1228,8 +1237,7 @@ mod tests {
         let mut data = HashMap::new();
         data.insert("AAPL".into(), make_long_series("AAPL", 90, 100.0));
 
-        let result =
-            WalkForwardEngine::run(&wf_config, &data, |_, _, _, _| None).unwrap();
+        let result = WalkForwardEngine::run(&wf_config, &data, |_, _, _, _| None).unwrap();
 
         assert_eq!(result.windows.len(), 3);
         assert!(result.overfitting_ratio.is_finite() || result.overfitting_ratio == 1.0);
@@ -1270,10 +1278,15 @@ mod tests {
 
         assert_eq!(result.windows.len(), 2);
         // At least one window should have exercised some trading signals
-        let total_trades: u64 = result.windows.iter()
+        let total_trades: u64 = result
+            .windows
+            .iter()
             .map(|w| w.train_metrics.total_trades + w.test_metrics.total_trades)
             .sum();
-        assert!(total_trades > 0, "walk-forward should produce at least one trade across all windows");
+        assert!(
+            total_trades > 0,
+            "walk-forward should produce at least one trade across all windows"
+        );
     }
 
     #[test]
@@ -1315,8 +1328,7 @@ mod tests {
         let mut data = HashMap::new();
         data.insert("AAPL".into(), make_long_series("AAPL", 60, 100.0));
 
-        let result =
-            WalkForwardEngine::run(&wf_config, &data, |_, _, _, _| None).unwrap();
+        let result = WalkForwardEngine::run(&wf_config, &data, |_, _, _, _| None).unwrap();
 
         // With no signals, overfitting ratio should be ~1.0 (train and test are both ~0%)
         assert!(result.overfitting_ratio.is_finite());

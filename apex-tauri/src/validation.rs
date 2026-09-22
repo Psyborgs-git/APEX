@@ -22,13 +22,14 @@ const MAX_ALERT_JSON_LEN: usize = 4096;
 const MAX_SESSION_TOKEN_LEN: usize = 8192;
 
 /// Known broker IDs.
-const VALID_BROKERS: &[&str] = &[
-    "paper", "zerodha", "angel_one", "groww", "robinhood",
-];
+const VALID_BROKERS: &[&str] = &["paper", "zerodha", "angel_one", "groww", "robinhood"];
 
 /// Known ML algorithm identifiers.
 const VALID_ALGORITHMS: &[&str] = &[
-    "random_forest", "gradient_boosting", "logistic_regression", "xgboost",
+    "random_forest",
+    "gradient_boosting",
+    "logistic_regression",
+    "xgboost",
 ];
 
 /// Validate a ticker symbol.
@@ -117,8 +118,7 @@ pub fn validate_alert_json(json: &str) -> Result<(), String> {
         ));
     }
     // Ensure it parses as valid JSON
-    serde_json::from_str::<serde_json::Value>(json)
-        .map_err(|e| format!("Invalid JSON: {}", e))?;
+    serde_json::from_str::<serde_json::Value>(json).map_err(|e| format!("Invalid JSON: {}", e))?;
     Ok(())
 }
 
@@ -149,6 +149,54 @@ pub fn validate_algorithm(algo: &str) -> Result<(), String> {
         ));
     }
     Ok(())
+}
+
+/// Validate an LLM provider base URL: https everywhere; plain http only for
+/// loopback/private hosts (local inference servers like Ollama/vLLM).
+/// The configured endpoint receives the bearer key + prompts, so open
+/// internet over cleartext is rejected.
+pub fn validate_provider_url(url: &str) -> Result<(), String> {
+    let parsed = reqwest::Url::parse(url.trim())
+        .map_err(|e| format!("Invalid provider base_url `{url}`: {e}"))?;
+    let scheme = parsed.scheme();
+    if scheme == "https" {
+        return Ok(());
+    }
+    if scheme != "http" {
+        return Err(format!(
+            "Provider base_url must be http(s) — got `{scheme}://`"
+        ));
+    }
+    // IPv6 hosts arrive bracketed ("[::1]") — strip before parsing.
+    let host = parsed
+        .host_str()
+        .unwrap_or("")
+        .trim_start_matches('[')
+        .trim_end_matches(']');
+    if host == "localhost"
+        || host == "localhost.localdomain"
+        || host.ends_with(".local")
+        || host.ends_with(".internal")
+    {
+        return Ok(());
+    }
+    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        let private = match ip {
+            std::net::IpAddr::V4(v4) => {
+                v4.is_loopback()
+                    || v4.is_private()
+                    || v4.is_link_local()
+                    || v4.octets()[0] == 169 && v4.octets()[1] == 254
+            }
+            std::net::IpAddr::V6(v6) => v6.is_loopback() || v6.is_unique_local(),
+        };
+        if private {
+            return Ok(());
+        }
+    }
+    Err(format!(
+        "Insecure http endpoint `{host}` — use https, or a loopback/private host"
+    ))
 }
 
 /// Validate that a file path does not contain path traversal sequences.
@@ -189,6 +237,27 @@ mod tests {
         assert!(validate_quantity(1.0).is_ok());
         assert!(validate_quantity(100.0).is_ok());
         assert!(validate_quantity(999_999.0).is_ok());
+    }
+
+    #[test]
+    fn provider_url_https_always_ok() {
+        assert!(validate_provider_url("https://openrouter.ai/api/v1").is_ok());
+        assert!(validate_provider_url("https://evil.example.com/x").is_ok());
+    }
+
+    #[test]
+    fn provider_url_http_private_only() {
+        assert!(validate_provider_url("http://localhost:11434/v1").is_ok());
+        assert!(validate_provider_url("http://127.0.0.1:8000").is_ok());
+        assert!(validate_provider_url("http://192.168.1.5:8000").is_ok());
+        assert!(validate_provider_url("http://[::1]:8000").is_ok());
+        assert!(validate_provider_url("http://nas.local/v1").is_ok());
+        // Public hosts over cleartext are rejected — the bearer key + prompts
+        // would be exposed.
+        assert!(validate_provider_url("http://openrouter.ai/api/v1").is_err());
+        assert!(validate_provider_url("http://8.8.8.8:443").is_err());
+        assert!(validate_provider_url("ftp://localhost").is_err());
+        assert!(validate_provider_url("not a url").is_err());
     }
 
     #[test]

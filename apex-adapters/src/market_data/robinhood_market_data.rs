@@ -1,8 +1,8 @@
+use anyhow::{Context, Result};
 use apex_core::{
     domain::models::*,
     ports::market_data::{AdapterHealth, MarketDataPort, TickStream},
 };
-use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use reqwest::Client;
@@ -138,9 +138,7 @@ impl MarketDataPort for RobinhoodMarketDataAdapter {
         let (tx, rx) = mpsc::channel(1000);
 
         let symbols_clone: Vec<Symbol> = symbols.to_vec();
-        let adapter = RobinhoodMarketDataAdapter::new(
-            self.access_token.read().unwrap().clone(),
-        )?;
+        let adapter = RobinhoodMarketDataAdapter::new(self.access_token.read().unwrap().clone())?;
 
         tokio::spawn(async move {
             loop {
@@ -155,6 +153,8 @@ impl MarketDataPort for RobinhoodMarketDataAdapter {
                                 last: quote.last,
                                 volume: quote.volume,
                                 source: "robinhood".to_string(),
+                                open: Some(quote.open),
+                                change_pct: Some(quote.change_pct),
                             };
 
                             if tx.send(tick).await.is_err() {
@@ -187,13 +187,11 @@ impl MarketDataPort for RobinhoodMarketDataAdapter {
             return Err(anyhow::anyhow!("Not authenticated with Robinhood"));
         }
 
-        let url = format!(
-            "{}/quotes/{}/",
-            ROBINHOOD_API_BASE, symbol.0
-        );
+        let url = format!("{}/quotes/{}/", ROBINHOOD_API_BASE, symbol.0);
         let auth_header = self.get_auth_header()?;
 
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .header("Authorization", &auth_header)
             .send()
@@ -204,10 +202,16 @@ impl MarketDataPort for RobinhoodMarketDataAdapter {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
             self.set_health(AdapterHealth::Degraded(format!("HTTP {}", status)));
-            return Err(anyhow::anyhow!("Robinhood API error {}: {}", status, error_text));
+            return Err(anyhow::anyhow!(
+                "Robinhood API error {}: {}",
+                status,
+                error_text
+            ));
         }
 
-        let rh_quote: RobinhoodQuote = response.json().await
+        let rh_quote: RobinhoodQuote = response
+            .json()
+            .await
             .context("Failed to parse Robinhood quote")?;
 
         let last: f64 = rh_quote.last_trade_price.parse().unwrap_or(0.0);
@@ -222,11 +226,9 @@ impl MarketDataPort for RobinhoodMarketDataAdapter {
         };
 
         // Fetch fundamentals for open/high/low/volume
-        let fund_url = format!(
-            "{}/fundamentals/{}/",
-            ROBINHOOD_API_BASE, symbol.0
-        );
-        let fund_response = self.client
+        let fund_url = format!("{}/fundamentals/{}/", ROBINHOOD_API_BASE, symbol.0);
+        let fund_response = self
+            .client
             .get(&fund_url)
             .header("Authorization", self.get_auth_header()?)
             .send()
@@ -236,10 +238,22 @@ impl MarketDataPort for RobinhoodMarketDataAdapter {
             if resp.status().is_success() {
                 if let Ok(fund) = resp.json::<RobinhoodFundamentals>().await {
                     (
-                        fund.open.as_deref().and_then(|s| s.parse().ok()).unwrap_or(0.0),
-                        fund.high.as_deref().and_then(|s| s.parse().ok()).unwrap_or(0.0),
-                        fund.low.as_deref().and_then(|s| s.parse().ok()).unwrap_or(0.0),
-                        fund.volume.as_deref().and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0) as u64,
+                        fund.open
+                            .as_deref()
+                            .and_then(|s| s.parse().ok())
+                            .unwrap_or(0.0),
+                        fund.high
+                            .as_deref()
+                            .and_then(|s| s.parse().ok())
+                            .unwrap_or(0.0),
+                        fund.low
+                            .as_deref()
+                            .and_then(|s| s.parse().ok())
+                            .unwrap_or(0.0),
+                        fund.volume
+                            .as_deref()
+                            .and_then(|s| s.parse::<f64>().ok())
+                            .unwrap_or(0.0) as u64,
                     )
                 } else {
                     (0.0, 0.0, 0.0, 0)
@@ -287,7 +301,8 @@ impl MarketDataPort for RobinhoodMarketDataAdapter {
 
         let auth_header = self.get_auth_header()?;
 
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .header("Authorization", &auth_header)
             .send()
@@ -295,10 +310,15 @@ impl MarketDataPort for RobinhoodMarketDataAdapter {
             .context("Failed to fetch historical data from Robinhood")?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("Robinhood API error: {}", response.status()));
+            return Err(anyhow::anyhow!(
+                "Robinhood API error: {}",
+                response.status()
+            ));
         }
 
-        let hist: RobinhoodHistoricals = response.json().await
+        let hist: RobinhoodHistoricals = response
+            .json()
+            .await
             .context("Failed to parse historical data")?;
 
         let mut bars = Vec::new();
@@ -311,6 +331,7 @@ impl MarketDataPort for RobinhoodMarketDataAdapter {
             bars.push(OHLCV {
                 time,
                 symbol: symbol.clone(),
+                timeframe: timeframe.clone(),
                 open: candle.open_price.parse().unwrap_or(0.0),
                 high: candle.high_price.parse().unwrap_or(0.0),
                 low: candle.low_price.parse().unwrap_or(0.0),
@@ -319,7 +340,11 @@ impl MarketDataPort for RobinhoodMarketDataAdapter {
             });
         }
 
-        debug!("Fetched {} historical bars for {} from Robinhood", bars.len(), symbol.0);
+        debug!(
+            "Fetched {} historical bars for {} from Robinhood",
+            bars.len(),
+            symbol.0
+        );
         Ok(bars)
     }
 
@@ -339,10 +364,22 @@ mod tests {
     #[test]
     fn test_timeframe_mapping() {
         let adapter = RobinhoodMarketDataAdapter::new(None).unwrap();
-        assert_eq!(adapter.timeframe_to_robinhood(&Timeframe::M5), ("5minute", "day"));
-        assert_eq!(adapter.timeframe_to_robinhood(&Timeframe::H1), ("hour", "month"));
-        assert_eq!(adapter.timeframe_to_robinhood(&Timeframe::D1), ("day", "year"));
-        assert_eq!(adapter.timeframe_to_robinhood(&Timeframe::W1), ("week", "5year"));
+        assert_eq!(
+            adapter.timeframe_to_robinhood(&Timeframe::M5),
+            ("5minute", "day")
+        );
+        assert_eq!(
+            adapter.timeframe_to_robinhood(&Timeframe::H1),
+            ("hour", "month")
+        );
+        assert_eq!(
+            adapter.timeframe_to_robinhood(&Timeframe::D1),
+            ("day", "year")
+        );
+        assert_eq!(
+            adapter.timeframe_to_robinhood(&Timeframe::W1),
+            ("week", "5year")
+        );
     }
 
     #[test]

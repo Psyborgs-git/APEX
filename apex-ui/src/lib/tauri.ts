@@ -1,4 +1,4 @@
-import type { QuoteDto, OrderDto, PositionDto, NewOrderRequestDto, RiskStatusDto, MLModelDto, MLTrainingRequestDto, MLTrainingResultDto, SystemHealthDto, AdapterHealthDto, AlertRuleDto, StrategyFileDto, StrategyExecutionResultDto, StrategyBacktestRequestDto, StrategyBacktestResultDto, AccountBalanceDto, BrokerConnectionDto, AppSettingsDto, AppSettingsUpdateDto, NotebookCellExecutionDto, NotebookDocumentDto, NotebookRunRequestDto, NotebookSummaryDto, OHLCVDto } from './types';
+import type { QuoteDto, OrderDto, PositionDto, NewOrderRequestDto, RiskStatusDto, MLModelDto, MLTrainingRequestDto, MLTrainingResultDto, SystemHealthDto, AdapterHealthDto, AlertRuleDto, StrategyFileDto, StrategyExecutionResultDto, StrategyBacktestRequestDto, StrategyBacktestResultDto, AccountBalanceDto, BrokerConnectionDto, AppSettingsDto, AppSettingsUpdateDto, NotebookCellExecutionDto, NotebookDocumentDto, NotebookRunRequestDto, NotebookSummaryDto, OHLCVDto, NewsItemDto, NewsFeedDto, OrderBookDto, GraphDto, ScanOutputDto, ScanRequestDto, CopilotMessageDto, CopilotReplyDto, IndicatorResultDto, QuantStatsDto, RegressionDto, ModelSignalDto, AutomationDto, CreateAutomationDto } from './types';
 
 const IS_TAURI = typeof window !== 'undefined' && '__TAURI__' in window;
 
@@ -141,6 +141,23 @@ let mockAppSettings: AppSettingsDto = {
     pool_size: 4,
     available_backends: ['sqlite', 'timescale'],
   },
+  appearance: { theme: 'dark', density: 'comfortable' },
+  llm: {
+    active: 'openrouter',
+    providers: [
+      {
+        id: 'openrouter',
+        name: 'OpenRouter',
+        base_url: 'https://openrouter.ai/api/v1',
+        model: 'openrouter/free',
+        api_kind: 'chat',
+        api_key_env: 'OPEN_ROUTER',
+        max_tokens: 1024,
+        key_configured: false,
+      },
+    ],
+  },
+  acp: { command: '', cwd: '' },
 };
 
 function cloneMockSettings(): AppSettingsDto {
@@ -310,7 +327,7 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
   if (cmd === 'get_positions') return [...mockPositions] as any;
   if (cmd === 'get_open_orders') return [...mockOrders] as any;
   if (cmd === 'get_account_balance') {
-    const brokerId = (args?.broker_id as string) || 'paper';
+    const brokerId = (args?.brokerId as string) || 'paper';
     const broker = mockBrokerConnections.find((connection) => connection.broker_id === brokerId);
 
     if (broker?.mode === 'live' && !broker.authenticated) {
@@ -482,7 +499,7 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
   }
   if (cmd === 'add_alert') {
     const id = args?.id as string;
-    const rule = args?.rule_json as string;
+    const rule = args?.ruleJson as string;
     mockAlertRules = [
       ...mockAlertRules.filter((existing) => existing.id !== id),
       { id, rule, enabled: true },
@@ -490,7 +507,7 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
     return undefined as any;
   }
   if (cmd === 'remove_alert') {
-    const ruleId = args?.rule_id as string;
+    const ruleId = args?.ruleId as string;
     const before = mockAlertRules.length;
     mockAlertRules = mockAlertRules.filter((rule) => rule.id !== ruleId);
     return (mockAlertRules.length < before) as any;
@@ -515,7 +532,7 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
     return { model_id: modelId, metrics: model.metrics, feature_names: model.feature_names, status: 'completed' } as any;
   }
   if (cmd === 'delete_ml_model') {
-    const id = args?.model_id as string;
+    const id = args?.modelId as string;
     mockModels = mockModels.filter(m => m.model_id !== id);
     return true as any;
   }
@@ -523,8 +540,8 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
     return [...mockBrokerConnections] as any;
   }
   if (cmd === 'set_broker_session') {
-    const brokerId = args?.broker_id as string;
-    const sessionToken = (args?.session_token as string | undefined)?.trim();
+    const brokerId = args?.brokerId as string;
+    const sessionToken = (args?.sessionToken as string | undefined)?.trim();
 
     if (!sessionToken) {
       throw new Error('Session token must not be empty');
@@ -553,7 +570,7 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
     return updated as any;
   }
   if (cmd === 'clear_broker_session') {
-    const brokerId = args?.broker_id as string;
+    const brokerId = args?.brokerId as string;
 
     let updated: BrokerConnectionDto | undefined;
     mockBrokerConnections = mockBrokerConnections.map((connection) => {
@@ -591,18 +608,118 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
       active_strategies: 0,
     } as any;
   }
+  if (cmd === 'get_orders') {
+    return [...mockOrders].sort((a, b) => b.created_at.localeCompare(a.created_at)) as any;
+  }
+  if (cmd === 'get_news' || cmd === 'search_news') {
+    return buildMockNews(args?.symbol as string | undefined) as any;
+  }
+  if (cmd === 'list_news_feeds') {
+    return [
+      { name: 'CNBC Markets', url: 'https://www.cnbc.com/id/100003114/device/rss/rss.html', enabled: true },
+      { name: 'MarketWatch Top Stories', url: 'https://feeds.marketwatch.com/marketwatch/topstories', enabled: true },
+    ] as NewsFeedDto[] as any;
+  }
+  if (cmd === 'get_order_book') {
+    return buildMockOrderBook((args?.symbol as string) || 'RELIANCE.NS') as any;
+  }
+  if (cmd === 'get_graph' || cmd === 'compute_correlations') {
+    return buildMockGraph() as any;
+  }
+  if (cmd === 'run_scan') {
+    const request = args?.request as ScanRequestDto | undefined;
+    const universe = request?.symbols?.length ? request.symbols : ['RELIANCE.NS', 'TCS.NS', 'HDFCBANK.NS', 'INFY.NS', 'AAPL', 'MSFT', 'GOOGL'];
+    const results = universe.map((symbol, i) => ({
+      symbol,
+      last_price: 140 + i * 37.5,
+      change_pct: ((i % 5) - 1) * 1.3,
+      volume: 800_000 + i * 120_000,
+      matched_at: new Date().toISOString(),
+    }));
+    return {
+      config_name: request?.name ?? 'Ad-hoc scan',
+      scanned_count: universe.length,
+      matched_count: results.length,
+      results,
+      completed_at: new Date().toISOString(),
+    } as ScanOutputDto as any;
+  }
+  if (cmd === 'copilot_chat') {
+    return {
+      reply: '[web-only mode] Copilot needs the desktop app + OPEN_ROUTER key. In-browser responses are stubbed.',
+      model: 'mock',
+      provider: 'mock',
+      tool_calls: [],
+      pending_approvals: [],
+    } as CopilotReplyDto as any;
+  }
 
   console.log('[Mock IPC]', cmd, args);
   return {} as T;
 }
 
+function buildMockNews(symbolFilter?: string): NewsItemDto[] {
+  const now = Date.now();
+  const feed = [
+    { headline: 'Sensex, Nifty hit fresh highs as IT stocks rally', source: 'CNBC Markets', symbols: ['TCS.NS', 'INFY.NS'], sentiment: 0.62 },
+    { headline: 'Reliance Industries weighs new energy capex plan', source: 'MarketWatch Top Stories', symbols: ['RELIANCE.NS'], sentiment: 0.41 },
+    { headline: 'Fed officials signal patience on rate cuts', source: 'CNBC Markets', symbols: ['AAPL', 'MSFT'], sentiment: -0.18 },
+    { headline: 'Bitcoin steadies near highs; altcoins mixed', source: 'CoinDesk', symbols: ['BTC-USD', 'ETH-USD'], sentiment: 0.12 },
+    { headline: 'HDFC Bank raises deposit rates amid liquidity push', source: 'MarketWatch Top Stories', symbols: ['HDFCBANK.NS'], sentiment: 0.35 },
+    { headline: 'Alphabet unveils new AI accelerator roadmap', source: 'CNBC Markets', symbols: ['GOOGL'], sentiment: 0.55 },
+  ];
+  return feed
+    .map((item, i) => ({
+      id: `mock-news-${i}`,
+      headline: item.headline,
+      summary: `${item.headline} — extended coverage and analysis from ${item.source}.`,
+      source: item.source,
+      url: '',
+      published: new Date(now - i * 11 * 60_000).toISOString(),
+      symbols: item.symbols,
+      sentiment: item.sentiment,
+    }))
+    .filter((item) => !symbolFilter || item.symbols.includes(symbolFilter));
+}
+
+function buildMockOrderBook(symbol: string): OrderBookDto {
+  const mid = 150.0;
+  const bids = Array.from({ length: 16 }, (_, i) => ({
+    price: Number((mid - 0.02 - i * 0.03).toFixed(2)),
+    quantity: 40 + ((i * 73 + symbol.length * 29) % 160),
+  }));
+  const asks = Array.from({ length: 16 }, (_, i) => ({
+    price: Number((mid + 0.02 + i * 0.03).toFixed(2)),
+    quantity: 40 + ((i * 97 + symbol.length * 31) % 160),
+  }));
+  return { symbol, source: 'synthetic', bids, asks };
+}
+
+function buildMockGraph(): GraphDto {
+  const nodeIds = ['RELIANCE.NS', 'TCS.NS', 'HDFCBANK.NS', 'INFY.NS', 'AAPL', 'MSFT'];
+  const nodes = nodeIds.map((id) => ({
+    id,
+    node_type: 'Instrument',
+    label: id,
+    symbol: id,
+    properties: {},
+  }));
+  const edges = [
+    { source: 'TCS.NS', target: 'INFY.NS', data: { edge_type: { CorrelatedWith: { coefficient: 0.82, window: '90d' } }, weight: 0.82, metadata: {} } },
+    { source: 'AAPL', target: 'MSFT', data: { edge_type: { CorrelatedWith: { coefficient: 0.71, window: '90d' } }, weight: 0.71, metadata: {} } },
+    { source: 'RELIANCE.NS', target: 'HDFCBANK.NS', data: { edge_type: { CorrelatedWith: { coefficient: 0.44, window: '90d' } }, weight: 0.44, metadata: {} } },
+    { source: 'AAPL', target: 'RELIANCE.NS', data: { edge_type: { CorrelatedWith: { coefficient: -0.22, window: '90d' } }, weight: 0.22, metadata: {} } },
+  ];
+  return { nodes, edges };
+}
+
 export async function getQuote(s: string): Promise<QuoteDto> { return invoke<QuoteDto>('get_quote', { symbol: s }); }
 export async function subscribeSymbols(s: string[]): Promise<void> { return invoke<void>('subscribe_symbols', { symbols: s }); }
 export async function placeOrder(r: NewOrderRequestDto): Promise<string> { return invoke<string>('place_order', { request: r }); }
-export async function cancelOrder(o: string, b: string): Promise<void> { return invoke<void>('cancel_order', { order_id: o, broker_id: b }); }
+export async function cancelOrder(o: string, b: string): Promise<void> { return invoke<void>('cancel_order', { orderId: o, brokerId: b }); }
 export async function getPositions(): Promise<PositionDto[]> { return invoke<PositionDto[]>('get_positions'); }
 export async function getOpenOrders(): Promise<OrderDto[]> { return invoke<OrderDto[]>('get_open_orders'); }
-export async function getAccountBalance(brokerId: string): Promise<AccountBalanceDto> { return invoke<AccountBalanceDto>('get_account_balance', { broker_id: brokerId }); }
+export async function getAccountBalance(brokerId: string): Promise<AccountBalanceDto> { return invoke<AccountBalanceDto>('get_account_balance', { brokerId }); }
 export async function getRiskStatus(): Promise<RiskStatusDto> { return invoke<RiskStatusDto>('get_risk_status'); }
 export async function resetHalt(): Promise<void> { return invoke<void>('reset_halt'); }
 export async function getHistoricalData(symbol: string, timeframe?: string, limit?: number): Promise<OHLCVDto[]> {
@@ -629,21 +746,84 @@ export async function listStrategyFiles(): Promise<StrategyFileDto[]> { return i
 export async function createStrategyFile(path: string, content?: string): Promise<StrategyFileDto> { return invoke<StrategyFileDto>('create_strategy_file', { path, content }); }
 export async function saveStrategyFile(path: string, content: string): Promise<StrategyFileDto> { return invoke<StrategyFileDto>('save_strategy_file', { path, content }); }
 export async function deleteStrategyFile(path: string): Promise<boolean> { return invoke<boolean>('delete_strategy_file', { path }); }
-export async function runStrategyFile(path: string, params?: Record<string, unknown>): Promise<StrategyExecutionResultDto> { return invoke<StrategyExecutionResultDto>('run_strategy_file', { path, params_json: JSON.stringify(params ?? {}) }); }
+export async function runStrategyFile(path: string, params?: Record<string, unknown>): Promise<StrategyExecutionResultDto> { return invoke<StrategyExecutionResultDto>('run_strategy_file', { path, paramsJson: JSON.stringify(params ?? {}) }); }
 export async function runStrategyBacktest(request: StrategyBacktestRequestDto): Promise<StrategyBacktestResultDto> { return invoke<StrategyBacktestResultDto>('run_strategy_backtest', { request }); }
-export async function addAlert(i: string, r: string): Promise<void> { return invoke<void>('add_alert', { id: i, rule_json: r }); }
-export async function removeAlert(r: string): Promise<boolean> { return invoke<boolean>('remove_alert', { rule_id: r }); }
+export async function addAlert(i: string, r: string): Promise<void> { return invoke<void>('add_alert', { id: i, ruleJson: r }); }
+export async function removeAlert(r: string): Promise<boolean> { return invoke<boolean>('remove_alert', { ruleId: r }); }
 export async function getAlertRules(): Promise<AlertRuleDto[]> { return invoke<AlertRuleDto[]>('get_alert_rules'); }
 
 // ML Workbench
 export async function listMLModels(): Promise<MLModelDto[]> { return invoke<MLModelDto[]>('list_ml_models'); }
 export async function trainMLModel(r: MLTrainingRequestDto): Promise<MLTrainingResultDto> { return invoke<MLTrainingResultDto>('train_ml_model', { request: r }); }
-export async function deleteMLModel(id: string): Promise<boolean> { return invoke<boolean>('delete_ml_model', { model_id: id }); }
+export async function deleteMLModel(id: string): Promise<boolean> { return invoke<boolean>('delete_ml_model', { modelId: id }); }
+export async function predictModelSignal(modelId: string, symbol: string): Promise<ModelSignalDto> { return invoke<ModelSignalDto>('predict_model_signal', { modelId, symbol }); }
+
+// Automations — persisted scheduled model-signal trading rules
+export async function listAutomations(): Promise<AutomationDto[]> { return invoke<AutomationDto[]>('list_automations'); }
+export async function createAutomation(request: CreateAutomationDto): Promise<AutomationDto> { return invoke<AutomationDto>('create_automation', { request }); }
+export async function deleteAutomation(id: string): Promise<boolean> { return invoke<boolean>('delete_automation', { id }); }
+export async function setAutomationEnabled(id: string, enabled: boolean): Promise<boolean> { return invoke<boolean>('set_automation_enabled', { id, enabled }); }
 
 // Broker connectivity
 export async function listBrokerConnections(): Promise<BrokerConnectionDto[]> { return invoke<BrokerConnectionDto[]>('list_broker_connections'); }
-export async function setBrokerSession(brokerId: string, sessionToken: string): Promise<BrokerConnectionDto> { return invoke<BrokerConnectionDto>('set_broker_session', { broker_id: brokerId, session_token: sessionToken }); }
-export async function clearBrokerSession(brokerId: string): Promise<BrokerConnectionDto> { return invoke<BrokerConnectionDto>('clear_broker_session', { broker_id: brokerId }); }
+export async function setBrokerSession(brokerId: string, sessionToken: string): Promise<BrokerConnectionDto> { return invoke<BrokerConnectionDto>('set_broker_session', { brokerId, sessionToken }); }
+export async function clearBrokerSession(brokerId: string): Promise<BrokerConnectionDto> { return invoke<BrokerConnectionDto>('clear_broker_session', { brokerId }); }
+export async function zerodhaLogin(requestToken: string): Promise<BrokerConnectionDto> { return invoke<BrokerConnectionDto>('zerodha_login', { requestToken }); }
 
 // Health Monitor
 export async function getSystemHealth(): Promise<SystemHealthDto> { return invoke<SystemHealthDto>('get_system_health'); }
+
+// Orders — blotter
+export async function getOrders(symbol?: string, limit?: number): Promise<OrderDto[]> {
+  return invoke<OrderDto[]>('get_orders', { symbol, limit });
+}
+
+// News
+export async function getNews(limit?: number, symbol?: string): Promise<NewsItemDto[]> {
+  return invoke<NewsItemDto[]>('get_news', { limit, symbol });
+}
+export async function searchNews(query: string, symbol?: string, limit?: number): Promise<NewsItemDto[]> {
+  return invoke<NewsItemDto[]>('search_news', { query, symbol, limit });
+}
+export async function listNewsFeeds(): Promise<NewsFeedDto[]> { return invoke<NewsFeedDto[]>('list_news_feeds'); }
+
+// Order book
+export async function getOrderBook(symbol: string): Promise<OrderBookDto> {
+  return invoke<OrderBookDto>('get_order_book', { symbol });
+}
+
+// Relationship graph
+export async function getGraph(): Promise<GraphDto> { return invoke<GraphDto>('get_graph'); }
+export async function computeCorrelations(symbols: string[], windowDays?: number): Promise<GraphDto> {
+  return invoke<GraphDto>('compute_correlations', { symbols, windowDays });
+}
+
+// Market scanner
+export async function runScan(request: ScanRequestDto): Promise<ScanOutputDto> {
+  return invoke<ScanOutputDto>('run_scan', { request });
+}
+
+// AI Copilot (OpenRouter — desktop only)
+export async function copilotChat(message: string, history?: CopilotMessageDto[]): Promise<CopilotReplyDto> {
+  return invoke<CopilotReplyDto>('copilot_chat', { message, history });
+}
+
+export async function approveCopilotTools(keys: string[]): Promise<number> {
+  return invoke<number>('approve_copilot_tools', { keys });
+}
+
+// Quant analytics (OpenBB-style)
+export async function computeIndicator(
+  symbol: string,
+  indicator: string,
+  timeframe?: string,
+  params?: Record<string, number>,
+): Promise<IndicatorResultDto> {
+  return invoke<IndicatorResultDto>('compute_indicator', { symbol, indicator, timeframe, params });
+}
+export async function getQuantStats(symbol: string, timeframe?: string, window?: number): Promise<QuantStatsDto> {
+  return invoke<QuantStatsDto>('get_quant_stats', { symbol, timeframe, window });
+}
+export async function getRegression(xSymbol: string, ySymbol: string, timeframe?: string): Promise<RegressionDto> {
+  return invoke<RegressionDto>('get_regression', { xSymbol, ySymbol, timeframe });
+}

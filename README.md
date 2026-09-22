@@ -1094,7 +1094,8 @@ All order placements, modifications, and cancellations logged with nanosecond ti
 - [x] ML workbench UI integration (dataset builder, training configuration, evaluation display, model registry)
 - [x] Model registry with IPC commands (list, train, delete models via Tauri)
 - [x] Walk-forward backtest engine (rolling train/test windows, overfitting ratio)
-- [ ] News sentiment analysis (engine exists, NLP pipeline not integrated)
+- [x] News sentiment analysis (financial-lexicon VADER-style scorer integrated into NewsEngine)
+- [x] AI Copilot panel (OpenRouter-backed chat with live positions/quotes/risk context)
 
 ### Phase 5 — Production Hardening (✅ ~95% Complete)
 
@@ -1108,7 +1109,7 @@ All order placements, modifications, and cancellations logged with nanosecond ti
 - [x] Real-time event push system (7 event types via message bus → Tauri emitter)
 - [x] Health monitoring dashboard (adapter status, system metrics, real-time polling)
 - [x] Hot path tracing instrumentation (market data aggregator, OTM, risk engine)
-- [ ] Security audit
+- [x] Security audit (IPC input validation, secret-free code paths, dependency review)
 - [ ] Performance profiling and optimisation
 
 ### Phase 8 — Performance & Hardening (✅ ~80% Complete)
@@ -1125,7 +1126,7 @@ All order placements, modifications, and cancellations logged with nanosecond ti
 - [x] Setup & migration scripts (scripts/setup_db.sh, scripts/dev.sh)
 - [x] Database migrations (migrations/ with 3 SQL files)
 - [x] Tauri bundle configuration (io.apex.terminal, 1920x1080, CSP, Python sidecar)
-- [ ] Icon generation from source SVG
+- [x] Icon generation from source SVG
 
 ### Phase 10 — Documentation (✅ Complete)
 
@@ -1137,12 +1138,17 @@ All order placements, modifications, and cancellations logged with nanosecond ti
 
 - [x] Design system & theming (CSS variables, dark theme)
 - [x] Tauri event bridge (useQuoteStream, useOrderStream, usePositionStream, useHealthStream hooks)
-- [x] Workspace layout (4-tab center panel, 3-column responsive grid)
+- [x] Workspace layout (13-tab center panel, 3-column responsive grid)
+- [x] Market overview page (index cards, breadth meter, top movers, headlines)
+- [x] Ticker tape marquee (major indices + FX + commodities)
+- [x] Keyboard HUD (`?` overlay) and sortable/flashing watchlist
 - [x] Command bar (order placement, symbol navigation, tab switching with feedback)
 - [x] Candlestick chart (lightweight-charts integration)
-- [x] Order book heatmap (OrderBookHeatmap component)
+- [x] Order book heatmap (OrderBookHeatmap component + live Book panel)
 - [x] Order entry form (symbol, side, type, quantity, price with validation)
 - [x] Strategy IDE (Monaco editor with file management)
+- [x] News panel, order blotter, scanner, correlation graph, copilot, market overview panels (13-tab center workspace)
+- [x] News + fired-alert Tauri event streams (useNewsStream, useAlertStream)
 
 ### Current Status Summary (March 2026)
 
@@ -1173,9 +1179,8 @@ All order placements, modifications, and cancellations logged with nanosecond ti
 - ✅ Production bundle configuration with Python sidecar
 
 **Remaining Gaps:**
-- ⚠️ **NLP sentiment pipeline** — news engine exists, deep NLP integration pending
-- ⚠️ **Security audit** — not yet completed
-- ⚠️ **Icon generation** — SVG source to multi-size icons not yet automated
+- ⚠️ **Performance profiling** — hot-path tracing is in place; systematic latency profiling pending
+- ⚠️ **Jaeger trace export** — optional NDJSON trace export exists; Jaeger OTLP sink pending
 
 **Next Milestones:**
 1. Integrate **NLP sentiment pipeline** with news engine

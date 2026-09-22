@@ -7,9 +7,10 @@ import {
   forceCollide,
   type SimulationNodeDatum,
   type SimulationLinkDatum,
+  type Simulation,
 } from 'd3-force';
 import { select } from 'd3';
-import { zoom as d3Zoom, type D3ZoomEvent } from 'd3';
+import { drag as d3Drag, zoom as d3Zoom, type D3ZoomEvent, type D3DragEvent } from 'd3';
 
 interface GraphNode extends SimulationNodeDatum {
   id: string;
@@ -59,12 +60,19 @@ const VectorGraphInner: React.FC<VectorGraphProps> = ({
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [dimensions, setDimensions] = useState({ width: 600, height: 400 });
 
-  // Clone data to avoid mutating props
-  const simNodes = useMemo(() => nodes.map((n) => ({ ...n })), [nodes]);
-  const simEdges = useMemo(
-    () => edges.map((e) => ({ ...e, source: e.source, target: e.target })),
-    [edges],
-  );
+  // Clone data to avoid mutating props; drop edges whose endpoints are
+  // missing — d3 forceLink throws "node not found" on those, which would
+  // escape to the nearest error boundary and blank the panel.
+  const simNodes = useMemo(() => {
+    const seen = new Set<string>();
+    return nodes.filter((n) => (seen.has(n.id) ? false : (seen.add(n.id), true))).map((n) => ({ ...n }));
+  }, [nodes]);
+  const simEdges = useMemo(() => {
+    const ids = new Set(simNodes.map((n) => n.id));
+    return edges
+      .filter((e) => ids.has(String(e.source)) && ids.has(String(e.target)))
+      .map((e) => ({ ...e, source: e.source, target: e.target }));
+  }, [edges, simNodes]);
 
   // Resize observer
   useEffect(() => {
@@ -138,8 +146,9 @@ const VectorGraphInner: React.FC<VectorGraphProps> = ({
       .attr('d', 'M0,-5L10,0L0,5')
       .attr('fill', '#5c5c7a');
 
-    // Create simulation
-    const simulation = forceSimulation<GraphNode>(simNodes)
+    let simulation: Simulation<GraphNode, GraphEdge>;
+    try {
+      simulation = forceSimulation<GraphNode>(simNodes)
       .force(
         'link',
         forceLink<GraphNode, GraphEdge>(simEdges)
@@ -152,6 +161,10 @@ const VectorGraphInner: React.FC<VectorGraphProps> = ({
         'collision',
         forceCollide<GraphNode>().radius((d) => NODE_RADII[d.type] + 4),
       );
+    } catch (err) {
+      console.error('[apex] graph simulation init failed', err);
+      return;
+    }
 
     // Edges
     const link = g
@@ -227,13 +240,23 @@ const VectorGraphInner: React.FC<VectorGraphProps> = ({
         .attr('stroke-opacity', 0.4);
     });
 
-    // Drag behavior
-    nodeGroup.call(
-      select.prototype.call.bind(
-        svgSel,
-        // Drag is handled via simulation alpha restart
-      ) as never,
-    );
+    // Drag nodes to reposition them; the pin releases on drag end.
+    const dragBehavior = d3Drag<SVGGElement, GraphNode>()
+      .on('start', (event: D3DragEvent<SVGGElement, GraphNode, GraphNode>, d) => {
+        simulation.alphaTarget(0.3).restart();
+        d.fx = d.x;
+        d.fy = d.y;
+      })
+      .on('drag', (event: D3DragEvent<SVGGElement, GraphNode, GraphNode>, d) => {
+        d.fx = event.x;
+        d.fy = event.y;
+      })
+      .on('end', (event: D3DragEvent<SVGGElement, GraphNode, GraphNode>, d) => {
+        simulation.alphaTarget(0);
+        d.fx = null;
+        d.fy = null;
+      });
+    nodeGroup.call(dragBehavior);
 
     // Tick update
     simulation.on('tick', () => {

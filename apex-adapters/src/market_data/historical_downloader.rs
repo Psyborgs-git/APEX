@@ -1,8 +1,5 @@
-use apex_core::{
-    domain::models::*,
-    ports::market_data::AdapterHealth,
-};
 use anyhow::{Context, Result};
+use apex_core::{domain::models::*, ports::market_data::AdapterHealth};
 use chrono::{DateTime, Utc};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -62,8 +59,7 @@ pub struct DownloadOutput {
 impl HistoricalDownloader {
     /// Create a new historical data downloader
     pub fn new(output_dir: PathBuf) -> Result<Self> {
-        std::fs::create_dir_all(&output_dir)
-            .context("Failed to create output directory")?;
+        std::fs::create_dir_all(&output_dir).context("Failed to create output directory")?;
 
         let client = Client::builder()
             .timeout(std::time::Duration::from_secs(60))
@@ -91,7 +87,10 @@ impl HistoricalDownloader {
         let mut failed = 0;
 
         for symbol in &job.symbols {
-            match self.download_symbol(symbol, &job.from, &job.to, &job.timeframe).await {
+            match self
+                .download_symbol(symbol, &job.from, &job.to, &job.timeframe)
+                .await
+            {
                 Ok(result) => {
                     if result.status == DownloadStatus::Success {
                         successful += 1;
@@ -154,7 +153,8 @@ impl HistoricalDownloader {
 
         debug!("Downloading {} from Yahoo Finance", symbol.0);
 
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .header("User-Agent", "APEX-Trading-Terminal/0.1")
             .send()
@@ -169,7 +169,9 @@ impl HistoricalDownloader {
             ));
         }
 
-        let data: serde_json::Value = response.json().await
+        let data: serde_json::Value = response
+            .json()
+            .await
             .context("Failed to parse Yahoo Finance response")?;
 
         // Parse Yahoo Finance chart response
@@ -221,13 +223,16 @@ impl HistoricalDownloader {
                 _ => continue,
             };
 
-            let dt = DateTime::from_timestamp(ts, 0)
-                .unwrap_or_else(|| Utc::now());
+            let dt = DateTime::from_timestamp(ts, 0).unwrap_or_else(|| Utc::now());
 
             csv.push_str(&format!(
                 "{},{:.2},{:.2},{:.2},{:.2},{}\n",
                 dt.format("%Y-%m-%d %H:%M:%S"),
-                open, high, low, close, volume
+                open,
+                high,
+                low,
+                close,
+                volume
             ));
             bar_count += 1;
         }
@@ -238,7 +243,12 @@ impl HistoricalDownloader {
         std::fs::write(&file_path, &csv)
             .context(format!("Failed to write CSV for {}", symbol.0))?;
 
-        info!("Downloaded {} bars for {} → {}", bar_count, symbol.0, file_path.display());
+        info!(
+            "Downloaded {} bars for {} → {}",
+            bar_count,
+            symbol.0,
+            file_path.display()
+        );
 
         Ok(DownloadResult {
             symbol: symbol.clone(),
@@ -282,6 +292,7 @@ impl HistoricalDownloader {
             bars.push(OHLCV {
                 time,
                 symbol: symbol.clone(),
+                timeframe: Timeframe::D1,
                 open: parts[1].parse().unwrap_or(0.0),
                 high: parts[2].parse().unwrap_or(0.0),
                 low: parts[3].parse().unwrap_or(0.0),
@@ -319,7 +330,10 @@ mod tests {
     #[test]
     fn test_download_status_equality() {
         assert_eq!(DownloadStatus::Success, DownloadStatus::Success);
-        assert_ne!(DownloadStatus::Success, DownloadStatus::Failed("err".to_string()));
+        assert_ne!(
+            DownloadStatus::Success,
+            DownloadStatus::Failed("err".to_string())
+        );
     }
 
     #[test]
@@ -328,14 +342,12 @@ mod tests {
             total_symbols: 5,
             successful: 3,
             failed: 2,
-            results: vec![
-                DownloadResult {
-                    symbol: Symbol("AAPL".to_string()),
-                    bars_downloaded: 252,
-                    file_path: "/tmp/AAPL_1d.csv".to_string(),
-                    status: DownloadStatus::Success,
-                },
-            ],
+            results: vec![DownloadResult {
+                symbol: Symbol("AAPL".to_string()),
+                bars_downloaded: 252,
+                file_path: "/tmp/AAPL_1d.csv".to_string(),
+                status: DownloadStatus::Success,
+            }],
         };
         let json = serde_json::to_string(&output).unwrap();
         let deserialized: DownloadOutput = serde_json::from_str(&json).unwrap();
@@ -356,7 +368,9 @@ mod tests {
         std::fs::write(&file_path, csv_content).unwrap();
 
         let downloader = HistoricalDownloader::new(tmp_dir.clone()).unwrap();
-        let bars = downloader.load_csv(&Symbol("TEST".to_string()), &Timeframe::D1).unwrap();
+        let bars = downloader
+            .load_csv(&Symbol("TEST".to_string()), &Timeframe::D1)
+            .unwrap();
 
         assert_eq!(bars.len(), 3);
         assert_eq!(bars[0].open, 100.0);
