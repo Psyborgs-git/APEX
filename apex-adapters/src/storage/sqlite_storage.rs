@@ -66,7 +66,6 @@ impl SqliteStorage {
                 close       REAL NOT NULL,
                 volume      INTEGER NOT NULL
             );
-            CREATE INDEX IF NOT EXISTS idx_ohlcv_symbol_time ON ohlcv(symbol, timeframe, time);
 
             CREATE TABLE IF NOT EXISTS orders (
                 id          TEXT PRIMARY KEY,
@@ -122,6 +121,12 @@ impl SqliteStorage {
                 [],
             )?;
         }
+        // Only safe after the timeframe migration above — the column may not
+        // exist on upgraded databases when the schema batch first ran.
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ohlcv_symbol_time ON ohlcv(symbol, timeframe, time)",
+            [],
+        )?;
 
         // Bars are keyed by (symbol, timeframe, time); drop historical duplicates
         // before adding the unique index, then upsert on write.

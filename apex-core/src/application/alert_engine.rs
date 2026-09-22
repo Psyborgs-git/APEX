@@ -82,13 +82,14 @@ impl AlertEngine {
     fn windowed_pct_change(&self, quote: &Quote, window_secs: u64) -> Option<f64> {
         let window = self.price_windows.get(&quote.symbol.0)?;
         let cutoff = quote.updated_at - chrono::Duration::seconds(window_secs as i64);
-        // Reference = newest sample at-or-before the window start (falls back
-        // to the oldest recorded price when the window isn't filled yet).
+        // Reference = newest sample at-or-before the window start.
+        // No sample at-or-before the window start means the rolling window
+        // isn't filled yet — return None rather than anchoring to the oldest
+        // tick (that would let a short move trip a long-window alert).
         let reference = window
             .iter()
             .rev()
             .find(|(t, _)| *t <= cutoff)
-            .or_else(|| window.front())
             .map(|(_, p)| *p)?;
         if reference.abs() < f64::EPSILON {
             return None;

@@ -70,11 +70,26 @@ pub(crate) async fn load_bars(
         };
         let from = now - chrono::Duration::days(lookback_days);
 
-        let fetched = state
+        // Storage-first: a provider outage must not blank charts that already
+        // have cached history — only an empty cache makes the error fatal.
+        let fetched = match state
             .history_source
             .get_historical_ohlcv(&Symbol(symbol.to_string()), tf, from, now)
             .await
-            .map_err(|e| format!("Failed to fetch historical data for {}: {}", symbol, e))?;
+        {
+            Ok(b) => b,
+            Err(e) if bars.is_empty() => {
+                return Err(format!("Failed to fetch historical data for {symbol}: {e}"));
+            }
+            Err(e) => {
+                tracing::warn!(
+                    symbol = %symbol,
+                    error = %e,
+                    "OHLCV refresh failed; serving cached bars"
+                );
+                Vec::new()
+            }
+        };
 
         if !fetched.is_empty() {
             // Merge cached + fetched on bar time (fetched wins) so a larger

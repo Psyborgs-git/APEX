@@ -24,7 +24,7 @@ pub(crate) fn periods_per_year(bars: &[OHLCV]) -> f64 {
     gaps.sort();
     let median = gaps[gaps.len() / 2];
     match median {
-        g if g <= 90 => 252.0 * 390.0 / 60.0, // ~per-minute
+        g if g <= 90 => 252.0 * 390.0 * 60.0 / g.max(1) as f64, // sub-minute..~1m
         g if g <= 300 => 252.0 * 78.0,
         g if g <= 900 => 252.0 * 26.0,
         g if g <= 1800 => 252.0 * 13.0,

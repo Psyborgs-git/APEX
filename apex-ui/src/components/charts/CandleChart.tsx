@@ -210,7 +210,14 @@ const CandleChartInner: React.FC<CandleChartProps> = ({ symbol, ohlcvData, heigh
     const candleSeries = candleSeriesRef.current;
     const volumeSeries = volumeSeriesRef.current;
     const chart = chartRef.current;
-    if (!candleSeries || !volumeSeries || !chart || bars.length === 0) return;
+    if (!candleSeries || !volumeSeries || !chart) return;
+    if (bars.length === 0) {
+      // Clear both series — a symbol with no history must not keep the
+      // previous symbol's candles on screen.
+      candleSeries.setData([]);
+      volumeSeries.setData([]);
+      return;
+    }
 
     // Collapse duplicate bar timestamps — a charting series requires strictly
     // ascending unique times.
